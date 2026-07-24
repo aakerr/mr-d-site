@@ -182,34 +182,36 @@ export function initShell(ctx) {
     topbarRoot.innerHTML = `
       <div class="h-full w-full flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5">
         <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex items-center gap-2 sm:gap-3 px-2 sm:px-3 rounded-xl" title="Home" aria-label="Go to dashboard">
-          <img src="images/class-shield.png" alt="Mr. D's Classroom crest" class="h-10 sm:h-11 w-auto object-contain shrink-0" />
+          <img src="images/class-shield.png" alt="Mr. D's Classroom crest" class="h-10 sm:h-11 w-auto object-contain shrink-0" onerror="this.style.display='none'" />
           <div class="hidden md:flex flex-col items-start leading-tight">
             <span class="brand-label font-body font-semibold text-base sm:text-lg md:text-xl text-gray-50">MR. D'S CLASSROOM</span>
             <span class="shell-subline text-[11px] sm:text-xs font-normal text-gray-400">Green Middle School</span>
           </div>
         </button>
 
-        <div class="relative flex-1 max-w-[30.6rem]" data-core-switcher>
-          <button type="button" data-core-btn data-open="${coreMenuOpen}" class="core-switch-btn w-full grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-xl">
-            <span class="core-dot shrink-0 justify-self-start" style="background:${dotColor};box-shadow:0 0 8px 1px ${dotSoft}"></span>
-            <span class="switcher-label justify-self-center font-display font-extrabold tracking-wide text-lg sm:text-xl lg:text-2xl truncate text-gray-50 text-center">${switchLabel}</span>
-            <span class="justify-self-end text-gray-400 text-xs transition-transform duration-200" style="transform:rotate(${coreMenuOpen ? 180 : 0}deg)">▾</span>
+        <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          <div class="relative flex-1 max-w-[30.6rem]" data-core-switcher>
+            <button type="button" data-core-btn data-open="${coreMenuOpen}" class="core-switch-btn w-full grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-xl">
+              <span class="core-dot shrink-0 justify-self-start" style="background:${dotColor};box-shadow:0 0 8px 1px ${dotSoft}"></span>
+              <span class="switcher-label justify-self-center font-display font-extrabold tracking-wide text-lg sm:text-xl lg:text-2xl truncate text-gray-50 text-center">${switchLabel}</span>
+              <span class="justify-self-end text-gray-400 text-xs transition-transform duration-200" style="transform:rotate(${coreMenuOpen ? 180 : 0}deg)">▾</span>
+            </button>
+            ${menuHtml}
+          </div>
+
+          ${currentModuleId === 'admin' ? '' : `
+          <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn shrink-0 flex items-center justify-center rounded-full font-display" title="Quick Points" aria-label="Quick Points">
+            <span class="points-trigger-dot leading-none" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">±</span>
           </button>
-          ${menuHtml}
+          `}
         </div>
 
         <div class="flex items-center gap-1 sm:gap-2">
-          ${currentModuleId === 'admin' ? '' : `
-          <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn shrink-0 flex items-center justify-center rounded-full font-display" title="Quick Points" aria-label="Quick Points" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">
-            <span class="leading-none">±</span>
-          </button>
-          `}
-
           <div class="hidden sm:flex items-center gap-2 text-gray-400">
             ${CALENDAR_ICON_SVG}
-            <div class="flex flex-col items-end justify-center min-w-[130px] md:min-w-[160px]">
-              <span class="text-xs md:text-sm font-semibold text-gray-100">${formatToday()}</span>
-              <span class="shell-subline text-[11px] sm:text-xs font-normal text-gray-400">Week ${termInfo.week} of ${termInfo.totalWeeks}</span>
+            <div class="flex flex-col items-start justify-center">
+              <span class="text-xs md:text-sm font-semibold text-gray-100 whitespace-nowrap">${formatToday()}</span>
+              <span class="shell-subline text-[11px] sm:text-xs font-normal text-gray-400 whitespace-nowrap">Week ${termInfo.week} of ${termInfo.totalWeeks}</span>
             </div>
           </div>
 

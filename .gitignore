@@ -1,4 +1,9 @@
 .DS_Store
 videos/
 gemini-site/
-images/*.png
+# retired original house art only — new shields/icons/class assets MUST ship
+images/camelot.png
+images/atlantis.png
+images/valhalla.png
+images/rivendell.png
+images/*-old*.png

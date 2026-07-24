@@ -77,7 +77,7 @@ function icon(name) {
 }
 
 function sectionHeader(iconName, label) {
-  return `<div class="flex items-center gap-2 text-gray-400 text-sm font-semibold uppercase tracking-wide mb-3">${icon(iconName)}<span>${label}</span></div>`;
+  return `<div class="flex items-center gap-2 text-gray-400 text-sm font-semibold uppercase tracking-wide mb-1.5">${icon(iconName)}<span>${label}</span></div>`;
 }
 
 // <img> with a graceful emoji-fallback sibling, shown if the PNG 404s.
@@ -93,18 +93,19 @@ function renderHero(state, store) {
   if (state.activeCore === 'all' || !activeHouse) {
     const houses = Object.values(store.HOUSES);
     return `
-      <div class="dash-hero dash-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-card to-card2 border-2 border-valhalla/60 min-h-[160px] xl:min-h-[200px] p-6 flex items-center gap-6 flex-wrap"
+      <div class="dash-hero dash-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-card to-card2 border-2 border-valhalla/60 min-h-[130px] xl:min-h-[160px] p-4 xl:p-5 flex items-center gap-6 flex-wrap"
            style="--dash-glow: rgba(245,158,11,0.35);">
         <div class="flex-1 min-w-[260px]">
-          <h1 class="font-display font-extrabold text-4xl xl:text-5xl tracking-wide text-valhalla drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]">
-            WELCOME, SCHOLARS!
+          <div class="text-gray-300 text-base xl:text-lg font-bold uppercase tracking-wide">Welcome</div>
+          <h1 class="font-display font-extrabold text-3xl xl:text-4xl tracking-wide text-valhalla drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]">
+            SCHOLARS!
           </h1>
-          <p class="mt-2 text-gray-300 text-lg">Choose your house core to begin the day's quest.</p>
+          <p class="mt-1 text-gray-300 text-sm xl:text-base">Choose your house core to begin the day's quest.</p>
         </div>
-        <div class="flex gap-5 xl:gap-7 flex-wrap items-end">
+        <div class="flex gap-4 xl:gap-6 flex-wrap items-end">
           ${houses.map((h) => `
-            <div class="flex flex-col items-center gap-2">
-              ${houseImg(h, 'h-16 xl:h-20 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
+            <div class="flex flex-col items-center gap-1.5">
+              ${houseImg(h, 'h-12 xl:h-16 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
               <span class="text-xs xl:text-sm font-bold" style="color:${h.accent}">${h.name}</span>
             </div>
           `).join('')}
@@ -114,19 +115,20 @@ function renderHero(state, store) {
 
   const h = activeHouse;
   return `
-    <div class="dash-hero dash-in relative overflow-hidden rounded-2xl border-2 min-h-[210px] xl:min-h-[270px] flex items-center"
+    <div class="dash-hero dash-in relative overflow-hidden rounded-2xl border-2 min-h-[165px] xl:min-h-[205px] flex items-center"
          style="border-color:${h.accent}; --dash-glow:${h.accentSoft};">
       <div class="absolute inset-0 bg-gradient-to-br from-card2 to-card"></div>
       <img src="${h.heroImage}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
            onerror="this.onerror=null;this.style.display='none';" />
       <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-black/10"></div>
-      <div class="relative z-10 flex items-center gap-6 p-6 xl:p-8 w-full">
-        ${houseImg(h, 'h-40 xl:h-52 w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]')}
+      <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full">
+        ${houseImg(h, 'h-28 xl:h-36 w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]')}
         <div class="flex-1 min-w-[240px]">
+          <div class="text-white text-xl xl:text-2xl font-bold uppercase tracking-wide drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">Welcome</div>
           <h1 class="font-display font-extrabold text-4xl xl:text-6xl tracking-wide text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]">
-            WELCOME, ${h.name.toUpperCase()}!
+            ${h.name.toUpperCase()}!
           </h1>
-          <p class="mt-2 text-white/90 text-2xl xl:text-3xl italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
+          <p class="mt-1 text-white/90 text-2xl xl:text-3xl italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
         </div>
       </div>
     </div>`;
@@ -139,22 +141,22 @@ function renderStandings(state, store) {
   const max = Math.max(1, ...totals.map((t) => Math.max(0, t.total)));
   const activeCore = state.activeCore;
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-5 flex flex-col min-h-0 flex-1">
+    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-3 xl:p-4 flex flex-col min-h-0 flex-1">
       ${sectionHeader('trophy', 'Current Term Standings')}
-      <div class="flex flex-col gap-2.5 overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-1.5 overflow-y-auto dash-scroll pr-1">
         ${totals.map((t, i) => {
           const isActive = activeCore !== 'all' && t.house.core === activeCore;
           const pct = Math.max(4, Math.round((Math.max(0, t.total) / max) * 100));
           return `
-          <div class="flex items-center gap-3 rounded-xl p-2 border ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
+          <div class="flex items-center gap-2.5 rounded-xl p-1.5 border ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
             <div class="w-6 text-center font-bold text-gray-400">#${i + 1}</div>
-            ${houseImg(t.house, 'h-12 w-auto object-contain shrink-0 drop-shadow')}
+            ${houseImg(t.house, 'h-9 w-auto object-contain shrink-0 drop-shadow')}
             <div class="flex-1 min-w-0">
               <div class="flex items-baseline gap-3">
                 <span class="font-semibold truncate" style="color:${t.house.accent}">${t.house.name}</span>
                 <span class="font-bold text-gray-100 shrink-0">${t.total}</span>
               </div>
-              <div class="h-2 rounded-full mt-1 overflow-hidden max-w-[81%]" style="background: var(--color-line, #374151);">
+              <div class="h-1.5 rounded-full mt-1 overflow-hidden max-w-[81%]" style="background: var(--color-line, #374151);">
                 <div class="dash-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
               </div>
             </div>
@@ -167,7 +169,7 @@ function renderStandings(state, store) {
 function renderItinerary(state, store) {
   if (state.activeCore === 'all') {
     return `
-      <div class="dash-in bg-card rounded-2xl border dash-accent-line p-5 flex flex-col min-h-0">
+      <div class="dash-in bg-card rounded-2xl border dash-accent-line p-3 xl:p-4 flex flex-col min-h-0 flex-1">
         ${sectionHeader('calendar', 'Daily Itinerary')}
         <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
           Pick a house core to see today's schedule.
@@ -176,12 +178,12 @@ function renderItinerary(state, store) {
   }
   const items = store.getItinerary();
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-5 flex flex-col min-h-0">
+    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-3 xl:p-4 flex flex-col min-h-0 flex-1">
       ${sectionHeader('calendar', 'Daily Itinerary')}
-      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-1.5 overflow-y-auto dash-scroll pr-1">
         ${items.length ? items.map((it, i) => `
-          <div class="flex items-start gap-3">
-            <span class="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-card2 border border-line text-xs font-bold text-gray-200">${i + 1}</span>
+          <div class="flex items-start gap-2.5">
+            <span class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md bg-card2 border border-line text-xs font-bold text-gray-200">${i + 1}</span>
             <span class="text-gray-200 text-sm xl:text-base">${escapeHtml(it.text)}</span>
           </div>`).join('') : '<div class="text-gray-500 italic">Nothing scheduled.</div>'}
       </div>
@@ -191,12 +193,12 @@ function renderItinerary(state, store) {
 function renderHomework(state, store) {
   const items = state.activeCore === 'all' ? [] : store.getHomework();
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-5 flex flex-col min-h-0">
+    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-3 xl:p-4 flex flex-col min-h-0 flex-1">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
-      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-1.5 overflow-y-auto dash-scroll pr-1">
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
           (items.length ? items.map((hw) => `
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2.5">
             <span class="shrink-0 px-2 py-0.5 rounded-md bg-valhalla/20 border border-valhalla/50 text-xs font-bold text-valhalla">Due ${escapeHtml(hw.due)}</span>
             <span class="text-gray-200 text-sm xl:text-base">${escapeHtml(hw.text)}</span>
           </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>')}
@@ -207,15 +209,15 @@ function renderHomework(state, store) {
 function renderLaunchers() {
   return `
     <div class="dash-in grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <button data-nav="potw" class="dash-launcher h-24 xl:h-28 rounded-2xl bg-gradient-to-r from-emerald-700 to-emerald-400 shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-4 px-5">
-        ${pngWithEmojiFallback('images/icon-potw.png', '🌍', 'h-11 w-11 xl:h-12 xl:w-12 object-contain', 'w-11 h-11 xl:w-12 xl:h-12 text-3xl')}
+      <button data-nav="potw" class="dash-launcher h-20 xl:h-24 rounded-2xl bg-gradient-to-r from-emerald-700 to-emerald-400 shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-4 px-5">
+        ${pngWithEmojiFallback('images/icon-potw.png', '🌍', 'h-10 w-10 xl:h-11 xl:w-11 object-contain', 'w-10 h-10 xl:w-11 xl:h-11 text-3xl')}
         <div class="text-left">
           <div class="font-display font-extrabold text-xl xl:text-2xl text-white leading-tight">Launch Place of the Week</div>
           <div class="text-xs xl:text-sm text-white/85 font-semibold mt-0.5">Explore. Discover. Learn.</div>
         </div>
       </button>
-      <button data-nav="battle" class="dash-launcher h-24 xl:h-28 rounded-2xl bg-gradient-to-r from-red-800 to-red-500 shadow-lg shadow-red-950/50 flex items-center justify-center gap-4 px-5">
-        ${pngWithEmojiFallback('images/icon-battle.png', '⚔️', 'h-11 w-11 xl:h-12 xl:w-12 object-contain', 'w-11 h-11 xl:w-12 xl:h-12 text-3xl')}
+      <button data-nav="battle" class="dash-launcher h-20 xl:h-24 rounded-2xl bg-gradient-to-r from-red-800 to-red-500 shadow-lg shadow-red-950/50 flex items-center justify-center gap-4 px-5">
+        ${pngWithEmojiFallback('images/icon-battle.png', '⚔️', 'h-10 w-10 xl:h-11 xl:w-11 object-contain', 'w-10 h-10 xl:w-11 xl:h-11 text-3xl')}
         <div class="text-left">
           <div class="font-display font-extrabold text-xl xl:text-2xl text-white leading-tight">Start Battle Day</div>
           <div class="text-xs xl:text-sm text-white/85 font-semibold mt-0.5">Challenge Another House</div>
@@ -235,11 +237,11 @@ function renderModuleTiles(registry) {
           const iconSrc = MODULE_ICON_MAP[m.id];
           const subtitle = MODULE_SUBTITLE_MAP[m.id];
           const iconHtml = iconSrc
-            ? pngWithEmojiFallback(iconSrc, m.icon || '📘', 'w-14 h-14 xl:w-16 xl:h-16 object-contain', 'w-14 h-14 xl:w-16 xl:h-16 text-4xl')
-            : `<div class="w-14 h-14 xl:w-16 xl:h-16 flex items-center justify-center text-4xl shrink-0">${m.icon || '📘'}</div>`;
+            ? pngWithEmojiFallback(iconSrc, m.icon || '📘', 'w-12 h-12 xl:w-14 xl:h-14 object-contain', 'w-12 h-12 xl:w-14 xl:h-14 text-3xl')
+            : `<div class="w-12 h-12 xl:w-14 xl:h-14 flex items-center justify-center text-3xl shrink-0">${m.icon || '📘'}</div>`;
           return `
-          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} min-w-[150px] flex-1 basis-[150px] max-w-[220px]
-            bg-card rounded-2xl border dash-accent-line p-4 flex flex-col items-center gap-1.5">
+          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} min-w-[140px] flex-1 basis-[140px] max-w-[210px]
+            bg-card rounded-2xl border dash-accent-line p-3 flex flex-col items-center gap-1">
             ${iconHtml}
             <span class="font-semibold text-gray-100 text-sm text-center">${escapeHtml(m.title)}</span>
             ${subtitle ? `<span class="text-xs text-gray-400 text-center">${escapeHtml(subtitle)}</span>` : ''}
@@ -253,11 +255,11 @@ function render(root, ctx) {
   const { store } = ctx;
   const state = store.getState();
   root.innerHTML = `
-    <div class="h-full w-full p-4 xl:p-6 flex flex-col gap-4 xl:gap-5 overflow-y-auto dash-scroll">
+    <div class="h-full w-full p-3 xl:p-5 flex flex-col gap-3 xl:gap-5 overflow-y-auto dash-scroll">
       ${renderHero(state, store)}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 xl:gap-5">
-        <div class="flex flex-col">${renderStandings(state, store)}</div>
-        <div class="flex flex-col gap-4 xl:gap-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4 flex-1 min-h-[220px]">
+        <div class="flex flex-col min-h-0">${renderStandings(state, store)}</div>
+        <div class="flex flex-col gap-3 xl:gap-4 min-h-0">
           ${renderItinerary(state, store)}
           ${renderHomework(state, store)}
         </div>
