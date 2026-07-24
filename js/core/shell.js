@@ -179,9 +179,23 @@ export function initShell(ctx) {
       </div>
     ` : '';
 
+    // The pill is positioned absolutely, centered on #topbar's full width
+    // (#topbar is the positioning context — see CSS). This is deliberate
+    // rather than a flex-1/flex-1 balancing act: the brand block and the
+    // date/admin group have different intrinsic (min-content) widths, and at
+    // typical desktop widths the row has little to no slack space for
+    // flex-grow to redistribute evenly — so two flex-1 side groups do NOT
+    // reliably land the middle group in the true center (verified: it drifted
+    // ~16px off at 1280px). Absolute + translateX(-50%) is exact regardless.
+    // The ± trigger is a SEPARATE absolutely-positioned element anchored to
+    // the pill's own right edge (not grouped with it) — grouping them under
+    // one shared centered wrapper would center the *pair*, which visibly
+    // drifts the pill itself off-true-center by half the trigger's width
+    // (also verified, ~28px off) since the trigger only adds width on one side.
+    const pillWidthExpr = 'min(30.6rem,44vw)';
     topbarRoot.innerHTML = `
-      <div class="h-full w-full flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5">
-        <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex items-center gap-2 sm:gap-3 px-2 sm:px-3 rounded-xl" title="Home" aria-label="Go to dashboard">
+      <div class="h-full w-full flex items-center gap-2 sm:gap-4 px-3 sm:px-5">
+        <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex-1 flex items-center gap-2 sm:gap-3 px-2 sm:px-3 rounded-xl justify-start" title="Home" aria-label="Go to dashboard">
           <img src="images/class-shield.png" alt="Mr. D's Classroom crest" class="h-10 sm:h-11 w-auto object-contain shrink-0" onerror="this.style.display='none'" />
           <div class="hidden md:flex flex-col items-start leading-tight">
             <span class="brand-label font-body font-semibold text-base sm:text-lg md:text-xl text-gray-50">MR. D'S CLASSROOM</span>
@@ -189,24 +203,7 @@ export function initShell(ctx) {
           </div>
         </button>
 
-        <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          <div class="relative flex-1 max-w-[30.6rem]" data-core-switcher>
-            <button type="button" data-core-btn data-open="${coreMenuOpen}" class="core-switch-btn w-full grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-xl">
-              <span class="core-dot shrink-0 justify-self-start" style="background:${dotColor};box-shadow:0 0 8px 1px ${dotSoft}"></span>
-              <span class="switcher-label justify-self-center font-display font-extrabold tracking-wide text-lg sm:text-xl lg:text-2xl truncate text-gray-50 text-center">${switchLabel}</span>
-              <span class="justify-self-end text-gray-400 text-xs transition-transform duration-200" style="transform:rotate(${coreMenuOpen ? 180 : 0}deg)">▾</span>
-            </button>
-            ${menuHtml}
-          </div>
-
-          ${currentModuleId === 'admin' ? '' : `
-          <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn shrink-0 flex items-center justify-center rounded-full font-display" title="Quick Points" aria-label="Quick Points">
-            <span class="points-trigger-dot leading-none" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">±</span>
-          </button>
-          `}
-        </div>
-
-        <div class="flex items-center gap-1 sm:gap-2">
+        <div class="flex-1 flex items-center gap-1 sm:gap-2 justify-end">
           <div class="hidden sm:flex items-center gap-2 text-gray-400">
             ${CALENDAR_ICON_SVG}
             <div class="flex flex-col items-start justify-center">
@@ -220,6 +217,21 @@ export function initShell(ctx) {
           </button>
         </div>
       </div>
+
+      <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[${pillWidthExpr}]" data-core-switcher>
+        <button type="button" data-core-btn data-open="${coreMenuOpen}" class="core-switch-btn w-full grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 rounded-xl">
+          <span class="core-dot shrink-0 justify-self-start" style="background:${dotColor};box-shadow:0 0 8px 1px ${dotSoft}"></span>
+          <span class="switcher-label justify-self-center font-display font-extrabold tracking-wide text-lg sm:text-xl lg:text-2xl truncate text-gray-50 text-center">${switchLabel}</span>
+          <span class="justify-self-end text-gray-400 text-xs transition-transform duration-200" style="transform:rotate(${coreMenuOpen ? 180 : 0}deg)">▾</span>
+        </button>
+        ${menuHtml}
+      </div>
+
+      ${currentModuleId === 'admin' ? '' : `
+      <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full font-display" style="left:calc(50% + ${pillWidthExpr}/2 + 12px)" title="Quick Points" aria-label="Quick Points">
+        <span class="points-trigger-dot leading-none" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">±</span>
+      </button>
+      `}
     `;
   }
 

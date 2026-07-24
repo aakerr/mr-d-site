@@ -107,9 +107,7 @@ html, body { background: var(--color-page); }
   position: relative;
   height: var(--topbar-height);
   background: var(--color-card);
-  border-bottom: 3px solid var(--accent);
-  box-shadow: 0 1px 24px -4px var(--accent-soft);
-  transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
+  transition: background var(--transition-slow);
 }
 
 .shell-brand {
@@ -375,10 +373,10 @@ html[data-season="winter"] #topbar::before { content: '❄️❄️❄️❄️�
 html[data-season="spring"] #topbar::before { content: '🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸'; opacity: 0.5; }
 html[data-season="summer"] #topbar::before { content: '☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️'; opacity: 0.4; }
 
-html[data-season="fall"] #topbar   { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(217,119,6,0.35); }
-html[data-season="winter"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(56,189,248,0.35); }
-html[data-season="spring"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(244,114,182,0.35); }
-html[data-season="summer"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(250,204,21,0.35); }
+/* Seasonal garland (the emoji strip above) is the only seasonal cue on the
+   bar now — the accent glow/divider that used to sit under these was
+   removed (see #topbar rule above; the hero banner is the visual divider
+   now), so there are no seasonal box-shadow overrides left to carry it. */
 
 #season-fx-root {
   position: fixed;
