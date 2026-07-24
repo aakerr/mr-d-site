@@ -1,5 +1,5 @@
 // admin.js — Teacher's Admin Panel for Mr. D's Classroom OS
-// Tabs: 📅 Planner, 🗺️ Quests, 🧙 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
+// Tabs: 📅 Planner, 🗺️ Quests, 🔮 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
 // Owns ONLY this file. Renders into #module-root. All state flows through the
 // store APIs (never mutated directly). Media blobs go through js/core/media.js.
 // Injects <style id="admin-styles"> once; styles are theme-token aware (light/dark).
@@ -12,7 +12,7 @@ import { backup } from '../core/backup.js';
 const MAIN_TABS = [
   { id: 'planner', label: '📅 Planner' },
   { id: 'quests', label: '🗺️ Quests' },
-  { id: 'shop', label: '🧙 Shop' },
+  { id: 'shop', label: '🔮 Shop' },
   { id: 'potw', label: '🌍 Place of the Week' },
 ];
 const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
@@ -797,7 +797,7 @@ function renderShopModal() {
     <div class="admin-modal-bg" data-action="shop-close"></div>
     <div class="admin-modal admin-modal-lg">
       <div class="admin-modal-head">
-        <div class="admin-modal-title">${f.isNew ? '🧙 New Item' : '🧙 Edit Item'}</div>
+        <div class="admin-modal-title">${f.isNew ? '🔮 New Item' : '🔮 Edit Item'}</div>
         <button class="admin-btn admin-btn-icon" data-action="shop-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body admin-modal-scroll">

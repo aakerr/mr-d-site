@@ -13,6 +13,10 @@ let overlayEl = null;         // full-screen overlay (inside #overlay-root)
 let mapEl = null;             // <gmp-map-3d>
 let videoEl = null;           // intro <video>
 let ytIntroEl = null;         // YouTube-embed intro container (when profile.videoUrl is a YT embed)
+let ytPlayer = null;          // YT.Player instance (IFrame Player API)
+let ytPollTimer = null;       // setInterval id polling getCurrentTime()/getDuration()
+let ytSafetyArmed = false;    // safety auto-advance armed once duration is known
+let ytApiPromise = null;      // memoized IFrame API loader (persists across opens)
 let songEl = null;            // fallback audio element
 let profile = null;           // active POTW profile snapshot
 let activeKey = null;         // active POTW profile key (for media lookups)
@@ -31,6 +35,10 @@ const FLY_TO_MS = 27000;      // camera fly-to duration (~27s — gentle on a bi
 const ORBIT_MS = 240000;      // ms per slow-orbit revolution once landed
 const LAND_SETTLE_MS = 300;   // pause after landing before lesson card + orbit start
 const INTRO_FADE_MS = 1000;   // video/intro crossfade out to reveal the 3D map
+const YT_CROP_PX = 120;       // overscan: player is this much taller than the 16:9 box,
+                              // centered, so YouTube's title bar + watermark sit outside the crop
+const YT_API_TIMEOUT_MS = 5000;   // if the IFrame API doesn't load in time, use a plain iframe
+const YT_PLAIN_FALLBACK_S = 600;  // generous auto-advance for the plain-iframe fallback (Skip is primary)
 
 // ---- tiny helpers ------------------------------------------------------------
 function later(fn, ms) {
@@ -269,7 +277,7 @@ async function openOverlay() {
   advanced = false;
   usingFallback = false;
   cardShown = false;
-  ytIntroEl = null;
+  ytIntroEl = null; ytPlayer = null; ytPollTimer = null; ytSafetyArmed = false;
   const shortName = profile.title.split(/\s+/).pop();
 
   overlayEl = document.createElement('div');
@@ -369,24 +377,150 @@ function startVideoIntro(src, isBlob) {
   }
 }
 
-// YouTube-embed intro: a letterboxed <iframe>. YT iframes can't reliably signal
-// 'ended' without the IFrame API, so the Skip button (already wired) is the
-// advance mechanism, plus a fallback auto-advance timer. No last-2s / crossfade.
+// YouTube-embed intro via the official IFrame Player API. Chrome (controls/title/
+// captions) is suppressed; real duration/ended drive the last-2s card + crossfade,
+// exactly like the <video> path. Falls back to a plain iframe if the API won't load.
+function extractYouTubeId(u) {
+  const m = /\/embed\/([^/?&#]+)/.exec(u || '');
+  return m ? m[1] : '';
+}
+
+// Load https://www.youtube.com/iframe_api once; resolve with window.YT.
+// Defensive against onYouTubeIframeAPIReady already being defined (chain it).
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise((resolve, reject) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      try { if (typeof prev === 'function') prev(); } catch (e) {}
+      resolve(window.YT);
+    };
+    if (!document.getElementById('potw-yt-api')) {
+      const s = document.createElement('script');
+      s.id = 'potw-yt-api';
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => reject(new Error('YouTube IFrame API failed to load'));
+      document.head.appendChild(s);
+    }
+  });
+  return ytApiPromise;
+}
+
 function startYouTubeIntro(url) {
   const vid = overlayEl.querySelector('.potw-video');
   if (vid) vid.style.display = 'none';      // hide the unused <video>
   videoEl = vid;                            // keep ref so teardown pause() is safe
+  const videoId = extractYouTubeId(url);
 
-  const src = url + (url.includes('?') ? '&' : '?') + 'autoplay=1&rel=0&playsinline=1';
   ytIntroEl = document.createElement('div');
   ytIntroEl.className = 'potw-yt';
-  ytIntroEl.innerHTML =
-    `<div class="potw-yt-inner"><iframe class="potw-yt-frame" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
-  ytIntroEl.querySelector('iframe').src = src;
-
+  ytIntroEl.innerHTML = `<div class="potw-yt-box" style="--yt-crop:${YT_CROP_PX}px"><div class="potw-yt-player"></div></div>`;
   const intro = overlayEl.querySelector('.potw-intro-layer');
   intro.insertBefore(ytIntroEl, intro.firstChild); // Skip button (later sibling, z-50) stays on top
-  later(advanceToReveal, CONFIG.POTW_SONG_DURATION_S * 1000); // fallback auto-advance
+
+  // Race the API load against a timeout; whichever wins, only act once.
+  let settled = false;
+  const fbId = later(() => { if (!settled) { settled = true; startYouTubePlainFallback(url); } }, YT_API_TIMEOUT_MS);
+  loadYouTubeApi().then((YT) => {
+    if (settled || !overlayEl || !ytIntroEl) return;
+    settled = true; clearTimeout(fbId); timers.delete(fbId);
+    createYtPlayer(YT, videoId);
+  }).catch(() => {
+    if (settled || !overlayEl || !ytIntroEl) return;
+    settled = true; clearTimeout(fbId); timers.delete(fbId);
+    startYouTubePlainFallback(url);
+  });
+}
+
+// Turn off captions best-effort. Auto-captions often load only once playback
+// starts, so this must run on PLAYING (and a couple of retries), not just onReady.
+function killYtCaptions(p) {
+  if (!p) return;
+  try { p.setOption('captions', 'track', {}); } catch (x) {}
+  try { p.setOption('cc', 'track', {}); } catch (x) {}
+  try { p.unloadModule('captions'); } catch (x) {}
+  try { p.unloadModule('cc'); } catch (x) {}
+}
+
+function createYtPlayer(YT, videoId) {
+  const target = ytIntroEl && ytIntroEl.querySelector('.potw-yt-player');
+  if (!target) return;
+  ytPlayer = new YT.Player(target, {
+    videoId,
+    width: '100%', height: '100%',
+    playerVars: {
+      autoplay: 1, controls: 0, rel: 0, iv_load_policy: 3, disablekb: 1,
+      fs: 0, playsinline: 1, cc_load_policy: 0, modestbranding: 1,
+    },
+    events: {
+      onReady: (e) => {
+        killYtCaptions(e.target);        // keep sound; captions off (best-effort)
+        try { e.target.playVideo(); } catch (x) {}
+      },
+      onStateChange: onYtStateChange,
+    },
+  });
+}
+
+function onYtStateChange(e) {
+  const YT = window.YT;
+  if (!YT || !YT.PlayerState) return;
+  if (e.data === YT.PlayerState.PLAYING) {
+    killYtCaptions(ytPlayer);            // captions load with playback — kill them now
+    armYtSafety();   // safety auto-advance once real duration is known
+    startYtPoll();   // last-2s card poll + continuous caption suppression
+  } else if (e.data === YT.PlayerState.ENDED) {
+    advanceToReveal();
+  }
+}
+
+// Poll real playback time: continuously keep captions off (they re-arm per cue),
+// and pop the card in the final 2s (parity with the <video> path). Runs until
+// teardown clears the interval.
+function startYtPoll() {
+  if (ytPollTimer) return;
+  ytPollTimer = setInterval(() => {
+    if (!ytPlayer || !overlayEl) return;
+    killYtCaptions(ytPlayer);
+    let d = 0, c = 0;
+    try { d = ytPlayer.getDuration(); c = ytPlayer.getCurrentTime(); } catch (x) { return; }
+    if (isFinite(d) && d > 0 && d - c <= 2) showRevealCard();
+  }, 250);
+}
+
+// Arm a safety auto-advance at duration+10s (only once duration is known), so a
+// missed ENDED event still hands off to the map. Skip always works regardless.
+function armYtSafety() {
+  if (ytSafetyArmed || !ytPlayer) return;
+  let d = 0;
+  try { d = ytPlayer.getDuration(); } catch (x) {}
+  if (isFinite(d) && d > 0) { ytSafetyArmed = true; later(advanceToReveal, (d + 10) * 1000); }
+}
+
+// Plain-iframe fallback when the IFrame API won't load: Skip + a generous timer.
+function startYouTubePlainFallback(url) {
+  if (!overlayEl || !ytIntroEl) return;
+  const box = ytIntroEl.querySelector('.potw-yt-box');
+  if (!box) return;
+  box.innerHTML = '';
+  const id = extractYouTubeId(url);
+  const src = `https://www.youtube.com/embed/${id}?autoplay=1&controls=0&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1&cc_load_policy=0&modestbranding=1`;
+  const ifr = document.createElement('iframe');
+  ifr.setAttribute('allow', 'autoplay; fullscreen');
+  ifr.setAttribute('allowfullscreen', '');
+  ifr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  ifr.src = src;
+  box.appendChild(ifr);
+  later(advanceToReveal, YT_PLAIN_FALLBACK_S * 1000);
+}
+
+// Destroy the YT player + poll and remove the container (stops audio immediately).
+function destroyYtIntro() {
+  if (ytPollTimer) { clearInterval(ytPollTimer); ytPollTimer = null; }
+  if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) {} ytPlayer = null; }
+  if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
+  ytSafetyArmed = false;
 }
 
 // Fallback: hide the (missing) video, play the theme song over an animated title.
@@ -443,8 +577,8 @@ function advanceToReveal() {
   try { videoEl && videoEl.pause(); } catch (e) {}
   try { ctxRef.audio.stopAll(); } catch (e) {}   // stop the song track if any
   songEl = null;
-  // Stop any YouTube embed immediately (a hidden iframe keeps playing audio).
-  if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
+  // Stop any YouTube player immediately (a hidden iframe keeps playing audio).
+  destroyYtIntro();
 
   const intro = overlayEl.querySelector('.potw-intro-layer');
   intro.style.transition = `opacity ${INTRO_FADE_MS}ms ease`;
@@ -912,8 +1046,8 @@ function closeOverlay() {
   destroyPresentation();
   try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
   if (videoEl) { try { videoEl.pause(); } catch (e) {} }
+  destroyYtIntro();
   if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
-  if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
   if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
   videoEl = null; songEl = null; mapReadyPromise = null;
   advanced = false; usingFallback = false; cardShown = false;
@@ -975,8 +1109,13 @@ function injectStyles() {
   .potw-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;}
   /* YouTube-embed intro — 16:9 letterboxed on black */
   .potw-yt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000;}
-  .potw-yt-inner{position:relative;width:min(100%, 177.78vh);aspect-ratio:16 / 9;max-height:100%;}
-  .potw-yt-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;}
+  /* 16:9 visible letterbox; the player is overscanned taller (var --yt-crop) and
+     centered so YouTube's title bar + watermark are cropped outside this box. */
+  .potw-yt-box{position:relative;width:min(100%, 177.78vh);aspect-ratio:16 / 9;max-height:100%;
+    overflow:hidden;background:#000;}
+  .potw-yt-box iframe,.potw-yt-box .potw-yt-player{position:absolute !important;top:50% !important;
+    left:50% !important;transform:translate(-50%,-50%) !important;height:calc(100% + var(--yt-crop,120px)) !important;
+    width:auto !important;aspect-ratio:16 / 9 !important;border:0 !important;background:#000;pointer-events:none;}
   .potw-song{position:absolute;inset:0;display:none;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;
     background:radial-gradient(ellipse at 50% 40%,#111827,#000 72%);}
@@ -1174,7 +1313,7 @@ export default {
     destroyPresentation();
     try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
     if (videoEl) { try { videoEl.pause(); } catch (e) {} }
-    if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
+    destroyYtIntro();
     if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
     if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
     const st = document.getElementById('potw-styles');

@@ -306,7 +306,7 @@ function renderCombat() {
         ${houses.map((h) => houseCardHtml(store, h)).join('')}
       </div>
       <div class="battle-action-row">
-        <button type="button" class="battle-shop-btn">🧙 Open Magic Shop</button>
+        <button type="button" class="battle-shop-btn">🔮 Open Magic Shop</button>
         <button type="button" class="battle-end-btn">🏳️ End Battle</button>
       </div>
     </div>`;
