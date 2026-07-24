@@ -20,7 +20,7 @@ const STYLE = `
 .dash-launcher:active { transform: scale(0.97); }
 .dash-scroll::-webkit-scrollbar { width: 8px; }
 .dash-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 8px; }
-.dash-accent-line { border-color: color-mix(in srgb, var(--accent, #f59e0b) 65%, transparent); }
+.dash-accent-line { border-color: var(--accent, #f59e0b); }
 .dash-tile.dash-accent-line:hover { border-color: var(--accent, #f59e0b); }
 `;
 
@@ -141,22 +141,26 @@ function renderStandings(state, store) {
   const max = Math.max(1, ...totals.map((t) => Math.max(0, t.total)));
   const activeCore = state.activeCore;
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col min-h-0 flex-1">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col">
       ${sectionHeader('trophy', 'Current Term Standings')}
-      <div class="flex flex-col gap-[clamp(5px,1.1vh,12px)] overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-[clamp(6px,1.6vh,24px)] overflow-y-auto dash-scroll pr-1">
         ${totals.map((t, i) => {
           const isActive = activeCore !== 'all' && t.house.core === activeCore;
           const pct = Math.max(4, Math.round((Math.max(0, t.total) / max) * 100));
           return `
-          <div class="rounded-xl border px-3 py-[clamp(3px,0.8vh,9px)] ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
+          <div class="rounded-xl border px-3 py-[clamp(3px,1vh,13px)] ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
             <div class="flex items-center gap-3">
               <div class="w-7 text-center font-bold text-gray-400 text-[clamp(0.8rem,1.6vh,1rem)] shrink-0">#${i + 1}</div>
-              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 3.6vh, 2.75rem);"')}
-              <span class="font-bold text-[clamp(1rem,2.2vh,1.375rem)] truncate" style="color:${t.house.accent}">${t.house.name}</span>
-              <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.2vh,1.375rem)] shrink-0 ml-2">${t.total}</span>
-            </div>
-            <div class="mt-[clamp(2px,0.5vh,7px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 9px);">
-              <div class="dash-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
+              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem);"')}
+              <div class="flex-1 min-w-0">
+                <div class="flex items-baseline gap-5">
+                  <span class="font-bold text-[clamp(1rem,2.5vh,1.625rem)] truncate" style="color:${t.house.accent}">${t.house.name}</span>
+                  <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
+                </div>
+                <div class="mt-[clamp(2px,0.6vh,7px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
+                  <div class="dash-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
+                </div>
+              </div>
             </div>
           </div>`;
         }).join('')}
@@ -167,7 +171,7 @@ function renderStandings(state, store) {
 function renderItinerary(state, store) {
   if (state.activeCore === 'all') {
     return `
-      <div class="dash-in bg-card rounded-2xl border dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col min-h-0 flex-[3]">
+      <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3]">
         ${sectionHeader('calendar', 'Daily Itinerary')}
         <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
           Pick a house core to see today's schedule.
@@ -176,13 +180,13 @@ function renderItinerary(state, store) {
   }
   const items = store.getItinerary();
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col min-h-0 flex-[3]">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3]">
       ${sectionHeader('calendar', 'Daily Itinerary')}
-      <div class="flex flex-col gap-[clamp(8px,1.8vh,18px)] overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${items.length ? items.map((it, i) => `
           <div class="flex items-start gap-2.5 shrink-0">
-            <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.8vh,1.6rem); height:clamp(1.25rem,2.8vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
-            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.85rem,1.8vh,1.125rem);">${escapeHtml(it.text)}</span>
+            <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.7vh,1.6rem); height:clamp(1.25rem,2.7vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
+            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(it.text)}</span>
           </div>`).join('') : '<div class="text-gray-500 italic">Nothing scheduled.</div>'}
       </div>
     </div>`;
@@ -191,36 +195,16 @@ function renderItinerary(state, store) {
 function renderHomework(state, store) {
   const items = state.activeCore === 'all' ? [] : store.getHomework();
   return `
-    <div class="dash-in bg-card rounded-2xl border dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col min-h-0 flex-[2]">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2]">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
-      <div class="flex flex-col gap-[clamp(8px,1.8vh,18px)] overflow-y-auto dash-scroll pr-1">
+      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
           (items.length ? items.map((hw) => `
           <div class="flex items-center gap-2.5 shrink-0">
             <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
-            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.85rem,1.8vh,1.125rem);">${escapeHtml(hw.text)}</span>
+            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(hw.text)}</span>
           </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>')}
       </div>
-    </div>`;
-}
-
-function renderLaunchers() {
-  return `
-    <div class="dash-in grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <button data-nav="potw" class="dash-launcher h-12 xl:h-14 rounded-2xl bg-gradient-to-r from-emerald-700 to-emerald-400 shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-3 px-4">
-        ${pngWithEmojiFallback('images/icon-potw.png', '🌍', 'h-6 w-6 xl:h-7 xl:w-7 object-contain', 'w-6 h-6 xl:w-7 xl:h-7 text-xl')}
-        <div class="text-left leading-tight">
-          <div class="font-display font-extrabold text-sm xl:text-base text-white leading-tight">Launch Place of the Week</div>
-          <div class="text-[10px] xl:text-xs text-white/85 font-semibold">Explore. Discover. Learn.</div>
-        </div>
-      </button>
-      <button data-nav="battle" class="dash-launcher h-12 xl:h-14 rounded-2xl bg-gradient-to-r from-red-800 to-red-500 shadow-lg shadow-red-950/50 flex items-center justify-center gap-3 px-4">
-        ${pngWithEmojiFallback('images/icon-battle.png', '⚔️', 'h-6 w-6 xl:h-7 xl:w-7 object-contain', 'w-6 h-6 xl:w-7 xl:h-7 text-xl')}
-        <div class="text-left leading-tight">
-          <div class="font-display font-extrabold text-sm xl:text-base text-white leading-tight">Start Battle Day</div>
-          <div class="text-[10px] xl:text-xs text-white/85 font-semibold">Challenge Another House</div>
-        </div>
-      </button>
     </div>`;
 }
 
@@ -229,8 +213,9 @@ function renderModuleTiles(registry) {
   if (!tiles.length) return '';
   return `
     <div class="dash-in">
-      <div class="text-gray-400 text-sm font-semibold uppercase tracking-wide mb-2">More Modules</div>
-      <div class="flex flex-wrap gap-3 justify-center">
+      <div class="w-full h-[3px] rounded-full mb-3 xl:mb-4"
+           style="background: linear-gradient(90deg, transparent, var(--accent, #f59e0b) 12%, var(--accent, #f59e0b) 88%, transparent);"></div>
+      <div class="grid grid-cols-3 md:grid-cols-6 gap-3 xl:gap-4 w-full">
         ${tiles.map((m) => {
           const iconSrc = MODULE_ICON_MAP[m.id];
           const subtitle = MODULE_SUBTITLE_MAP[m.id];
@@ -238,8 +223,8 @@ function renderModuleTiles(registry) {
             ? pngWithEmojiFallback(iconSrc, m.icon || '📘', 'w-12 h-12 xl:w-14 xl:h-14 object-contain', 'w-12 h-12 xl:w-14 xl:h-14 text-3xl')
             : `<div class="w-12 h-12 xl:w-14 xl:h-14 flex items-center justify-center text-3xl shrink-0">${m.icon || '📘'}</div>`;
           return `
-          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} min-w-[140px] flex-1 basis-[140px] max-w-[210px]
-            bg-card rounded-2xl border dash-accent-line p-3 flex flex-col items-center gap-1">
+          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} w-full
+            bg-card rounded-2xl border-2 dash-accent-line p-4 flex flex-col items-center gap-1.5">
             ${iconHtml}
             <span class="font-semibold text-gray-100 text-sm text-center">${escapeHtml(m.title)}</span>
             ${subtitle ? `<span class="text-xs text-gray-400 text-center">${escapeHtml(subtitle)}</span>` : ''}
@@ -255,14 +240,13 @@ function render(root, ctx) {
   root.innerHTML = `
     <div class="h-full w-full px-3 xl:px-5 pt-1.5 xl:pt-2 pb-3 xl:pb-5 flex flex-col gap-3 xl:gap-5 overflow-y-auto dash-scroll">
       ${renderHero(state, store)}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4 flex-1 min-h-[220px]">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4">
         <div class="flex flex-col min-h-0">${renderStandings(state, store)}</div>
         <div class="flex flex-col gap-3 xl:gap-4 min-h-0">
           ${renderItinerary(state, store)}
           ${renderHomework(state, store)}
         </div>
       </div>
-      ${renderLaunchers()}
       ${renderModuleTiles(ctx.registry)}
     </div>
   `;
