@@ -172,7 +172,7 @@ export function initShell(ctx) {
     topbarRoot.innerHTML = `
       <div class="h-full w-full flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5">
         <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex items-center gap-2 px-2 sm:px-3 rounded-xl" title="Home" aria-label="Go to dashboard">
-          <span class="text-xl sm:text-2xl leading-none">🏰</span>
+          <span class="text-3xl sm:text-4xl leading-none">🏰</span>
           <span class="brand-label hidden md:inline font-body font-semibold text-base sm:text-lg md:text-xl text-gray-50">MR. D'S CLASSROOM</span>
         </button>
 

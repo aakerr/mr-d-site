@@ -125,7 +125,20 @@ const listeners = new Set();
 function load() {
   try {
     const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
-    if (raw) return { ...defaultState(), ...JSON.parse(raw) };
+    if (raw) {
+      const def = defaultState();
+      const merged = { ...def, ...JSON.parse(raw) };
+      // Migration: saved POTW profiles from older versions may lack fields that
+      // newer defaults carry (e.g. videoUrl). Fill gaps without clobbering edits.
+      for (const [key, defProfile] of Object.entries(def.potw.profiles)) {
+        if (merged.potw?.profiles?.[key]) {
+          merged.potw.profiles[key] = { ...defProfile, ...merged.potw.profiles[key] };
+        }
+      }
+      // Same for settings (new keys like theme/mapsApiKeyOverride).
+      merged.settings = { ...def.settings, ...(merged.settings || {}) };
+      return merged;
+    }
   } catch (e) { console.warn('store: failed to load, using defaults', e); }
   return defaultState();
 }

@@ -1,17 +1,18 @@
 // admin.js — Teacher's Admin Panel for Mr. D's Classroom OS
-// Tabs: 📅 Planner, 🗺️ Quests, 🛒 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
+// Tabs: 📅 Planner, 🗺️ Quests, 🧙 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
 // Owns ONLY this file. Renders into #module-root. All state flows through the
 // store APIs (never mutated directly). Media blobs go through js/core/media.js.
 // Injects <style id="admin-styles"> once; styles are theme-token aware (light/dark).
 // Follows ARCHITECTURE.md contract; touch targets >= 44px; amber accent.
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
+import { backup } from '../core/backup.js';
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
   { id: 'planner', label: '📅 Planner' },
   { id: 'quests', label: '🗺️ Quests' },
-  { id: 'shop', label: '🛒 Shop' },
+  { id: 'shop', label: '🧙 Shop' },
   { id: 'potw', label: '🌍 Place of the Week' },
 ];
 const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
@@ -40,6 +41,7 @@ let potwForm = null;                  // in-progress POTW profile editor
 let shopForm = null;                  // in-progress shop item editor
 let dangerOpen = false;               // danger-zone accordion state
 const shopUrls = new Set();           // object URLs we own for shop image previews
+let backupStatusTimer = null;         // interval that keeps the auto-backup "last saved" line live
 
 const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
@@ -795,7 +797,7 @@ function renderShopModal() {
     <div class="admin-modal-bg" data-action="shop-close"></div>
     <div class="admin-modal admin-modal-lg">
       <div class="admin-modal-head">
-        <div class="admin-modal-title">${f.isNew ? '🛒 New Item' : '🛒 Edit Item'}</div>
+        <div class="admin-modal-title">${f.isNew ? '🧙 New Item' : '🧙 Edit Item'}</div>
         <button class="admin-btn admin-btn-icon" data-action="shop-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body admin-modal-scroll">
@@ -980,13 +982,20 @@ function renderSettings() {
 
       <div class="admin-card">
         <div class="admin-card-title">Backup &amp; Restore</div>
+
+        <div class="admin-auto-head">🔄 Automatic backup</div>
+        ${autoBackupHTML()}
+
+        <hr class="admin-hr" />
+
+        <div class="admin-auto-head">Manual export / import</div>
         <div class="admin-mini">Save or restore the full classroom state — points, planner, quests, shop, settings, and destinations.</div>
         <div class="admin-backup-row">
           <button class="admin-btn admin-btn-lg" data-action="backup-export">⬇ Export backup</button>
           <button class="admin-btn admin-btn-lg" data-action="backup-import">⬆ Import backup</button>
           <input id="admin-import-file" type="file" accept="application/json,.json" hidden />
         </div>
-        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included.</div>
+        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in either backup.</div>
       </div>
 
       <div class="admin-card admin-danger${dangerOpen ? ' open' : ''}">
@@ -1103,6 +1112,83 @@ function importBackup(file) {
   };
   reader.onerror = () => toast('Could not read that file.');
   reader.readAsText(file);
+}
+
+// ----- automatic file-based backup (js/core/backup.js) -----
+function relTime(ts) {
+  if (!ts) return 'not yet';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function backupStatusLine(bs) {
+  if (bs.lastError && !bs.connected) return `<span class="admin-auto-dot warn"></span> ${esc(bs.lastError)}`;
+  const err = bs.lastError ? ` <span class="admin-faint">(last issue: ${esc(bs.lastError)})</span>` : '';
+  return `<span class="admin-auto-dot ok"></span> Auto-saving to folder — last saved ${esc(relTime(bs.lastSaveTs))}${err}`;
+}
+
+function autoBackupHTML() {
+  const bs = backup.status();
+  if (!bs.supported) {
+    return '<div class="admin-auto-note admin-auto-warn">⚠️ Automatic backup needs Chrome or Edge — the manual export below still works everywhere.</div>';
+  }
+  if (bs.connected) {
+    return `
+      <div class="admin-auto-status" id="admin-backup-status">${backupStatusLine(bs)}</div>
+      <div class="admin-backup-row">
+        <button class="admin-btn" data-action="backup-save-now">Save now</button>
+        <button class="admin-btn" data-action="backup-restore-folder">Restore from folder…</button>
+        <button class="admin-btn admin-btn-danger" data-action="backup-disconnect">Disconnect</button>
+      </div>
+      <div class="admin-mini" style="margin:8px 0 0">Folder: <code>${esc(bs.folderName || 'chosen folder')}</code>. Media files (videos/images) are too large for JSON and aren't included.</div>`;
+  }
+  if (bs.needsPermission) {
+    return `
+      <div class="admin-mini">A backup folder was chosen before but the browser needs permission again after the reload.</div>
+      <div class="admin-backup-row"><button class="admin-btn admin-btn-primary" data-action="backup-connect">Reconnect backup folder…</button></div>`;
+  }
+  return `
+    <div class="admin-mini">Pick a folder on this computer — every change is saved there automatically. Use a folder inside Documents, or a synced Google Drive / OneDrive folder for off-machine safety.</div>
+    <div class="admin-backup-row"><button class="admin-btn admin-btn-primary" data-action="backup-connect">🔄 Connect backup folder…</button></div>`;
+}
+
+function updateBackupStatusLine() {
+  const box = el('admin-backup-status');
+  if (box && ctxRef) box.innerHTML = backupStatusLine(backup.status());
+}
+
+async function connectBackupFolder() {
+  const ok = await backup.connectFolder();
+  renderBody();
+  const s = backup.status();
+  if (ok) toast('Backup folder connected — auto-saving is on.');
+  else if (s.lastError && s.lastError !== 'unsupported') toast('Could not connect: ' + s.lastError);
+}
+
+async function saveBackupNow() {
+  await backup.writeNow();
+  updateBackupStatusLine();
+  const s = backup.status();
+  toast(s.lastError ? 'Save failed: ' + s.lastError : 'Saved to the backup folder.');
+}
+
+async function restoreFromFolder() {
+  const data = await backup.restoreLatest();
+  if (!data) { toast(backup.status().lastError || 'Could not read a backup from the folder.'); return; }
+  openConfirm('Restore from backup folder?', 'This replaces ALL current data with the folder\'s latest backup, then reloads. This cannot be undone.', () => {
+    try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data)); location.reload(); }
+    catch (e) { toast('Restore failed: ' + e.message); }
+  }, { yesLabel: 'Replace & reload' });
+}
+
+async function disconnectBackupFolder() {
+  await backup.disconnect();
+  renderBody();
+  toast('Backup folder disconnected — auto-saving is off.');
 }
 
 // ===========================================================================
@@ -1798,6 +1884,10 @@ function onClick(e) {
     // backup & restore
     case 'backup-export': exportBackup(); break;
     case 'backup-import': { const inp = el('admin-import-file'); if (inp) inp.click(); break; }
+    case 'backup-connect': connectBackupFolder(); break;
+    case 'backup-save-now': saveBackupNow(); break;
+    case 'backup-restore-folder': restoreFromFolder(); break;
+    case 'backup-disconnect': disconnectBackupFolder(); break;
 
     // settings
     case 'settings-save': saveSettings(); break;
@@ -2213,6 +2303,14 @@ function injectStyles() {
 
   /* backup */
   .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;}
+  .admin-auto-head{font-weight:700;font-size:.9rem;color:var(--color-text);margin:4px 0 8px;}
+  .admin-hr{border:none;border-top:1px solid var(--color-line);margin:18px 0;}
+  .admin-auto-note{padding:12px 14px;border-radius:.7rem;font-size:.85rem;line-height:1.5;}
+  .admin-auto-warn{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);color:var(--color-text);}
+  .admin-auto-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.88rem;font-weight:600;color:var(--color-text);margin-bottom:10px;}
+  .admin-auto-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .admin-auto-dot.ok{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.6);}
+  .admin-auto-dot.warn{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.6);}
 
   /* toast */
   .admin-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;
@@ -2305,6 +2403,9 @@ export default {
     rootEl.addEventListener('dragleave', dragLeaveHandler);
     rootEl.addEventListener('drop', dropHandler);
 
+    // keep the auto-backup "last saved …" line live (writes don't emit store changes)
+    backupStatusTimer = setInterval(() => { if (activeTab === 'settings') updateBackupStatusLine(); }, 5000);
+
     unsub = ctx.store.subscribe(() => { renderBody(); });
   },
 
@@ -2318,6 +2419,7 @@ export default {
       if (dragLeaveHandler) rootEl.removeEventListener('dragleave', dragLeaveHandler);
       if (dropHandler) rootEl.removeEventListener('drop', dropHandler);
     }
+    if (backupStatusTimer) { clearInterval(backupStatusTimer); backupStatusTimer = null; }
     revokePresUrls();
     revokeShopUrls();
     const st = el('admin-styles');

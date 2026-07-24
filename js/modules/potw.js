@@ -74,43 +74,115 @@ function disposeGlobe() {
   if (globe) { try { globe.dispose(); } catch (e) {} globe = null; }
 }
 
-// Draw a stylized equirectangular Earth onto an offscreen canvas (no external
-// texture CDNs). Deep-blue ocean, rough green/tan continent blobs, polar caps.
+// Draw a recognizable equirectangular Earth onto an offscreen canvas (no external
+// assets). Land shapes are simplified real coastline rings authored as [lon,lat],
+// projected equirectangularly, so continents read correctly at a glance.
 function drawEarthTexture() {
-  const w = 1024, h = 512;
-  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const W = 2048, H = 1024;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const g = cv.getContext('2d');
+  const X = (lon) => ((lon + 180) / 360) * W;
+  const Y = (lat) => ((90 - lat) / 180) * H;
+
   // ocean
-  const grad = g.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, '#173a7a'); grad.addColorStop(0.5, '#1e3a8a'); grad.addColorStop(1, '#152f6e');
-  g.fillStyle = grad; g.fillRect(0, 0, w, h);
-  // continent blob helper (points in 0..1 lon/lat space)
-  const land = (pts, fill) => {
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#123463'); grad.addColorStop(0.5, '#1e3a8a'); grad.addColorStop(1, '#112a54');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+
+  const poly = (ring, fill, stroke) => {
     g.beginPath();
-    pts.forEach(([x, y], i) => { const px = x * w, py = y * h; i ? g.lineTo(px, py) : g.moveTo(px, py); });
-    g.closePath(); g.fillStyle = fill; g.fill();
+    ring.forEach((p, i) => { const x = X(p[0]), y = Y(p[1]); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.closePath();
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.lineWidth = 2; g.strokeStyle = stroke; g.lineJoin = 'round'; g.stroke(); }
   };
-  const green = '#3f7d4e', greenL = '#4b8a55', tan = '#b08a4f', sand = '#c2a76a';
-  // North America
-  land([[0.06,0.20],[0.20,0.14],[0.27,0.24],[0.24,0.40],[0.15,0.46],[0.09,0.38],[0.05,0.28]], green);
-  land([[0.15,0.44],[0.20,0.42],[0.19,0.55],[0.15,0.52]], greenL); // central america
-  // South America
-  land([[0.22,0.56],[0.30,0.55],[0.32,0.68],[0.27,0.82],[0.23,0.72],[0.22,0.62]], green);
-  // Africa
-  land([[0.48,0.40],[0.58,0.38],[0.62,0.52],[0.57,0.68],[0.51,0.66],[0.47,0.52]], tan);
-  land([[0.49,0.34],[0.60,0.34],[0.60,0.40],[0.49,0.41]], sand); // sahara belt
-  // Europe
-  land([[0.47,0.24],[0.58,0.22],[0.57,0.33],[0.48,0.34]], greenL);
-  // Asia
-  land([[0.58,0.18],[0.86,0.16],[0.92,0.30],[0.80,0.40],[0.64,0.36],[0.58,0.28]], green);
-  land([[0.72,0.40],[0.80,0.40],[0.82,0.50],[0.75,0.50]], greenL); // india/se asia
-  // Australia
-  land([[0.82,0.62],[0.92,0.60],[0.94,0.70],[0.84,0.72]], tan);
-  // polar caps
-  g.fillStyle = 'rgba(240,246,255,0.92)';
-  g.fillRect(0, 0, w, h * 0.06); g.fillRect(0, h * 0.94, w, h * 0.06);
-  g.fillStyle = 'rgba(240,246,255,0.5)';
-  g.fillRect(0, h * 0.06, w, h * 0.03); g.fillRect(0, h * 0.91, w, h * 0.03);
+
+  const GREEN = '#3d7a49', TAN = '#c2a86a', ICE = '#eaf1fb', COAST = '#274b32', OCEAN = '#1e3a8a';
+
+  // ---- simplified continent + island coastlines ([lon, lat]) ----------------
+  const northAmerica = [
+    [-165,60],[-168,65],[-156,71],[-130,70],[-105,69],[-82,73],[-78,62],[-64,60],
+    [-55,52],[-66,44],[-70,41],[-75,35],[-81,25],[-84,30],[-90,29],[-97,28],[-97,22],
+    [-95,18],[-88,21],[-87,15],[-83,9],[-96,16],[-106,20],[-112,24],[-117,32],
+    [-123,38],[-124,48],[-137,58],[-152,59],
+  ];
+  const southAmerica = [
+    [-78,8],[-72,11],[-62,10],[-52,5],[-48,-1],[-35,-6],[-39,-14],[-48,-25],[-54,-34],
+    [-62,-40],[-65,-45],[-69,-52],[-74,-50],[-73,-42],[-71,-33],[-70,-18],[-76,-14],
+    [-81,-5],[-80,1],
+  ];
+  const africa = [
+    [-17,15],[-16,20],[-10,26],[0,32],[10,34],[20,32],[25,32],[32,31],[35,28],[37,22],
+    [40,15],[43,11],[51,12],[48,5],[41,-2],[40,-10],[35,-18],[35,-24],[27,-33],[20,-35],
+    [16,-29],[12,-17],[9,-1],[9,4],[3,6],[-4,5],[-8,4],[-13,8],
+  ];
+  const europe = [
+    [-9,44],[-9,37],[-6,36],[0,39],[3,43],[7,44],[10,44],[12,42],[15,40],[18,40],[16,42],
+    [13,45],[13,54],[10,57],[5,61],[7,63],[12,66],[16,69],[24,71],[28,70],[30,66],[24,60],
+    [20,56],[12,54],[4,51],[-2,48],[-5,48],[-2,43],
+  ];
+  const asia = [
+    [28,41],[36,37],[36,31],[42,37],[50,40],[54,37],[56,26],[61,25],[66,25],[68,24],
+    [72,29],[88,28],[92,22],[98,16],[100,13],[100,8],[104,10],[109,11],[108,16],[106,21],
+    [110,22],[113,23],[121,31],[122,37],[126,40],[122,40],[124,48],[131,45],[140,53],
+    [157,61],[163,60],[170,66],[180,66],[175,68],[160,70],[140,73],[110,74],[100,77],
+    [90,75],[70,73],[60,69],[50,68],[40,66],[38,64],[33,66],[30,60],[30,50],
+  ];
+  const arabia = [
+    [43,13],[35,29],[38,30],[48,30],[50,27],[57,25],[60,22],[57,17],[52,14],[45,12],
+  ];
+  const india = [
+    [68,24],[70,20],[73,16],[76,9],[78,8],[80,13],[84,18],[87,21],[89,22],[92,21],
+    [90,26],[80,29],[72,29],
+  ];
+  const australia = [
+    [114,-22],[114,-26],[115,-33],[123,-34],[131,-31],[135,-35],[138,-35],[141,-38],
+    [147,-38],[150,-37],[153,-28],[146,-19],[145,-15],[142,-11],[137,-12],[136,-15],
+    [130,-12],[123,-16],[121,-20],
+  ];
+  const greenland = [[-45,60],[-50,64],[-55,70],[-40,78],[-22,70],[-20,64],[-42,60]];
+  const antarctica = [
+    [-180,-63],[-140,-66],[-100,-72],[-60,-63],[-20,-70],[20,-68],[60,-66],[100,-66],
+    [140,-66],[180,-70],[180,-90],[-180,-90],
+  ];
+
+  const islands = [
+    [[-8,50],[-5,58],[-2,57],[-3,54],[1,52],[-6,50]],                 // British Isles
+    [[-24,64],[-14,65],[-19,66],[-24,64]],                            // Iceland
+    [[130,31],[135,34],[138,35],[141,41],[143,43],[140,38],[137,35],[132,33]], // Japan
+    [[109,2],[117,5],[119,1],[114,-4],[110,-2]],                      // Borneo
+    [[95,5],[100,0],[104,-5],[100,-3],[96,2]],                        // Sumatra
+    [[105,-6],[114,-8],[110,-8],[106,-7]],                            // Java
+    [[131,-1],[141,-3],[147,-8],[140,-9],[133,-4]],                   // New Guinea
+    [[120,14],[124,17],[126,9],[122,7],[120,10]],                     // Philippines
+    [[173,-41],[175,-37],[178,-38],[176,-45],[168,-46],[171,-42]],    // New Zealand
+    [[43,-12],[50,-15],[49,-25],[45,-25],[43,-16]],                   // Madagascar
+    [[80,6],[82,7],[81,9],[80,8]],                                    // Sri Lanka
+  ];
+
+  // fill land (green), then ice sheets, then arid overlays, then inland seas
+  const greenRings = [northAmerica, southAmerica, africa, europe, asia, arabia, india, australia, ...islands];
+  greenRings.forEach((r) => poly(r, GREEN, COAST));
+  poly(greenland, ICE, '#cdd9e8');
+  poly(antarctica, ICE, null);
+  g.fillStyle = 'rgba(234,241,251,0.45)'; g.fillRect(0, 0, W, H * 0.04); // north ice cap
+
+  // arid regions (tan) — irregular so they read as deserts, not blocks
+  [
+    [[-11,17],[2,15],[16,16],[26,19],[30,25],[26,30],[12,31],[-2,29],[-10,24]], // Sahara
+    [[39,17],[46,14],[52,18],[52,25],[47,29],[41,28],[38,22]],                  // Arabian interior
+    [[123,-21],[132,-23],[139,-25],[138,-29],[130,-30],[124,-27]],              // Australian outback
+  ].forEach((r) => poly(r, TAN, null));
+
+  // inland seas / bays (ocean overlay) so they read correctly
+  [
+    [[-95,51],[-92,62],[-80,63],[-78,55],[-85,51]],   // Hudson Bay
+    [[-92,45],[-76,44],[-78,49],[-90,49]],            // Great Lakes (suggestion)
+    [[28,41],[41,42],[41,46],[30,47]],                // Black Sea
+    [[48,37],[54,40],[53,46],[49,45]],                // Caspian Sea
+    [[48,30],[56,26],[54,24],[49,29]],                // Persian Gulf
+  ].forEach((r) => poly(r, OCEAN, null));
+
   return cv;
 }
 

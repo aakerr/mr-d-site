@@ -4,6 +4,7 @@ import { store } from './core/store.js';
 import { registry } from './core/registry.js';
 import { audio } from './core/audio.js';
 import { initShell } from './core/shell.js';
+import './core/backup.js'; // self-initializing auto-backup (File System Access)
 
 import dashboard from './modules/dashboard.js';
 import houses from './modules/houses.js';

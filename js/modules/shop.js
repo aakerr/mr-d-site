@@ -485,7 +485,7 @@ function resolvePurchase(s) {
 export default {
   id: 'shop',
   title: 'Magic Shop',
-  icon: '🛒',
+  icon: '🧙',
   order: 35,
   showTile: true,
 
