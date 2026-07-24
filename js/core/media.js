@@ -1,0 +1,81 @@
+// IndexedDB-backed media store — lets the teacher drag-and-drop videos/songs
+// into the app (a static site can't write real files). Blobs persist in the
+// browser alongside localStorage state.
+// Key convention: 'potw:<profileKey>:video' | 'potw:<profileKey>:song'
+const DB_NAME = 'mrd-media';
+const STORE = 'files';
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  });
+}
+
+function run(mode, op) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const t = db.transaction(STORE, mode);
+    const req = op(t.objectStore(STORE));
+    t.oncomplete = () => { db.close(); resolve(req?.result); };
+    t.onerror = () => { db.close(); reject(t.error); };
+    t.onabort = () => { db.close(); reject(t.error); };
+  }));
+}
+
+const urlCache = new Map(); // key -> objectURL
+
+export const media = {
+  // Store a File/Blob under key. Returns record metadata or null on failure.
+  async put(key, file) {
+    try {
+      const rec = { blob: file, name: file.name || key, type: file.type || '', size: file.size || 0, ts: Date.now() };
+      await run('readwrite', (s) => s.put(rec, key));
+      if (urlCache.has(key)) { URL.revokeObjectURL(urlCache.get(key)); urlCache.delete(key); }
+      return { key, name: rec.name, type: rec.type, size: rec.size };
+    } catch (e) { console.warn('media.put failed', key, e); return null; }
+  },
+
+  // Metadata (no blob) or null.
+  async info(key) {
+    try {
+      const rec = await run('readonly', (s) => s.get(key));
+      return rec ? { key, name: rec.name, type: rec.type, size: rec.size, ts: rec.ts } : null;
+    } catch (e) { return null; }
+  },
+
+  // Object URL for playback, or null if absent. URLs are cached per key.
+  async url(key) {
+    try {
+      if (urlCache.has(key)) return urlCache.get(key);
+      const rec = await run('readonly', (s) => s.get(key));
+      if (!rec?.blob) return null;
+      const u = URL.createObjectURL(rec.blob);
+      urlCache.set(key, u);
+      return u;
+    } catch (e) { return null; }
+  },
+
+  async delete(key) {
+    try {
+      await run('readwrite', (s) => s.delete(key));
+      if (urlCache.has(key)) { URL.revokeObjectURL(urlCache.get(key)); urlCache.delete(key); }
+      return true;
+    } catch (e) { return false; }
+  },
+
+  // [{key, name, type, size}] for keys starting with prefix.
+  async list(prefix = '') {
+    try {
+      const keys = await run('readonly', (s) => s.getAllKeys());
+      const out = [];
+      for (const k of keys) {
+        if (typeof k === 'string' && k.startsWith(prefix)) out.push(await media.info(k));
+      }
+      return out.filter(Boolean);
+    } catch (e) { return []; }
+  },
+};

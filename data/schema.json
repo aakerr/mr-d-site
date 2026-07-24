@@ -1,0 +1,282 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mr. D's Classroom OS — Persisted State",
+  "description": "Schema for the app state stored in localStorage under key 'mrd-classroom-os-v1'. Mirrors the structure written by js/core/store.js.",
+  "type": "object",
+  "required": ["version", "activeCore", "transactions", "shields", "itineraries", "homework", "potw"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Schema version for forward compatibility.",
+      "example": 1
+    },
+    "activeCore": {
+      "oneOf": [
+        { "type": "integer", "enum": [1, 2, 3, 4] },
+        { "type": "string", "enum": ["all"] }
+      ],
+      "description": "Currently active house core (1–4 or 'all' for dashboard view)."
+    },
+    "transactions": {
+      "type": "array",
+      "description": "Immutable log of all point changes (additions/deductions).",
+      "items": {
+        "type": "object",
+        "required": ["id", "ts", "houseId", "delta", "reason", "tag"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique transaction ID, format: 'tx-{timestamp}-{index}'.",
+            "pattern": "^tx-\\d+-\\d+$"
+          },
+          "ts": {
+            "type": "integer",
+            "description": "Timestamp in milliseconds (Date.now() at time of transaction)."
+          },
+          "houseId": {
+            "type": "integer",
+            "enum": [1, 2, 3, 4],
+            "description": "Which house earned or lost points."
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Points added (positive) or deducted (negative). Clamped to ±9999.",
+            "minimum": -9999,
+            "maximum": 9999
+          },
+          "reason": {
+            "type": "string",
+            "description": "Human-readable description of why points changed (e.g., 'Correct bell ringer answer', 'Bought: Healing Potion')."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Machine-readable category: 'shop', 'challenge', 'daily', 'event', etc.",
+            "enum": ["shop", "challenge", "daily", "event", "manual", ""]
+          }
+        }
+      }
+    },
+    "shields": {
+      "type": "object",
+      "description": "Active Aegis shields: maps houseId → expiry epoch (milliseconds). Shield lasts 24 hours once activated.",
+      "additionalProperties": {
+        "type": "integer",
+        "description": "Expiry timestamp in milliseconds; if > Date.now(), shield is active."
+      },
+      "example": { "1": 1719705600000, "3": 1719792000000 }
+    },
+    "itineraries": {
+      "type": "object",
+      "description": "Daily schedule for each core (1–4), displayed on the dashboard.",
+      "properties": {
+        "1": { "$ref": "#/definitions/itinerary" },
+        "2": { "$ref": "#/definitions/itinerary" },
+        "3": { "$ref": "#/definitions/itinerary" },
+        "4": { "$ref": "#/definitions/itinerary" }
+      }
+    },
+    "homework": {
+      "type": "object",
+      "description": "Assignment list for each core (1–4).",
+      "properties": {
+        "1": { "$ref": "#/definitions/homework" },
+        "2": { "$ref": "#/definitions/homework" },
+        "3": { "$ref": "#/definitions/homework" },
+        "4": { "$ref": "#/definitions/homework" }
+      }
+    },
+    "potw": {
+      "type": "object",
+      "required": ["active", "profiles"],
+      "properties": {
+        "active": {
+          "type": "string",
+          "description": "Key of the active Place of the Week profile (e.g., 'mesopotamia').",
+          "example": "mesopotamia"
+        },
+        "profiles": {
+          "type": "object",
+          "description": "Collection of available POTW profiles.",
+          "additionalProperties": {
+            "$ref": "#/definitions/potwProfile"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "house": {
+      "type": "object",
+      "description": "A house/core representation.",
+      "required": ["id", "core", "name", "motto", "color", "accent", "accentSoft", "image"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "enum": [1, 2, 3, 4]
+        },
+        "core": {
+          "type": "integer",
+          "enum": [1, 2, 3, 4],
+          "description": "Class period / time slot."
+        },
+        "name": {
+          "type": "string",
+          "enum": ["Camelot", "Atlantis", "Valhalla", "Rivendell"]
+        },
+        "motto": {
+          "type": "string",
+          "example": "Honor Above All"
+        },
+        "color": {
+          "type": "string",
+          "enum": ["red", "blue", "gold", "green"]
+        },
+        "accent": {
+          "type": "string",
+          "description": "Hex color code for UI accents.",
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "example": "#ef4444"
+        },
+        "accentSoft": {
+          "type": "string",
+          "description": "RGBA color for soft glows / backgrounds.",
+          "example": "rgba(239,68,68,0.35)"
+        },
+        "image": {
+          "type": "string",
+          "description": "Path to house artwork image.",
+          "example": "images/camelot.jpg"
+        }
+      }
+    },
+    "itinerary": {
+      "type": "array",
+      "description": "List of timed activities for a single core.",
+      "items": {
+        "type": "object",
+        "required": ["time", "text"],
+        "properties": {
+          "time": {
+            "type": "string",
+            "description": "Clock time in 12h format (e.g., '8:05').",
+            "pattern": "^\\d{1,2}:\\d{2}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Activity description."
+          }
+        }
+      },
+      "example": [
+        { "time": "8:05", "text": "Bell Ringer: Map of the Fertile Crescent" },
+        { "time": "8:20", "text": "Lesson: Rivers & Early Civilizations" }
+      ]
+    },
+    "homework": {
+      "type": "array",
+      "description": "List of assignments due for a single core.",
+      "items": {
+        "type": "object",
+        "required": ["due", "text"],
+        "properties": {
+          "due": {
+            "type": "string",
+            "description": "Due date (e.g., 'Fri', 'Next Monday').",
+            "example": "Fri"
+          },
+          "text": {
+            "type": "string",
+            "description": "Assignment description."
+          }
+        }
+      },
+      "example": [
+        { "due": "Fri", "text": "Map Quiz: Mesopotamia & the Fertile Crescent" }
+      ]
+    },
+    "potwProfile": {
+      "type": "object",
+      "description": "A Place of the Week educational profile with media and quiz.",
+      "required": ["title", "subtitle", "camera", "quickFacts", "primarySources", "quiz"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "example": "Ancient Mesopotamia"
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Geographic or contextual details.",
+          "example": "Modern Day Iraq • The Fertile Crescent"
+        },
+        "camera": {
+          "type": "object",
+          "description": "Google Maps 3D camera position.",
+          "required": ["center", "range", "tilt", "heading"],
+          "properties": {
+            "center": {
+              "type": "object",
+              "required": ["lat", "lng", "altitude"],
+              "properties": {
+                "lat": { "type": "number" },
+                "lng": { "type": "number" },
+                "altitude": { "type": "number", "description": "Altitude in meters." }
+              }
+            },
+            "range": {
+              "type": "number",
+              "description": "View range in meters."
+            },
+            "tilt": {
+              "type": "number",
+              "description": "Camera tilt angle (0–90 degrees)."
+            },
+            "heading": {
+              "type": "number",
+              "description": "Camera heading (compass direction, 0–360 degrees)."
+            }
+          }
+        },
+        "quickFacts": {
+          "type": "array",
+          "description": "Bullet-point facts about the place.",
+          "items": { "type": "string" },
+          "example": [
+            "The 'Land Between Two Rivers' — the Tigris and the Euphrates.",
+            "Part of the Fertile Crescent, where farming first flourished."
+          ]
+        },
+        "primarySources": {
+          "type": "array",
+          "description": "Key historical artifacts or documents.",
+          "items": {
+            "type": "object",
+            "required": ["name", "emoji", "desc"],
+            "properties": {
+              "name": { "type": "string" },
+              "emoji": { "type": "string" },
+              "desc": { "type": "string" }
+            }
+          },
+          "example": [
+            { "name": "Cuneiform Tablet", "emoji": "𒀭", "desc": "Clay tablets recorded trades, taxes, and stories." }
+          ]
+        },
+        "quiz": {
+          "type": "array",
+          "description": "Multiple-choice or short-answer quiz questions.",
+          "items": {
+            "type": "object",
+            "required": ["q", "a"],
+            "properties": {
+              "q": { "type": "string", "description": "Question text." },
+              "a": { "type": "string", "description": "Answer text." }
+            }
+          },
+          "example": [
+            { "q": "Which two rivers define Mesopotamia?", "a": "The Tigris and the Euphrates" }
+          ]
+        }
+      }
+    }
+  }
+}

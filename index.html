@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mr. D's Classroom OS</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            page: '#0b0f19',
+            card: '#111827',
+            card2: '#1f2937',
+            line: '#374151',
+            camelot: '#ef4444',
+            atlantis: '#3b82f6',
+            valhalla: '#f59e0b',
+            rivendell: '#22c55e',
+          },
+          fontFamily: {
+            display: ['Cinzel', 'Georgia', 'serif'],
+            body: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="bg-page text-gray-50 font-body h-screen w-screen overflow-hidden flex flex-col">
+
+  <!-- OS Shell: persistent top bar (rendered by js/core/shell.js) -->
+  <header id="topbar" class="shrink-0 z-40"></header>
+
+  <!-- Active module mounts here -->
+  <main id="module-root" class="flex-1 overflow-y-auto"></main>
+
+  <!-- Full-screen overlays: POTW cinematic, Battle Day, modals -->
+  <div id="overlay-root"></div>
+
+  <!-- Floating quick-point adder FAB -->
+  <div id="fab-root"></div>
+
+  <!-- 3D libraries for physics dice (pure-JS physics — no WASM, no build step) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+    }
+  }
+  </script>
+
+  <!-- Google Maps 3D (key injected from js/config.js via loader in main.js) -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

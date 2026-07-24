@@ -1,0 +1,261 @@
+/* theme.css — Mr. D's Classroom OS
+   Design tokens, scrollbar styling, shared keyframes, and shell-specific
+   styles that go beyond what Tailwind utilities conveniently express.
+   Modules may freely read the CSS custom properties defined here
+   (especially --accent / --accent-soft, which shell.js keeps live). */
+
+:root {
+  /* ---- palette (mirrors tailwind.config in index.html) ---- */
+  --color-page: #0b0f19;
+  --color-card: #111827;
+  --color-card2: #1f2937;
+  --color-line: #374151;
+  --color-text: #f9fafb;
+  --color-text-soft: #9ca3af;
+
+  /* ---- canonical house colors ---- */
+  --house-camelot: #ef4444;
+  --house-atlantis: #3b82f6;
+  --house-valhalla: #f59e0b;
+  --house-rivendell: #22c55e;
+  --house-neutral: #f59e0b; /* amber — used for 'all cores' / global state */
+
+  /* ---- live accent, updated by shell.js on root when the active core
+     changes. Defaults to the neutral amber until shell.js takes over. ---- */
+  --accent: var(--house-neutral);
+  --accent-soft: rgba(245, 158, 11, 0.35);
+  --accent-rgb: 245, 158, 11;
+
+  /* ---- shape / motion tokens ---- */
+  --radius-lg: 1rem;      /* rounded-2xl */
+  --transition-fast: 150ms ease;
+  --transition-med: 250ms ease;
+  --transition-slow: 300ms ease;
+
+  --topbar-height: 72px;
+  --fab-size: 64px;
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+html, body { background: var(--color-page); }
+
+/* ============ scrollbars ============ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* ============ shared keyframes ============ */
+@keyframes float-up {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.9); }
+  15%  { opacity: 1; transform: translateY(0)   scale(1); }
+  75%  { opacity: 1; transform: translateY(-28px) scale(1); }
+  100% { opacity: 0; transform: translateY(-46px) scale(0.95); }
+}
+
+@keyframes pop-in {
+  0%   { opacity: 0; transform: scale(0.85) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pop-out {
+  0%   { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; transform: scale(0.85) translateY(8px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%      { box-shadow: 0 0 24px 6px var(--accent-soft); }
+}
+
+@keyframes accent-sweep {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============ top bar ============ */
+#topbar {
+  position: relative;
+  height: var(--topbar-height);
+  background: var(--color-card);
+  border-bottom: 3px solid var(--accent);
+  box-shadow: 0 1px 24px -4px var(--accent-soft);
+  transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
+}
+
+.shell-brand {
+  min-height: 48px;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+.shell-brand:active { transform: scale(0.96); }
+.shell-brand:hover .brand-label { color: var(--accent); }
+.brand-label { transition: color var(--transition-fast); }
+/* Brand doubles as the Home control: a quiet tint while away from the
+   dashboard signals "tap to return," carried over from the old Home button. */
+.shell-brand[data-active="true"] .brand-label { color: var(--accent); }
+
+/* core switcher */
+.core-switch-btn {
+  min-height: 52px;
+  max-height: 56px;
+  background: var(--color-card2);
+  border: 1px solid var(--color-line);
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.switcher-label {
+  min-width: 0; /* allow truncation to win inside the centered grid column */
+  line-height: 1.15;
+}
+.core-switch-btn:hover { border-color: var(--accent); }
+.core-switch-btn[data-open="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.core-dot {
+  width: 12px; height: 12px; border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px var(--accent-soft);
+  transition: background var(--transition-med), box-shadow var(--transition-med);
+}
+
+.core-menu {
+  animation: pop-in var(--transition-fast) ease both;
+  transform-origin: top left;
+  background: var(--color-card2);
+  border: 1px solid var(--color-line);
+}
+
+.core-menu-item {
+  min-height: 48px;
+  transition: background var(--transition-fast), padding-left var(--transition-fast);
+}
+.core-menu-item:hover, .core-menu-item:focus-visible { background: rgba(255,255,255,0.06); }
+.core-menu-item[aria-selected="true"] {
+  background: rgba(255,255,255,0.05);
+}
+
+/* term progress bar */
+.term-progress-track {
+  background: var(--color-line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.term-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width var(--transition-slow) ease, background var(--transition-med);
+}
+
+/* subtle teacher admin access — deliberately low-key, not a student affordance */
+.admin-glyph-btn {
+  min-height: 48px; min-width: 48px;
+  opacity: 0.4;
+  color: var(--color-text-soft);
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+.admin-glyph-btn:hover,
+.admin-glyph-btn:focus-visible,
+.admin-glyph-btn:active {
+  opacity: 1;
+  background: rgba(255,255,255,0.06);
+  color: var(--color-text);
+}
+.admin-glyph-btn:active { transform: scale(0.94); }
+
+/* ============ FAB ============ */
+#fab-root { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+
+.fab-btn {
+  pointer-events: auto;
+  position: absolute;
+  right: 24px; bottom: 24px;
+  width: var(--fab-size); height: var(--fab-size);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0b0f19;
+  font-size: 32px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 18px -4px rgba(0,0,0,0.6), 0 0 22px 2px var(--accent-soft);
+  transition: transform var(--transition-fast), background var(--transition-med), box-shadow var(--transition-med), rotate var(--transition-med);
+  cursor: pointer;
+}
+.fab-btn:active { transform: scale(0.92); }
+.fab-btn[data-open="true"] { rotate: 45deg; }
+
+.fab-panel {
+  pointer-events: auto;
+  position: absolute;
+  right: 24px;
+  bottom: calc(24px + var(--fab-size) + 14px);
+  width: min(360px, calc(100vw - 48px));
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02);
+  animation: pop-in var(--transition-med) cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom right;
+}
+.fab-panel.closing {
+  animation: pop-out var(--transition-fast) ease both;
+}
+
+.fab-house-chip {
+  min-height: 48px;
+  border: 2px solid transparent;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.fab-house-chip[data-selected="true"] {
+  border-color: var(--chip-accent, var(--accent));
+  box-shadow: 0 0 0 3px var(--chip-accent-soft, var(--accent-soft));
+  transform: translateY(-1px);
+}
+
+.fab-quick-btn {
+  min-height: 48px;
+  transition: transform var(--transition-fast), filter var(--transition-fast);
+}
+.fab-quick-btn:active { transform: scale(0.95); filter: brightness(1.15); }
+
+.fab-apply-btn {
+  min-height: 48px;
+  transition: transform var(--transition-fast), filter var(--transition-fast);
+}
+.fab-apply-btn:active { transform: scale(0.96); }
+
+.fab-close-btn {
+  min-width: 48px; min-height: 48px;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.fab-close-btn:active { transform: scale(0.9); }
+
+/* floating point toast */
+.point-toast {
+  position: fixed;
+  pointer-events: none;
+  z-index: 70;
+  font-family: 'Cinzel', Georgia, serif;
+  font-weight: 800;
+  font-size: 22px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+  animation: float-up 1.4s ease-out forwards;
+}
