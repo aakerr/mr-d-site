@@ -1,9 +1,16 @@
 // shell.js — persistent Classroom OS shell: top bar (brand/home, core
-// switcher, term/date tracker, subtle teacher admin glyph) + floating
-// quick-point adder (FAB). Owns #topbar and #fab-root only. Reactive via
-// store.subscribe(); never mutates state directly (all point changes go
-// through store.addPoints). The brand ("MR. D'S CLASSROOM") is the home
-// button — there is no separate Home control.
+// switcher, quick-points trigger, term/date tracker, subtle teacher admin
+// glyph) + its quick-points dropdown panel. Owns #topbar and #fab-root only.
+// Reactive via store.subscribe(); never mutates state directly (all point
+// changes go through store.addPoints). The brand ("MR. D'S CLASSROOM") is
+// the home button — there is no separate Home control.
+//
+// Quick points live entirely in the top bar now: a small "±" trigger button
+// sits left of the date/term block, and tapping it opens a dropdown panel
+// anchored top-right, below the bar (#fab-root hosts only the panel + point
+// toasts — it has no permanently-visible circle anymore). This replaces the
+// earlier bottom-right floating action button, which the teacher reported
+// as overlapping module content.
 
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
@@ -179,6 +186,12 @@ export function initShell(ctx) {
         </div>
 
         <div class="flex items-center gap-1 sm:gap-2">
+          ${currentModuleId === 'admin' ? '' : `
+          <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn shrink-0 flex items-center justify-center rounded-full font-display" title="Quick Points" aria-label="Quick Points" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">
+            <span class="leading-none">±</span>
+          </button>
+          `}
+
           <div class="hidden sm:flex flex-col items-end justify-center min-w-[130px] md:min-w-[160px]">
             <span class="text-xs md:text-sm font-semibold text-gray-100">${formatToday()}</span>
             <span class="text-[10px] md:text-xs text-gray-400 truncate max-w-[160px]">${termInfo.label}</span>
@@ -200,6 +213,11 @@ export function initShell(ctx) {
   topbarRoot.addEventListener('click', (e) => {
     if (e.target.closest('[data-brand]')) { registry.home(); return; }
     if (e.target.closest('[data-admin-btn]')) { registry.navigate('admin'); return; }
+
+    if (e.target.closest('[data-points-trigger]')) {
+      if (fabOpen && !fabClosing) closeFab(); else openFab();
+      return;
+    }
 
     if (e.target.closest('[data-core-btn]')) {
       coreMenuOpen = !coreMenuOpen;
@@ -233,10 +251,22 @@ export function initShell(ctx) {
     }
   }
 
-  // ================= FLOATING QUICK-POINT ADDER (FAB) =================
+  // ================= QUICK-POINTS PANEL (triggered from the top bar) =================
   let fabOpen = false;
   let fabClosing = false;
   let selectedHouseId = (store.getActiveHouse() || store.HOUSES[1]).id;
+
+  // The panel gets its own host element inside #fab-root, separate from any
+  // point toast currently animating there — so closing the panel mid-toast
+  // can't yank the toast out of the DOM before its own timeout fires.
+  let fabPanelHost = null;
+  function ensureFabPanelHost() {
+    if (fabPanelHost && fabPanelHost.isConnected) return fabPanelHost;
+    fabPanelHost = document.createElement('div');
+    fabPanelHost.id = 'fab-panel-host';
+    fabRoot.appendChild(fabPanelHost);
+    return fabPanelHost;
+  }
 
   function renderFab() {
     const houses = housesByCore(store);
@@ -279,10 +309,7 @@ export function initShell(ctx) {
       </div>
     ` : '';
 
-    fabRoot.innerHTML = `
-      <button type="button" data-fab-btn data-open="${fabOpen}" class="fab-btn" aria-label="Quick add or deduct house points">±</button>
-      ${panelHtml}
-    `;
+    ensureFabPanelHost().innerHTML = panelHtml;
   }
 
   function currentHouse() { return store.HOUSES[selectedHouseId]; }
@@ -293,10 +320,13 @@ export function initShell(ctx) {
       toast.className = 'point-toast';
       toast.textContent = `${delta > 0 ? '+' : ''}${delta}${house ? ' ' + house.name : ''}`;
       toast.style.color = house ? house.accent : NEUTRAL_ACCENT;
+      // Anchored below the top bar now (the trigger that spawned it lives up
+      // there too) and drifts downward — a toast drifting "up" from the top
+      // edge would just fly off-screen.
       const jitter = Math.round((Math.random() - 0.5) * 40);
-      toast.style.right = `${44 + jitter}px`;
-      toast.style.bottom = '96px';
-      fabRoot.appendChild(toast);
+      toast.style.top = 'calc(var(--topbar-height) + 10px)';
+      toast.style.right = `${90 + jitter}px`;
+      fabRoot.appendChild(toast); // sibling of #fab-panel-host — survives panel re-renders
       setTimeout(() => toast.remove(), 1500);
     } catch (e) { /* purely cosmetic — never block point logging */ }
   }
@@ -312,19 +342,18 @@ export function initShell(ctx) {
     spawnToast(delta, house);
   }
 
-  function openFab() { fabOpen = true; fabClosing = false; renderFab(); }
+  // These also re-render the top bar so the trigger button's data-open
+  // state (its glow/rotate cue) stays in sync with the panel.
+  function openFab() { fabOpen = true; fabClosing = false; renderFab(); renderTopbar(); }
   function closeFab() {
     if (!fabOpen) return;
     fabClosing = true;
     renderFab();
-    setTimeout(() => { fabOpen = false; fabClosing = false; renderFab(); }, 160);
+    renderTopbar();
+    setTimeout(() => { fabOpen = false; fabClosing = false; renderFab(); renderTopbar(); }, 160);
   }
 
   fabRoot.addEventListener('click', (e) => {
-    if (e.target.closest('[data-fab-btn]')) {
-      if (fabOpen && !fabClosing) closeFab(); else openFab();
-      return;
-    }
     if (e.target.closest('[data-fab-close]')) { closeFab(); return; }
 
     const chip = e.target.closest('[data-fab-house]');
@@ -363,7 +392,7 @@ export function initShell(ctx) {
       coreMenuOpen = false;
       renderTopbar();
     }
-    if (fabOpen && !fabClosing && !e.target.closest('[data-fab-panel]') && !e.target.closest('[data-fab-btn]')) {
+    if (fabOpen && !fabClosing && !e.target.closest('[data-fab-panel]') && !e.target.closest('[data-points-trigger]')) {
       closeFab();
     }
   });

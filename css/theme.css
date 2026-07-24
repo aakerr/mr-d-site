@@ -33,7 +33,6 @@
   --transition-slow: 300ms ease;
 
   --topbar-height: 72px;
-  --fab-size: 64px;
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -59,6 +58,13 @@ html, body { background: var(--color-page); }
   15%  { opacity: 1; transform: translateY(0)   scale(1); }
   75%  { opacity: 1; transform: translateY(-28px) scale(1); }
   100% { opacity: 0; transform: translateY(-46px) scale(0.95); }
+}
+
+@keyframes float-down {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.9); }
+  15%  { opacity: 1; transform: translateY(0)    scale(1); }
+  75%  { opacity: 1; transform: translateY(28px) scale(1); }
+  100% { opacity: 0; transform: translateY(46px) scale(0.95); }
 }
 
 @keyframes pop-in {
@@ -187,39 +193,41 @@ html, body { background: var(--color-page); }
 }
 .admin-glyph-btn:active { transform: scale(0.94); }
 
-/* ============ FAB ============ */
-#fab-root { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
-
-.fab-btn {
-  pointer-events: auto;
-  position: absolute;
-  right: 24px; bottom: 24px;
-  width: var(--fab-size); height: var(--fab-size);
+/* quick-points trigger — small accent-colored circle in the top bar itself,
+   left of the date/term block. Lives in #topbar's own markup/stacking. */
+.points-trigger-btn {
+  width: 48px; height: 48px; /* ~44px visual read, 48px hit area — same box */
+  min-width: 48px; min-height: 48px;
   border-radius: 999px;
-  background: var(--accent);
   color: #0b0f19;
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 18px -4px rgba(0,0,0,0.6), 0 0 22px 2px var(--accent-soft);
-  transition: transform var(--transition-fast), background var(--transition-med), box-shadow var(--transition-med), rotate var(--transition-med);
   cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-med), rotate var(--transition-med), filter var(--transition-fast);
 }
-.fab-btn:active { transform: scale(0.92); }
-.fab-btn[data-open="true"] { rotate: 45deg; }
+.points-trigger-btn:hover { filter: brightness(1.08); }
+.points-trigger-btn:active { transform: scale(0.92); }
+.points-trigger-btn[data-open="true"] { rotate: 45deg; }
+
+/* ============ Quick-points panel (dropdown from the top bar) + toasts ============ */
+/* #fab-root is the lead-owned mount point from index.html; it now only ever
+   hosts the dropdown panel (in its own #fab-panel-host child, see shell.js)
+   and transient point toasts — there is no permanently-visible circle here
+   anymore, that moved into the top bar as .points-trigger-btn above. */
+#fab-root { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
 
 .fab-panel {
   pointer-events: auto;
   position: absolute;
-  right: 24px;
-  bottom: calc(24px + var(--fab-size) + 14px);
-  width: min(360px, calc(100vw - 48px));
+  top: calc(var(--topbar-height) + 10px);
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
   background: var(--color-card);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: 0 12px 40px -8px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02);
   animation: pop-in var(--transition-med) cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  transform-origin: bottom right;
+  transform-origin: top right;
 }
 .fab-panel.closing {
   animation: pop-out var(--transition-fast) ease both;
@@ -254,7 +262,8 @@ html, body { background: var(--color-page); }
 }
 .fab-close-btn:active { transform: scale(0.9); }
 
-/* floating point toast */
+/* point toast — anchored below the top bar now (see spawnToast in shell.js),
+   so it drifts downward into view instead of floating up off-screen. */
 .point-toast {
   position: fixed;
   pointer-events: none;
@@ -263,7 +272,7 @@ html, body { background: var(--color-page); }
   font-weight: 800;
   font-size: 22px;
   text-shadow: 0 2px 10px rgba(0,0,0,0.6);
-  animation: float-up 1.4s ease-out forwards;
+  animation: float-down 1.4s ease-out forwards;
 }
 
 /* ============================================================

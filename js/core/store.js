@@ -51,6 +51,17 @@ function defaultState() {
       active: {},     // core -> { questId, startedTs }
       completed: [],  // { id, questId, title, core, ts, points }
     },
+    shop: {
+      // Magic Shop items, teacher-editable in Admin.
+      // effect.kind: 'attack' (deduct amount from a chosen target)
+      //            | 'steal'  (take amount from the leading house)
+      //            | 'shield' (block incoming attacks; amount = hours)
+      catalog: [
+        { id: 'trojan',   name: 'Trojan Horse',   emoji: '🐴', image: '', cost: 50, desc: 'Steal 25 pts from the leading house.',   effect: { kind: 'steal',  amount: 25 } },
+        { id: 'catapult', name: 'Catapult Volley', emoji: '🪨', image: '', cost: 35, desc: 'Deduct 20 pts from a target house.',     effect: { kind: 'attack', amount: 20 } },
+        { id: 'aegis',    name: 'Aegis Shield',    emoji: '🛡️', image: '', cost: 30, desc: 'Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
+      ],
+    },
     // Planner events (admin panel). One record per calendar item:
     // { id, date:'YYYY-MM-DD', endDate?, type:'term-start'|'term-end'|'vacation'|'test'|'quiz'|'homework'|'itinerary'|'note',
     //   core: 1|2|3|4|'all', title, items?: [{time,text}] }
@@ -83,6 +94,7 @@ function defaultState() {
         mesopotamia: {
           title: 'Ancient Mesopotamia',
           subtitle: 'Modern Day Iraq • The Fertile Crescent',
+          videoUrl: 'https://www.youtube.com/embed/hdM9z3pdJBQ',
           camera: { center: { lat: 32.5363, lng: 44.4223, altitude: 150 }, range: 2000, tilt: 60, heading: 45 },
           quickFacts: [
             'The "Land Between Two Rivers" — the Tigris and the Euphrates.',
@@ -190,8 +202,33 @@ export const store = {
     return true;
   },
 
-  activateShield(houseId) {
-    state.shields[houseId] = Date.now() + 24 * 60 * 60 * 1000;
+  activateShield(houseId, hours = 24) {
+    state.shields[houseId] = Date.now() + Math.max(1, Number(hours) || 24) * 60 * 60 * 1000;
+    emit();
+  },
+
+  // ----- Magic Shop catalog (teacher-editable in Admin) -----
+
+  getShopItems() {
+    return state.shop.catalog;
+  },
+
+  saveShopItem(item) {
+    if (!item?.name || !(Number(item.cost) > 0) || !item?.effect?.kind) return null;
+    const it = {
+      id: item.id || `si-${Date.now()}`,
+      name: item.name, desc: item.desc || '', emoji: item.emoji || '✨', image: item.image || '',
+      cost: Math.round(Number(item.cost)),
+      effect: { kind: item.effect.kind, amount: Math.max(1, Math.round(Number(item.effect.amount) || 1)) },
+    };
+    const i = state.shop.catalog.findIndex((x) => x.id === it.id);
+    if (i >= 0) state.shop.catalog[i] = it; else state.shop.catalog.push(it);
+    emit();
+    return it;
+  },
+
+  deleteShopItem(id) {
+    state.shop.catalog = state.shop.catalog.filter((x) => x.id !== id);
     emit();
   },
 

@@ -253,10 +253,10 @@ function render(root, ctx, s) {
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-5 flex-1 min-h-0">
         <div class="flex flex-col gap-4 xl:gap-5 min-h-0">
           ${renderLeaderboard(state, store, s)}
+          ${renderTransactionLog(store)}
         </div>
         <div class="flex flex-col gap-4 xl:gap-5 min-h-0">
           ${renderScoringPanel(state, store, s)}
-          ${renderTransactionLog(store)}
         </div>
       </div>
     </div>

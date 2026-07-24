@@ -16,6 +16,7 @@ let ytIntroEl = null;         // YouTube-embed intro container (when profile.vid
 let songEl = null;            // fallback audio element
 let profile = null;           // active POTW profile snapshot
 let activeKey = null;         // active POTW profile key (for media lookups)
+let globe = null;             // Stage 0 three.js globe controller ({ dispose })
 let mapReadyPromise = null;   // resolves true (map usable) | false (fallback)
 let advanced = false;         // reached the reveal (intro handed off to map)
 let usingFallback = false;    // intro fell back to the song
@@ -55,15 +56,130 @@ function destCamera() {
 // =============================================================================
 function renderLaunch() {
   if (!rootEl) return;
+  disposeGlobe(); // drop any prior globe before re-rendering
   rootEl.innerHTML = `
     <div class="potw-launch">
       <div class="potw-stars" aria-hidden="true"></div>
-      <div class="potw-globe" aria-hidden="true">🌍</div>
+      <div class="potw-globe" aria-hidden="true"><span class="potw-globe-emoji">🌍</span></div>
       <h1 class="font-display potw-launch-title">Place of the Week</h1>
       <p class="potw-teaser">This week's destination is classified&hellip;</p>
       <button type="button" class="potw-launch-btn font-display">🌍 Launch Place of the Week</button>
     </div>`;
   rootEl.querySelector('.potw-launch-btn').addEventListener('click', openOverlay);
+  mountGlobe(rootEl.querySelector('.potw-globe')); // async; falls back to the emoji on WebGL failure
+}
+
+// ---- Stage 0 real-3D globe (three.js) ---------------------------------------
+function disposeGlobe() {
+  if (globe) { try { globe.dispose(); } catch (e) {} globe = null; }
+}
+
+// Draw a stylized equirectangular Earth onto an offscreen canvas (no external
+// texture CDNs). Deep-blue ocean, rough green/tan continent blobs, polar caps.
+function drawEarthTexture() {
+  const w = 1024, h = 512;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  // ocean
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#173a7a'); grad.addColorStop(0.5, '#1e3a8a'); grad.addColorStop(1, '#152f6e');
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  // continent blob helper (points in 0..1 lon/lat space)
+  const land = (pts, fill) => {
+    g.beginPath();
+    pts.forEach(([x, y], i) => { const px = x * w, py = y * h; i ? g.lineTo(px, py) : g.moveTo(px, py); });
+    g.closePath(); g.fillStyle = fill; g.fill();
+  };
+  const green = '#3f7d4e', greenL = '#4b8a55', tan = '#b08a4f', sand = '#c2a76a';
+  // North America
+  land([[0.06,0.20],[0.20,0.14],[0.27,0.24],[0.24,0.40],[0.15,0.46],[0.09,0.38],[0.05,0.28]], green);
+  land([[0.15,0.44],[0.20,0.42],[0.19,0.55],[0.15,0.52]], greenL); // central america
+  // South America
+  land([[0.22,0.56],[0.30,0.55],[0.32,0.68],[0.27,0.82],[0.23,0.72],[0.22,0.62]], green);
+  // Africa
+  land([[0.48,0.40],[0.58,0.38],[0.62,0.52],[0.57,0.68],[0.51,0.66],[0.47,0.52]], tan);
+  land([[0.49,0.34],[0.60,0.34],[0.60,0.40],[0.49,0.41]], sand); // sahara belt
+  // Europe
+  land([[0.47,0.24],[0.58,0.22],[0.57,0.33],[0.48,0.34]], greenL);
+  // Asia
+  land([[0.58,0.18],[0.86,0.16],[0.92,0.30],[0.80,0.40],[0.64,0.36],[0.58,0.28]], green);
+  land([[0.72,0.40],[0.80,0.40],[0.82,0.50],[0.75,0.50]], greenL); // india/se asia
+  // Australia
+  land([[0.82,0.62],[0.92,0.60],[0.94,0.70],[0.84,0.72]], tan);
+  // polar caps
+  g.fillStyle = 'rgba(240,246,255,0.92)';
+  g.fillRect(0, 0, w, h * 0.06); g.fillRect(0, h * 0.94, w, h * 0.06);
+  g.fillStyle = 'rgba(240,246,255,0.5)';
+  g.fillRect(0, h * 0.06, w, h * 0.03); g.fillRect(0, h * 0.91, w, h * 0.03);
+  return cv;
+}
+
+async function mountGlobe(container) {
+  if (!container) return;
+  let THREE;
+  try { THREE = await import('three'); } catch (e) { return; } // keep emoji fallback
+  if (!rootEl || !container.isConnected) return;               // unmounted while loading
+  try {
+    const size = 168;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(size, size, false);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.set(0, 0, 3.4);
+
+    const tex = new THREE.CanvasTexture(drawEarthTexture());
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const geometry = new THREE.SphereGeometry(1, 48, 48);
+    const material = new THREE.MeshPhongMaterial({ map: tex, specular: 0x2a4a7a, shininess: 8 });
+    const sphere = new THREE.Mesh(geometry, material);
+
+    // Axial tilt (~23.4°) around Z so the vertical spin axis leans authentically.
+    const tiltGroup = new THREE.Group();
+    tiltGroup.rotation.z = THREE.MathUtils.degToRad(23.4);
+    tiltGroup.add(sphere);
+    scene.add(tiltGroup);
+
+    scene.add(new THREE.AmbientLight(0x99aabb, 0.9));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(3, 1.5, 2.5);
+    scene.add(dir);
+
+    disposeGlobe(); // dispose any prior before claiming the slot
+    const emoji = container.querySelector('.potw-globe-emoji');
+    if (emoji) emoji.style.display = 'none';
+    renderer.domElement.className = 'potw-globe-canvas';
+    container.appendChild(renderer.domElement);
+
+    let raf = 0; let running = true;
+    const tick = () => {
+      if (!running) return;
+      sphere.rotation.y += 0.0035; // west -> east (correct Earth spin)
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    };
+    const onVis = () => {
+      if (document.hidden) { running = false; cancelAnimationFrame(raf); }
+      else if (!running) { running = true; tick(); }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    tick();
+
+    globe = {
+      dispose() {
+        running = false; cancelAnimationFrame(raf);
+        document.removeEventListener('visibilitychange', onVis);
+        try { geometry.dispose(); material.dispose(); tex.dispose(); renderer.dispose(); } catch (e) {}
+        const el = renderer.domElement;
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+        if (emoji) emoji.style.display = '';
+      },
+    };
+  } catch (e) {
+    // WebGL unavailable / context creation failed — keep the emoji (CSS opacity pulse).
+    console.warn('potw: 3D globe unavailable, using emoji fallback');
+  }
 }
 
 // =============================================================================
@@ -354,15 +470,18 @@ function buildLessonHTML() {
     ? `<button type="button" class="potw-pres-launch font-display">📽️ Launch Presentation</button>`
     : '';
 
-  // Optional "Resources" tab from profile.links [{title,url}]
+  // "Resources" tab: URL links (from profile.links) + stored assets (async via
+  // media.list). The tab is provisional — shown immediately if links exist, and
+  // otherwise revealed once stored assets are found (removed if neither exist).
   const links = Array.isArray(profile.links) ? profile.links.filter((l) => l && l.url) : [];
-  const linksTab = links.length
-    ? `<button type="button" class="potw-tab" data-tab="links">🔗 Resources</button>` : '';
-  const linksPanel = links.length
-    ? `<div class="potw-panel" data-panel="links">${links.map((l) =>
-        `<a class="potw-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
-           <span class="potw-link-ico" aria-hidden="true">🔗</span><span>${esc(l.title || l.url)}</span>
-         </a>`).join('')}</div>` : '';
+  const hasLinks = links.length > 0;
+  const linksTab =
+    `<button type="button" class="potw-tab potw-tab-res" data-tab="links"${hasLinks ? '' : ' style="display:none"'}>🔗 Resources</button>`;
+  const linksPanel =
+    `<div class="potw-panel" data-panel="links">
+       <div class="potw-res-assets"><div class="potw-res-loading"><span class="potw-spin" aria-hidden="true"></span> Loading files&hellip;</div></div>
+       ${hasLinks ? `<div class="potw-res-group">Links</div>${links.map(linkCardHTML).join('')}` : ''}
+     </div>`;
 
   return `
     ${presBtn}
@@ -378,10 +497,86 @@ function buildLessonHTML() {
     ${linksPanel}`;
 }
 
+// ---- Resources: URL links + stored assets (potw:<key>:asset:<n>) -------------
+function linkCardHTML(l) {
+  return `<a class="potw-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
+    <span class="potw-link-ico" aria-hidden="true">🔗</span><span>${esc(l.title || l.url)}</span>
+  </a>`;
+}
+function assetIcon(type) {
+  const t = String(type || '');
+  if (t.startsWith('image/')) return '🖼️';
+  if (t === 'application/pdf' || t.endsWith('/pdf')) return '📄';
+  if (t.startsWith('video/')) return '🎬';
+  if (t.startsWith('audio/')) return '🎵';
+  return '📎';
+}
+function assetCardHTML(a) {
+  const isImage = String(a.type || '').startsWith('image/');
+  return `<button type="button" class="potw-asset" data-key="${esc(a.key)}" data-image="${isImage ? '1' : '0'}" data-name="${esc(a.name || '')}">
+    <span class="potw-asset-ico" aria-hidden="true">${assetIcon(a.type)}</span>
+    <span class="potw-asset-body">
+      <span class="potw-asset-name">${esc(a.name || a.key)}</span>
+      <span class="potw-asset-type">${esc(a.type || 'file')}</span>
+    </span>
+  </button>`;
+}
+
+async function loadResources() {
+  if (!overlayEl) return;
+  const tab = overlayEl.querySelector('.potw-tab-res');
+  const panel = overlayEl.querySelector('.potw-panel[data-panel="links"]');
+  if (!tab || !panel) return;
+  const links = Array.isArray(profile.links) ? profile.links.filter((l) => l && l.url) : [];
+
+  let assets = [];
+  try { assets = await media.list(`potw:${activeKey}:asset:`); } catch (e) { assets = []; }
+  if (!overlayEl) return; // torn down while awaiting IndexedDB
+  assets = (assets || []).filter(Boolean).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
+  const box = panel.querySelector('.potw-res-assets');
+  if (!assets.length) {
+    if (box) box.remove();                       // no files — drop the loading spinner
+    if (!links.length) { tab.remove(); panel.remove(); return; } // nothing at all
+    return;                                      // links-only: tab already shown
+  }
+  if (box) {
+    box.innerHTML = `<div class="potw-res-group">Files</div>${assets.map(assetCardHTML).join('')}`;
+    wireAssetCards(box);
+  }
+  tab.style.display = ''; // ensure the tab is visible (assets exist even if no links)
+}
+
+function wireAssetCards(scope) {
+  scope.querySelectorAll('.potw-asset').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const url = await media.url(btn.dataset.key);
+      if (!url) { btn.classList.add('potw-asset-missing'); return; }
+      if (btn.dataset.image === '1') openLightbox(url, btn.dataset.name);
+      else window.open(url, '_blank', 'noopener'); // pdf / text / other → new tab
+    });
+  });
+}
+
+// Full-screen letterboxed image lightbox; tap anywhere or ✕ to close.
+function openLightbox(url, name) {
+  if (!overlayEl) return;
+  const lb = document.createElement('div');
+  lb.className = 'potw-lightbox';
+  lb.innerHTML = `<img class="potw-lightbox-img" alt="${esc(name || '')}">
+    <button type="button" class="potw-lightbox-close" aria-label="Close">✕</button>`;
+  lb.querySelector('img').src = url;
+  lb.addEventListener('click', () => { try { lb.remove(); } catch (e) {} });
+  overlayEl.appendChild(lb);
+}
+
 function wireLesson() {
   // Presentation launcher (present only when the profile has a deck)
   const presBtn = overlayEl.querySelector('.potw-pres-launch');
   if (presBtn) presBtn.addEventListener('click', openPresentation);
+
+  // Resources: async-load stored assets and finalize the tab
+  loadResources();
 
   // Tabs
   overlayEl.querySelectorAll('.potw-tab').forEach((tab) => {
@@ -672,8 +867,10 @@ function injectStyles() {
       radial-gradient(1px 1px at 210px 160px, rgba(255,255,255,.4), transparent),
       radial-gradient(1.5px 1.5px at 90px 230px, rgba(255,255,255,.35), transparent);
     background-repeat:repeat;background-size:300px 300px;animation:potw-drift 90s linear infinite;}
-  .potw-globe{font-size:6rem;filter:drop-shadow(0 0 30px rgba(245,158,11,.4));
-    animation:potw-spin 14s linear infinite;}
+  .potw-globe{width:168px;height:168px;display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 0 26px rgba(59,130,246,.35));}
+  .potw-globe-emoji{font-size:6rem;animation:potw-globe-pulse 3.2s ease-in-out infinite;}
+  .potw-globe-canvas{width:168px;height:168px;display:block;}
   .potw-launch-title{font-size:clamp(2rem,5vw,3.25rem);color:#f59e0b;letter-spacing:.05em;
     margin:.5rem 0 .25rem;text-shadow:0 0 34px rgba(245,158,11,.45);}
   .potw-teaser{color:#9ca3af;font-size:clamp(1rem,2.2vw,1.35rem);margin-bottom:2rem;
@@ -840,18 +1037,43 @@ function injectStyles() {
   .potw-pres-shimmer{position:absolute;inset:0;background:linear-gradient(100deg,#0b0f19 30%,#1f2937 50%,#0b0f19 70%);
     background-size:200% 100%;animation:potw-shimmer 1.4s linear infinite;}
 
+  /* ---- Resources: stored assets + spinner + image lightbox ---- */
+  .potw-res-group{color:#9ca3af;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+    font-size:.8rem;margin:4px 2px 10px;}
+  .potw-res-loading{display:flex;align-items:center;gap:10px;color:#9ca3af;padding:14px 4px;}
+  .potw-spin{width:18px;height:18px;border-radius:50%;border:2px solid #374151;border-top-color:#f59e0b;
+    display:inline-block;animation:potw-spin .8s linear infinite;}
+  .potw-asset{display:flex;align-items:center;gap:14px;width:100%;text-align:left;min-height:56px;
+    padding:14px 16px;margin-bottom:12px;background:#1f2937;border:1px solid #374151;border-left:3px solid #3b82f6;
+    border-radius:.9rem;color:#f9fafb;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
+  .potw-asset:hover{background:#243044;border-color:#3b82f6;}
+  .potw-asset:active{transform:scale(.99);}
+  .potw-asset.potw-asset-missing{opacity:.5;border-left-color:#ef4444;}
+  .potw-asset-ico{font-size:1.8rem;flex-shrink:0;line-height:1;}
+  .potw-asset-body{display:flex;flex-direction:column;min-width:0;}
+  .potw-asset-name{font-weight:700;overflow-wrap:anywhere;}
+  .potw-asset-type{color:#9ca3af;font-size:.85rem;overflow-wrap:anywhere;}
+  .potw-lightbox{position:absolute;inset:0;z-index:65;background:rgba(0,0,0,.92);
+    display:flex;align-items:center;justify-content:center;cursor:zoom-out;animation:potw-fade .2s ease both;}
+  .potw-lightbox-img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;}
+  .potw-lightbox-close{position:absolute;top:18px;right:18px;min-height:48px;min-width:48px;padding:10px 16px;
+    border-radius:.6rem;background:rgba(17,24,39,.85);border:1px solid #374151;color:#e5e7eb;font-weight:700;cursor:pointer;}
+  .potw-lightbox-close:hover{background:rgba(239,68,68,.25);border-color:#ef4444;}
+
   /* ---- keyframes ---- */
   @keyframes potw-shimmer{to{background-position:-200% 0;}}
   @keyframes potw-spin{to{transform:rotate(360deg);}}
   @keyframes potw-drift{to{background-position:300px 300px;}}
   @keyframes potw-pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
   @keyframes potw-pulse-scale{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
+  @keyframes potw-fade{from{opacity:0;}to{opacity:1;}}
+  @keyframes potw-globe-pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
   @keyframes potw-popin{0%{transform:translate(-50%,-50%) scale(.6);opacity:0;}
     100%{transform:translate(-50%,-50%) scale(1);opacity:1;}}
   @keyframes potw-float{0%{opacity:1;transform:translate(-50%,0);}
     100%{opacity:0;transform:translate(-50%,-42px);}}
   @media (prefers-reduced-motion:reduce){
-    .potw-globe,.potw-song-globe,.potw-fb-globe,.potw-stars,.potw-song-title,.potw-fly-btn{animation:none;}
+    .potw-globe-emoji,.potw-song-globe,.potw-fb-globe,.potw-stars,.potw-song-title,.potw-fly-btn{animation:none;}
   }`;
   document.head.appendChild(style);
 }
@@ -876,6 +1098,7 @@ export default {
 
   unmount() {
     clearTimers();
+    disposeGlobe();
     destroyPresentation();
     try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
     if (videoEl) { try { videoEl.pause(); } catch (e) {} }

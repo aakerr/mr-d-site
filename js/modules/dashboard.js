@@ -183,7 +183,7 @@ function renderModuleTiles(registry) {
   return `
     <div class="dash-in">
       <div class="text-gray-400 text-sm font-semibold uppercase tracking-wide mb-2">More Modules</div>
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-wrap gap-3 justify-center">
         ${tiles.map((m) => `
           <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} min-w-[140px] flex-1 basis-[140px] max-w-[220px]
             bg-card rounded-2xl border dash-accent-line p-4 flex flex-col items-center gap-1.5">

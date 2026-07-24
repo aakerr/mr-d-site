@@ -1,35 +1,34 @@
 // shop.js — Friday Magical Item Shop. Houses spend accumulated TERM points on
 // items that attack rivals or protect their standings before scores lock.
+// The item catalog is teacher-editable (Admin) and lives in the store —
+// this module renders whatever store.getShopItems() returns, live.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
+import { media } from '../core/media.js';
 
 const STYLE_ID = 'shop-styles';
 const PURPLE = '#a78bfa';
 const PURPLE_SOFT = 'rgba(167,139,250,0.35)';
-
-const ITEMS = {
-  trojan: { id: 'trojan', name: 'Trojan Horse', emoji: '🐴', cost: 50,
-    flavor: 'Steal 25 pts from the leading house.' },
-  catapult: { id: 'catapult', name: 'Catapult Volley', emoji: '🪨', cost: 35,
-    flavor: 'Deduct 20 pts from a target house.' },
-  aegis: { id: 'aegis', name: 'Aegis Shield', emoji: '🛡️', cost: 30,
-    flavor: 'Blocks incoming attacks for 24 hours.' },
-};
+const KNOWN_KINDS = new Set(['attack', 'steal', 'shield']);
 
 // ---- module-scoped lifecycle state -----------------------------------------
 let ctxRef = null;
 let rootEl = null;
 let unsub = null;
 let clickHandler = null;
+let currentRenderFn = null; // set while mounted; lets async media loads trigger a re-render
 const timers = new Set();
+
+// image URL resolution cache — persists across mount/unmount, keyed by media key
+const mediaUrlCache = new Map(); // mediaKey -> url string | null (null = resolved, no file)
+const mediaFetching = new Set();
 
 // ---- per-mount UI state -----------------------------------------------------
 function initState(store) {
   const activeHouse = store.getActiveHouse();
   return {
     buyerId: activeHouse ? activeHouse.id : Object.values(store.HOUSES)[0].id,
-    targetPicker: null,     // itemId currently choosing a target (catapult)
-    confirm: null,          // { item, buyerId, targetId, blocked }
-    toast: null,            // { text }
+    targetPicker: null,     // itemId currently choosing a target ('attack' items)
+    confirm: null,          // { itemId, buyerId, targetId }
   };
 }
 
@@ -83,18 +82,24 @@ function injectStyles() {
   .shop-treasury .lbl{font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;color:#c4b5fd;}
   .shop-treasury .val{font-size:2rem;font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums;}
 
-  .shop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.1rem;max-width:1200px;margin:0 auto;}
-  @media (max-width:920px){.shop-grid{grid-template-columns:1fr;}}
+  .shop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.1rem;max-width:1200px;margin:0 auto;}
+  .shop-empty{max-width:600px;margin:0 auto;text-align:center;color:#9ca3af;font-style:italic;padding:2rem;
+    border:1px dashed #4c1d95;border-radius:1.25rem;}
   .shop-card{position:relative;border-radius:1.5rem;border:2px solid #4c1d95;
     background:linear-gradient(160deg,rgba(30,20,55,.92),rgba(11,15,25,.96));
     padding:1.4rem 1.2rem;display:flex;flex-direction:column;align-items:center;text-align:center;gap:.6rem;
     box-shadow:0 12px 34px rgba(76,29,149,.25);transition:transform .18s ease,box-shadow .18s ease;}
   .shop-card:hover{transform:translateY(-3px);box-shadow:0 16px 42px rgba(76,29,149,.4);}
+  .shop-card-broken{border-color:#7f1d1d;border-style:dashed;opacity:.85;}
   .shop-card-emoji{font-size:3.4rem;filter:drop-shadow(0 4px 14px rgba(167,139,250,.5));}
+  .shop-card-art{width:84px;height:84px;display:flex;align-items:center;justify-content:center;}
+  .shop-card-img{width:100%;height:100%;object-fit:cover;border-radius:1rem;box-shadow:0 4px 14px rgba(167,139,250,.45);}
   .shop-card-name{font-weight:800;font-size:1.2rem;color:#e9d5ff;}
   .shop-cost-badge{position:absolute;top:14px;right:14px;background:${PURPLE};color:#1e1b3a;
     font-weight:800;font-size:.85rem;padding:.3rem .65rem;border-radius:999px;}
   .shop-flavor{color:#9ca3af;font-size:.9rem;line-height:1.4;min-height:2.6em;}
+  .shop-broken-note{color:#fca5a5;font-size:.75rem;font-weight:700;background:rgba(127,29,29,.25);
+    border:1px solid rgba(239,68,68,.4);border-radius:.6rem;padding:.4rem .6rem;}
   .shop-buy-btn{width:100%;min-height:56px;border-radius:1rem;font-weight:800;font-size:1.05rem;
     border:none;cursor:pointer;margin-top:.4rem;color:#fff;
     background:linear-gradient(135deg,#a855f7,#7e22ce);box-shadow:0 8px 22px rgba(168,85,247,.4);
@@ -201,6 +206,48 @@ function shieldRemaining(store, houseId) {
 }
 
 // =============================================================================
+// item catalog helpers — validation + image resolution
+// =============================================================================
+function itemIssues(item) {
+  if (!item || typeof item !== 'object') return ['missing item'];
+  const issues = [];
+  if (!item.name) issues.push('missing name');
+  if (!(Number(item.cost) > 0)) issues.push('invalid cost');
+  if (!item.effect || !KNOWN_KINDS.has(item.effect.kind)) issues.push('unknown effect');
+  else if (!(Number(item.effect.amount) > 0)) issues.push('invalid amount');
+  return issues;
+}
+
+// Returns a resolved <img> src string, null (no image / resolution failed), or
+// undefined (a media: lookup is still in flight — caller should show the emoji
+// for now; `onReady` fires once the async lookup settles so the caller can redraw).
+function resolveItemImage(item, onReady) {
+  const raw = item.image;
+  if (!raw) return null;
+  if (raw.startsWith('media:')) {
+    const key = raw.slice(6);
+    if (mediaUrlCache.has(key)) return mediaUrlCache.get(key);
+    if (!mediaFetching.has(key)) {
+      mediaFetching.add(key);
+      media.url(key)
+        .then((url) => { mediaUrlCache.set(key, url || null); mediaFetching.delete(key); onReady && onReady(); })
+        .catch(() => { mediaUrlCache.set(key, null); mediaFetching.delete(key); onReady && onReady(); });
+    }
+    return undefined;
+  }
+  return raw; // plain URL / path
+}
+
+function itemArtHtml(item) {
+  const resolved = resolveItemImage(item, () => { if (currentRenderFn) currentRenderFn(); });
+  if (resolved) {
+    return `<div class="shop-card-art"><img src="${esc(resolved)}" alt="${esc(item.name)}" class="shop-card-img"
+      onerror="this.parentElement.innerHTML='<div class=&quot;shop-card-emoji&quot;>${esc(item.emoji || '✨')}</div>';" /></div>`;
+  }
+  return `<div class="shop-card-emoji">${esc(item.emoji || '✨')}</div>`;
+}
+
+// =============================================================================
 // RENDER
 // =============================================================================
 function buyerChip(store, s, house) {
@@ -214,76 +261,92 @@ function buyerChip(store, s, house) {
 }
 
 function itemCard(store, s, item) {
-  const buyer = store.HOUSES[s.buyerId];
+  const issues = itemIssues(item);
+  if (issues.length) {
+    return `
+      <div class="shop-card shop-card-broken" data-card="${esc(item?.id || 'unknown')}">
+        <div class="shop-card-emoji">❓</div>
+        <div class="shop-card-name">${esc(item?.name || 'Unknown Item')}</div>
+        <div class="shop-flavor">${esc(item?.desc || '')}</div>
+        <div class="shop-broken-note">⚠️ Misconfigured — ask your teacher to fix this item in Admin.</div>
+        <button type="button" class="shop-buy-btn" disabled>Unavailable</button>
+      </div>`;
+  }
+
   const treasury = store.getTotal(s.buyerId, 'term');
   const affordable = treasury >= item.cost;
+  const art = itemArtHtml(item);
 
-  if (item.id === 'aegis') {
+  if (item.effect.kind === 'shield') {
     const shielded = store.isShielded(s.buyerId);
     const remain = shielded ? shieldRemaining(store, s.buyerId) : null;
     return `
-      <div class="shop-card" data-card="${item.id}">
+      <div class="shop-card" data-card="${esc(item.id)}">
         <div class="shop-cost-badge">${item.cost} pts</div>
-        <div class="shop-card-emoji">${item.emoji}</div>
-        <div class="shop-card-name">${item.name}</div>
-        <div class="shop-flavor">${item.flavor}</div>
+        ${art}
+        <div class="shop-card-name">${esc(item.name)}</div>
+        <div class="shop-flavor">${esc(item.desc)}</div>
         ${shielded ? `<div class="shop-shield-remain">🛡️ ACTIVE — ${remain || 'protected'}</div>` : ''}
-        <button type="button" class="shop-buy-btn ${shielded ? 'shop-active' : ''}" data-buy="${item.id}"
+        <button type="button" class="shop-buy-btn ${shielded ? 'shop-active' : ''}" data-buy="${esc(item.id)}"
           ${shielded ? 'disabled' : (affordable ? '' : 'disabled')}>
           ${shielded ? 'ACTIVE' : 'BUY'}
         </button>
       </div>`;
   }
 
-  if (s.targetPicker === item.id) {
+  if (item.effect.kind === 'attack' && s.targetPicker === item.id) {
     const targets = otherHouses(store, s.buyerId);
     return `
-      <div class="shop-card" data-card="${item.id}">
+      <div class="shop-card" data-card="${esc(item.id)}">
         <div class="shop-cost-badge">${item.cost} pts</div>
-        <div class="shop-card-emoji">${item.emoji}</div>
-        <div class="shop-card-name">${item.name}</div>
+        ${art}
+        <div class="shop-card-name">${esc(item.name)}</div>
         <div class="shop-flavor">Choose a target house:</div>
         <div class="shop-target-picker">
           ${targets.map((h) => `
-            <button type="button" class="shop-target-chip" data-target-pick="${item.id}:${h.id}" style="--tc-accent:${h.accent}">
+            <button type="button" class="shop-target-chip" data-target-item="${esc(item.id)}" data-target-house="${h.id}" style="--tc-accent:${h.accent}">
               <span class="shop-target-thumb" style="border-color:${h.accent}">${houseImg(h, 'w-full h-full')}</span>
               ${esc(h.name)}
             </button>`).join('')}
         </div>
-        <button type="button" class="shop-target-cancel" data-target-cancel="${item.id}">Cancel</button>
+        <button type="button" class="shop-target-cancel" data-target-cancel="${esc(item.id)}">Cancel</button>
       </div>`;
   }
 
   return `
-    <div class="shop-card" data-card="${item.id}">
+    <div class="shop-card" data-card="${esc(item.id)}">
       <div class="shop-cost-badge">${item.cost} pts</div>
-      <div class="shop-card-emoji">${item.emoji}</div>
-      <div class="shop-card-name">${item.name}</div>
-      <div class="shop-flavor">${item.flavor}</div>
-      <button type="button" class="shop-buy-btn" data-buy="${item.id}" ${affordable ? '' : 'disabled'}>BUY</button>
+      ${art}
+      <div class="shop-card-name">${esc(item.name)}</div>
+      <div class="shop-flavor">${esc(item.desc)}</div>
+      <button type="button" class="shop-buy-btn" data-buy="${esc(item.id)}" ${affordable ? '' : 'disabled'}>BUY</button>
     </div>`;
 }
 
 function confirmModalHtml(store, s) {
   if (!s.confirm) return '';
-  const { item, buyerId, targetId } = s.confirm;
+  const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
+  if (!item || itemIssues(item).length) return '';
+  const { buyerId, targetId } = s.confirm;
   const buyer = store.HOUSES[buyerId];
   const target = targetId != null ? store.HOUSES[targetId] : null;
+  const amount = item.effect.amount;
+  const shieldWarn = target && store.isShielded(target.id)
+    ? `<br><br>⚠️ ${esc(target.name)} is shielded — the attack will be <b>blocked</b>, but the cost is still paid.`
+    : '';
   let bodyHtml = '';
-  if (item.id === 'trojan') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to steal <b>25 pts</b> from the leading rival, <b>${target ? esc(target.name) : '—'}</b>.
-      ${target && store.isShielded(target.id) ? `<br><br>⚠️ ${esc(target.name)} is shielded — the attack will be <b>blocked</b>, but the cost is still paid.` : ''}`;
-  } else if (item.id === 'catapult') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to deduct <b>20 pts</b> from <b>${target ? esc(target.name) : '—'}</b>.
-      ${target && store.isShielded(target.id) ? `<br><br>⚠️ ${esc(target.name)} is shielded — the attack will be <b>blocked</b>, but the cost is still paid.` : ''}`;
-  } else if (item.id === 'aegis') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to raise the Aegis Shield, blocking incoming attacks for <b>24 hours</b>.`;
+  if (item.effect.kind === 'steal') {
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to steal <b>${amount} pts</b> from the leading rival, <b>${target ? esc(target.name) : '—'}</b>.${shieldWarn}`;
+  } else if (item.effect.kind === 'attack') {
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to deduct <b>${amount} pts</b> from <b>${target ? esc(target.name) : '—'}</b>.${shieldWarn}`;
+  } else if (item.effect.kind === 'shield') {
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to raise the ${esc(item.name)}, blocking incoming attacks for <b>${amount} hour${amount === 1 ? '' : 's'}</b>.`;
   }
   return `
     <div class="shop-modal-backdrop" data-modal-backdrop>
       <div class="shop-modal">
-        <div class="shop-modal-emoji">${item.emoji}</div>
-        <div class="shop-modal-title">Confirm: ${item.name}</div>
+        <div class="shop-modal-emoji">${esc(item.emoji || '✨')}</div>
+        <div class="shop-modal-title">Confirm: ${esc(item.name)}</div>
         <div class="shop-modal-body">${bodyHtml}</div>
         <div class="shop-modal-actions">
           <button type="button" class="shop-modal-btn shop-modal-cancel" data-modal-cancel>Cancel</button>
@@ -307,6 +370,7 @@ function render(s) {
   const houses = Object.values(store.HOUSES);
   const buyer = store.HOUSES[s.buyerId];
   const treasury = store.getTotal(s.buyerId, 'term');
+  const items = store.getShopItems();
 
   rootEl.innerHTML = `
     <div class="shop-root">
@@ -323,9 +387,7 @@ function render(s) {
       </div>
 
       <div class="shop-grid">
-        ${itemCard(store, s, ITEMS.trojan)}
-        ${itemCard(store, s, ITEMS.catapult)}
-        ${itemCard(store, s, ITEMS.aegis)}
+        ${items.length ? items.map((it) => itemCard(store, s, it)).join('') : '<div class="shop-empty">The shop shelves are empty — check back after your teacher stocks it in Admin.</div>'}
       </div>
 
       <div class="shop-footer">
@@ -376,41 +438,40 @@ function shakeCard(itemId) {
 function resolvePurchase(s) {
   const store = ctxRef.store;
   const audio = ctxRef.audio;
-  const { item, buyerId, targetId } = s.confirm;
+  const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
+  if (!item || itemIssues(item).length) { s.confirm = null; render(s); return; }
+  const { buyerId, targetId } = s.confirm;
   const buyer = store.HOUSES[buyerId];
   const target = targetId != null ? store.HOUSES[targetId] : null;
+  const amount = item.effect.amount;
+  const emoji = item.emoji || '✨';
 
-  if (item.id === 'trojan') {
-    const ok = store.purchase(buyerId, item.cost, 'Trojan Horse');
-    if (!ok) { showToast('Not enough points'); s.confirm = null; render(s); return; }
-    audio.sfx('coin');
-    if (store.isShielded(target.id)) {
+  const ok = store.purchase(buyerId, item.cost, item.name);
+  if (!ok) { showToast('Not enough points'); s.confirm = null; render(s); return; }
+  audio.sfx('coin');
+
+  if (item.effect.kind === 'shield') {
+    store.activateShield(buyerId, amount);
+    showBanner(`${buyer.name} raised the ${item.name}! ${emoji}`);
+  } else if (item.effect.kind === 'steal') {
+    if (target && store.isShielded(target.id)) {
       audio.sfx('sword');
-      showBanner(`🛡️ ${target.name} blocked the Trojan Horse from ${buyer.name}!`);
-    } else {
-      store.addPoints(target.id, -25, { reason: `Trojan Horse from ${buyer.name}`, tag: 'attack' });
-      store.addPoints(buyerId, 25, { reason: `Trojan Horse loot from ${target.name}`, tag: 'attack' });
+      showBanner(`🛡️ ${target.name} blocked the ${item.name} from ${buyer.name}!`);
+    } else if (target) {
+      store.addPoints(target.id, -amount, { reason: `${item.name} from ${buyer.name}`, tag: 'attack' });
+      store.addPoints(buyerId, amount, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
       audio.sfx('thud');
-      showBanner(`${buyer.name} stole 25 pts from ${target.name}! 🐴`);
+      showBanner(`${buyer.name} stole ${amount} pts from ${target.name}! ${emoji}`);
     }
-  } else if (item.id === 'catapult') {
-    const ok = store.purchase(buyerId, item.cost, 'Catapult Volley');
-    if (!ok) { showToast('Not enough points'); s.confirm = null; render(s); return; }
-    audio.sfx('coin');
-    if (store.isShielded(target.id)) {
+  } else if (item.effect.kind === 'attack') {
+    if (target && store.isShielded(target.id)) {
       audio.sfx('sword');
-      showBanner(`🛡️ ${target.name} blocked the Catapult Volley from ${buyer.name}!`);
-    } else {
-      store.addPoints(target.id, -20, { reason: `Catapult Volley from ${buyer.name}`, tag: 'attack' });
+      showBanner(`🛡️ ${target.name} blocked the ${item.name} from ${buyer.name}!`);
+    } else if (target) {
+      store.addPoints(target.id, -amount, { reason: `${item.name} from ${buyer.name}`, tag: 'attack' });
       audio.sfx('thud');
-      showBanner(`${buyer.name} catapulted 20 pts off ${target.name}! 🪨`);
+      showBanner(`${buyer.name} struck ${target.name} for ${amount} pts! ${emoji}`);
     }
-  } else if (item.id === 'aegis') {
-    const ok = store.purchase(buyerId, item.cost, 'Aegis Shield');
-    if (!ok) { showToast('Not enough points'); s.confirm = null; render(s); return; }
-    store.activateShield(buyerId);
-    audio.sfx('coin');
-    showBanner(`${buyer.name} raised the Aegis Shield! 🛡️`);
   }
 
   s.confirm = null;
@@ -436,6 +497,7 @@ export default {
     const s = initState(store);
 
     const doRender = () => render(s);
+    currentRenderFn = doRender;
     doRender();
 
     clickHandler = (e) => {
@@ -450,23 +512,24 @@ export default {
       const buyBtn = e.target.closest('[data-buy]');
       if (buyBtn && !buyBtn.disabled) {
         const itemId = buyBtn.getAttribute('data-buy');
-        const item = ITEMS[itemId];
+        const item = store.getShopItems().find((i) => i.id === itemId);
+        if (!item || itemIssues(item).length) return;
         const treasury = store.getTotal(s.buyerId, 'term');
         if (treasury < item.cost) { showToast('Not enough points'); shakeCard(itemId); return; }
 
-        if (itemId === 'aegis') {
-          s.confirm = { item, buyerId: s.buyerId, targetId: null };
+        if (item.effect.kind === 'shield') {
+          s.confirm = { itemId, buyerId: s.buyerId, targetId: null };
           doRender();
           return;
         }
-        if (itemId === 'trojan') {
+        if (item.effect.kind === 'steal') {
           const target = topHouseExcluding(store, s.buyerId);
-          s.confirm = { item, buyerId: s.buyerId, targetId: target ? target.id : null };
+          s.confirm = { itemId, buyerId: s.buyerId, targetId: target ? target.id : null };
           doRender();
           return;
         }
-        if (itemId === 'catapult') {
-          s.targetPicker = 'catapult';
+        if (item.effect.kind === 'attack') {
+          s.targetPicker = itemId;
           doRender();
           return;
         }
@@ -476,10 +539,11 @@ export default {
       const targetCancel = e.target.closest('[data-target-cancel]');
       if (targetCancel) { s.targetPicker = null; doRender(); return; }
 
-      const targetPick = e.target.closest('[data-target-pick]');
+      const targetPick = e.target.closest('[data-target-item]');
       if (targetPick) {
-        const [itemId, targetIdStr] = targetPick.getAttribute('data-target-pick').split(':');
-        s.confirm = { item: ITEMS[itemId], buyerId: s.buyerId, targetId: Number(targetIdStr) };
+        const itemId = targetPick.getAttribute('data-target-item');
+        const houseId = Number(targetPick.getAttribute('data-target-house'));
+        s.confirm = { itemId, buyerId: s.buyerId, targetId: houseId };
         s.targetPicker = null;
         doRender();
         return;
@@ -504,5 +568,6 @@ export default {
     clickHandler = null;
     rootEl = null;
     ctxRef = null;
+    currentRenderFn = null;
   },
 };

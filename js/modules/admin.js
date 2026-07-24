@@ -1,11 +1,21 @@
 // admin.js — Teacher's Admin Panel for Mr. D's Classroom OS
-// Three tabs: 📅 Planner (month calendar + day editor + itinerary builder),
-// ⚙️ Term Settings, 🌍 Place of the Week manager.
+// Tabs: 📅 Planner, 🗺️ Quests, 🛒 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
 // Owns ONLY this file. Renders into #module-root. All state flows through the
 // store APIs (never mutated directly). Media blobs go through js/core/media.js.
-// Injects <style id="admin-styles"> once.
-// Follows ARCHITECTURE.md contract; touch targets >= 44px; dark theme; amber accent.
+// Injects <style id="admin-styles"> once; styles are theme-token aware (light/dark).
+// Follows ARCHITECTURE.md contract; touch targets >= 44px; amber accent.
 import { media } from '../core/media.js';
+import { CONFIG } from '../config.js';
+
+// Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
+const MAIN_TABS = [
+  { id: 'planner', label: '📅 Planner' },
+  { id: 'quests', label: '🗺️ Quests' },
+  { id: 'shop', label: '🛒 Shop' },
+  { id: 'potw', label: '🌍 Place of the Week' },
+];
+const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
+const TABS = [...MAIN_TABS, SETTINGS_TAB];
 
 // ---------------------------------------------------------------------------
 // Module-scoped lifecycle state (mount/unmount owns all of this)
@@ -27,7 +37,9 @@ let panelView = null;                 // null | 'day' | 'form'  (right side pane
 let panelDate = null;                 // 'YYYY-MM-DD' the day editor is showing
 let form = null;                      // in-progress event form / itinerary builder
 let potwForm = null;                  // in-progress POTW profile editor
+let shopForm = null;                  // in-progress shop item editor
 let dangerOpen = false;               // danger-zone accordion state
+const shopUrls = new Set();           // object URLs we own for shop image previews
 
 const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
@@ -104,10 +116,7 @@ function renderShell() {
           </div>
         </div>
         <div class="admin-seg" role="tablist">
-          <button class="admin-seg-btn" data-action="tab" data-tab="planner">📅 Planner</button>
-          <button class="admin-seg-btn" data-action="tab" data-tab="quests">🗺️ Quests</button>
-          <button class="admin-seg-btn" data-action="tab" data-tab="settings">⚙️ Term Settings</button>
-          <button class="admin-seg-btn" data-action="tab" data-tab="potw">🌍 Place of the Week</button>
+          ${TABS.map((t) => `<button class="admin-seg-btn" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('')}
         </div>
       </div>
       <div id="admin-body" class="admin-body"></div>
@@ -131,6 +140,7 @@ function renderBody() {
   if (ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
   else if (activeTab === 'quests') body.innerHTML = renderQuests();
+  else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
   else if (activeTab === 'settings') body.innerHTML = renderSettings();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
 }
@@ -674,7 +684,216 @@ function confirmQuestComplete(core) {
 }
 
 // ===========================================================================
-// TAB — TERM SETTINGS
+// TAB — SHOP (Magic Shop item manager)
+// ===========================================================================
+const EFFECTS = {
+  attack: { label: '⚔️ Attack', explain: 'Deducts points from a target house the buyer picks.', amountLabel: 'Points deducted from target' },
+  steal:  { label: '🐴 Steal',  explain: 'Takes points from the current leading house and gives them to the buyer.', amountLabel: 'Points stolen from leader' },
+  shield: { label: '🛡️ Defend', explain: 'Blocks incoming attacks on the buyer for a duration.', amountLabel: 'Protection duration (hours)' },
+};
+
+function effectSummary(effect) {
+  const e = EFFECTS[effect?.kind];
+  if (!e) return '';
+  if (effect.kind === 'shield') return `${e.label} · ${effect.amount}h protection`;
+  if (effect.kind === 'steal') return `${e.label} · ${effect.amount} from leader`;
+  return `${e.label} · −${effect.amount} to target`;
+}
+
+function shopThumbHTML(item) {
+  if (item.image && item.image.startsWith('media:')) {
+    const key = item.image.slice('media:'.length);
+    return `<span class="admin-shop-thumb" data-imgkey="${esc(key)}"><span class="admin-shop-emoji">${esc(item.emoji || '✨')}</span></span>`;
+  }
+  return `<span class="admin-shop-thumb"><span class="admin-shop-emoji">${esc(item.emoji || '✨')}</span></span>`;
+}
+
+function renderShop() {
+  const store = ctxRef.store;
+  const items = store.getShopItems().slice().sort((a, b) => a.cost - b.cost);
+  const rows = items.map((it) => `
+    <div class="admin-shop-row">
+      ${shopThumbHTML(it)}
+      <div class="admin-q-main">
+        <div class="admin-q-title">${esc(it.name)}</div>
+        <div class="admin-q-desc">${esc(it.desc || '')}</div>
+        <div class="admin-shop-effect">${esc(effectSummary(it.effect))}</div>
+      </div>
+      <div class="admin-shop-cost">${it.cost}<small>pts</small></div>
+      <div class="admin-q-row-actions">
+        <button class="admin-btn admin-btn-icon" data-action="shop-edit" data-id="${esc(it.id)}" aria-label="Edit">✏️</button>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="shop-del" data-id="${esc(it.id)}" aria-label="Delete">🗑️</button>
+      </div>
+    </div>`).join('');
+  return `
+    <div class="admin-quests">
+      <div class="admin-card">
+        <div class="admin-rows-head">
+          <span class="admin-card-title" style="margin:0">Magic Shop <span class="admin-faint">(${items.length} items)</span></span>
+          <button class="admin-btn admin-btn-primary" data-action="shop-new">+ New Item</button>
+        </div>
+        <div class="admin-mini">Items students can buy with house points. The effect decides what happens when an item is used.</div>
+        <div class="admin-q-list">
+          ${rows || '<div class="admin-empty admin-empty-sm">No items yet. Add one to stock the shop.</div>'}
+        </div>
+      </div>
+    </div>`;
+}
+
+function openShopForm(id) {
+  const store = ctxRef.store;
+  const it = id ? store.getShopItems().find((x) => x.id === id) : null;
+  const hasImg = !!(it && it.image && it.image.startsWith('media:'));
+  shopForm = {
+    id: it ? it.id : `si-${Date.now()}`,
+    isNew: !it,
+    name: it?.name || '',
+    desc: it?.desc || '',
+    emoji: it?.emoji || '✨',
+    cost: it?.cost ?? 25,
+    effectKind: it?.effect?.kind || 'attack',
+    effectAmount: it?.effect?.amount ?? 20,
+    imageFile: null,      // staged new File
+    imageStored: hasImg,  // an existing stored image is present
+    imageUrl: '',         // preview object URL
+  };
+  renderShopModal();
+  if (hasImg) hydrateShopImage(shopForm.id);
+}
+
+async function hydrateShopImage(id) {
+  const u = await media.url(`shop:${id}:image`);
+  if (u && shopForm && shopForm.id === id) { shopForm.imageUrl = u; renderShopModal(); }
+}
+
+function renderShopModal() {
+  const f = shopForm;
+  const m = el('admin-modal-root');
+  const effChips = Object.keys(EFFECTS).map((k) => {
+    const e = EFFECTS[k];
+    const on = f.effectKind === k;
+    return `<label class="admin-eff-opt${on ? ' on' : ''}">
+      <input type="radio" name="admin-eff" value="${k}" data-action="shop-eff" ${on ? 'checked' : ''} />
+      <span class="admin-eff-label">${e.label}</span>
+      <span class="admin-eff-explain">${e.explain}</span>
+    </label>`;
+  }).join('');
+  const amountLabel = EFFECTS[f.effectKind].amountLabel;
+  const previewUrl = f.imageFile || f.imageStored ? f.imageUrl : '';
+  const imageArea = (f.imageFile || f.imageStored)
+    ? `<div class="admin-shop-imgprev">
+         ${previewUrl ? `<img src="${previewUrl}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
+         <span class="admin-faint">${f.imageFile ? 'pending save' : 'stored'}</span>
+         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
+       </div>`
+    : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
+         <input type="file" class="admin-file" data-shopimg="1" accept="image/*" hidden />
+         <span class="admin-drop-prompt">⬇ Optional image — drop or click (falls back to the emoji)</span>
+       </div>`;
+
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="shop-close"></div>
+    <div class="admin-modal admin-modal-lg">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${f.isNew ? '🛒 New Item' : '🛒 Edit Item'}</div>
+        <button class="admin-btn admin-btn-icon" data-action="shop-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body admin-modal-scroll">
+        <label class="admin-flabel" for="admin-shop-name">Name</label>
+        <input id="admin-shop-name" class="admin-input" type="text" value="${esc(f.name)}" placeholder="Trojan Horse" />
+
+        <label class="admin-flabel" for="admin-shop-desc">Description <span class="admin-faint">(shown to students)</span></label>
+        <textarea id="admin-shop-desc" class="admin-input admin-textarea" rows="2" placeholder="Flavor + what it does, e.g. “Steal 25 points from the leading house.”">${esc(f.desc)}</textarea>
+
+        <div class="admin-two">
+          <div>
+            <label class="admin-flabel" for="admin-shop-emoji">Emoji</label>
+            <input id="admin-shop-emoji" class="admin-input" type="text" value="${esc(f.emoji)}" placeholder="✨" style="max-width:110px" />
+          </div>
+          <div>
+            <label class="admin-flabel" for="admin-shop-cost">Cost <span class="admin-faint">(points to buy)</span></label>
+            <input id="admin-shop-cost" class="admin-input" type="number" min="1" max="9999" value="${esc(f.cost)}" style="max-width:150px" />
+          </div>
+        </div>
+
+        <label class="admin-flabel">Image <span class="admin-faint">(optional — overrides the emoji)</span></label>
+        ${imageArea}
+
+        <label class="admin-flabel" style="margin-top:16px">What happens when it's used?</label>
+        <div class="admin-eff-group">${effChips}</div>
+
+        <label class="admin-flabel" for="admin-shop-amount">${amountLabel}</label>
+        <input id="admin-shop-amount" class="admin-input" type="number" min="1" max="9999" value="${esc(f.effectAmount)}" style="max-width:220px" />
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="shop-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="shop-save">Save item</button>
+      </div>
+    </div>`;
+  const n = el('admin-shop-name'); if (n && f.isNew) n.focus();
+}
+
+function syncShopFromDom() {
+  if (!shopForm) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  shopForm.name = g('admin-shop-name');
+  shopForm.desc = g('admin-shop-desc');
+  shopForm.emoji = g('admin-shop-emoji') || '✨';
+  shopForm.cost = g('admin-shop-cost');
+  shopForm.effectAmount = g('admin-shop-amount');
+  const checked = rootEl.querySelector('input[name="admin-eff"]:checked');
+  if (checked) shopForm.effectKind = checked.value;
+}
+
+function stageShopImage(file) {
+  if (!shopForm || !file) return;
+  if (file.type && !/^image\//.test(file.type)) { toast('Please choose an image file.'); return; }
+  syncShopFromDom();
+  if (shopForm.imageUrl && shopUrls.has(shopForm.imageUrl)) { try { URL.revokeObjectURL(shopForm.imageUrl); } catch (e) {} shopUrls.delete(shopForm.imageUrl); }
+  shopForm.imageFile = file;
+  shopForm.imageStored = false;
+  shopForm.imageUrl = URL.createObjectURL(file);
+  shopUrls.add(shopForm.imageUrl);
+  renderShopModal();
+}
+
+async function saveShopItem() {
+  syncShopFromDom();
+  const f = shopForm;
+  const store = ctxRef.store;
+  if (!f.name.trim()) { toast('An item name is required.'); return; }
+  if (!(Number(f.cost) >= 1)) { toast('Cost must be at least 1.'); return; }
+  const imgKey = `shop:${f.id}:image`;
+  let image = '';
+  if (f.imageFile) { await media.put(imgKey, f.imageFile); image = `media:${imgKey}`; }
+  else if (f.imageStored) { image = `media:${imgKey}`; }
+  else { await media.delete(imgKey); image = ''; } // emoji-only or image removed
+  const saved = store.saveShopItem({
+    id: f.id, name: f.name.trim(), desc: f.desc.trim(), emoji: f.emoji || '✨', image,
+    cost: f.cost, effect: { kind: f.effectKind, amount: f.effectAmount },
+  });
+  if (!saved) { toast('Could not save — check name, cost, and effect.'); return; }
+  revokeShopUrls();
+  shopForm = null;
+  closeModal();
+  renderBody();
+  toast(f.isNew ? 'Item added.' : 'Item updated.');
+}
+
+function revokeShopUrls() { shopUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); shopUrls.clear(); }
+
+// Fill shop row thumbnails (stored images) after a render.
+async function refreshShopThumbs() {
+  if (activeTab !== 'shop' || !rootEl) return;
+  const thumbs = [...rootEl.querySelectorAll('.admin-shop-thumb[data-imgkey]')];
+  for (const t of thumbs) {
+    const u = await media.url(t.dataset.imgkey);
+    if (u && t.isConnected) t.innerHTML = `<img src="${u}" alt="" class="admin-shop-thumb-img" />`;
+  }
+}
+
+// ===========================================================================
+// TAB — SETTINGS
 // ===========================================================================
 function renderSettings() {
   const store = ctxRef.store;
@@ -759,6 +978,17 @@ function renderSettings() {
         </details>
       </div>
 
+      <div class="admin-card">
+        <div class="admin-card-title">Backup &amp; Restore</div>
+        <div class="admin-mini">Save or restore the full classroom state — points, planner, quests, shop, settings, and destinations.</div>
+        <div class="admin-backup-row">
+          <button class="admin-btn admin-btn-lg" data-action="backup-export">⬇ Export backup</button>
+          <button class="admin-btn admin-btn-lg" data-action="backup-import">⬆ Import backup</button>
+          <input id="admin-import-file" type="file" accept="application/json,.json" hidden />
+        </div>
+        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included.</div>
+      </div>
+
       <div class="admin-card admin-danger${dangerOpen ? ' open' : ''}">
         <button class="admin-danger-toggle" data-action="danger-toggle">
           <span>⚠️ Danger Zone</span>
@@ -838,6 +1068,43 @@ function doReset() {
   toast('All data reset to defaults.');
 }
 
+// ----- backup & restore (full localStorage state as JSON) -----
+function exportBackup() {
+  const raw = localStorage.getItem(CONFIG.STORAGE_KEY) || JSON.stringify(ctxRef.store.getState());
+  let pretty = raw;
+  try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch (e) {}
+  const blob = new Blob([pretty], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mrd-backup-${todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  later(() => URL.revokeObjectURL(url), 2000);
+  toast('Backup exported.');
+}
+
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (e) { toast('That file is not valid JSON.'); return; }
+    if (!data || typeof data !== 'object' || !('version' in data) || !('transactions' in data)) {
+      toast('This does not look like a Classroom OS backup.');
+      return;
+    }
+    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. This cannot be undone.', () => {
+      try {
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
+        location.reload();
+      } catch (e) { toast('Restore failed: ' + e.message); }
+    }, { yesLabel: 'Replace & reload' });
+  };
+  reader.onerror = () => toast('Could not read that file.');
+  reader.readAsText(file);
+}
+
 // ===========================================================================
 // TAB 3 — PLACE OF THE WEEK MANAGER
 // ===========================================================================
@@ -879,21 +1146,26 @@ function renderPotw() {
                 <button class="admin-btn admin-btn-danger" data-action="potw-delete" data-key="${esc(k)}"${isActive ? ' disabled' : ''} title="${isActive ? 'Cannot delete the active destination' : 'Delete'}">Delete</button>
               </div>
             </div>
-            <div class="admin-drops">
+            <div class="admin-va-title">🎬 Video &amp; Assets</div>
+            <div class="admin-drops admin-drops-one">
               ${dropZoneHTML('video', k)}
-              ${dropZoneHTML('song', k)}
             </div>
-            <div class="admin-mini" style="margin:0">Playback priority: <b>dropped file › video URL › bundled fallback</b>. Set a video URL &amp; links in <b>Edit</b>.</div>
+            <div class="admin-mini" style="margin:0 0 10px">Playback priority: <b>dropped file › video URL › bundled fallback</b>. Set a video URL &amp; Docs/Links in <b>Edit</b>.</div>
+            <div class="admin-assets-label">📎 Resource assets <span class="admin-faint">(images, PDFs, any files — shown on the lesson's Resources tab)</span></div>
+            <div class="admin-drop admin-assets-drop" data-assets="${esc(k)}" data-action="media-browse" title="Drop files or click to browse">
+              <input type="file" class="admin-file" data-assets="${esc(k)}" accept="*/*" multiple hidden />
+              <span class="admin-drop-prompt">⬇ Drop resource files here, or click to browse (multiple)</span>
+            </div>
+            <div class="admin-assets" data-assets-list="${esc(k)}"><span class="admin-faint">Checking…</span></div>
           </div>`;
         }).join('')}
       </div>
 
       <div class="admin-card admin-files">
         <div class="admin-card-title">About media storage</div>
-        <p class="admin-mini">💾 Files dropped above are stored <b>in this browser on this smartboard machine</b> (not uploaded anywhere). The Place-of-the-Week playback prefers them when present.</p>
-        <p class="admin-mini">Fallback method — or drop files into the site folder:</p>
-        <pre class="admin-code">site-root/potw-intro.mp4        ← intro video
-site-root/potw-songs/*.mp3      ← theme / fallback song</pre>
+        <p class="admin-mini">💾 Files dropped above are stored <b>in this browser on this smartboard machine</b> (not uploaded anywhere). The Place-of-the-Week playback and lesson prefer them when present.</p>
+        <p class="admin-mini">Fallback method — or drop a video into the site folder:</p>
+        <pre class="admin-code">site-root/potw-intro.mp4        ← intro video (fallback)</pre>
       </div>
     </div>`;
 }
@@ -940,6 +1212,33 @@ async function refreshPotwMedia() {
     const info = await media.info(sp.dataset.mkey);
     if (sp.isConnected) sp.textContent = info ? `(${humanSize(info.size)})` : '';
   }
+  // resource asset lists per destination
+  const lists = [...rootEl.querySelectorAll('.admin-assets[data-assets-list]')];
+  for (const box of lists) {
+    const key = box.dataset.assetsList;
+    const assets = (await media.list(`potw:${key}:asset:`)).sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
+    if (!box.isConnected) continue;
+    box.innerHTML = assets.length ? assets.map((a) => `
+      <div class="admin-asset-row">
+        <span class="admin-asset-icon">${fileIcon(a.type, a.name)}</span>
+        <span class="admin-asset-name" title="${esc(a.name)}">${esc(a.name)}</span>
+        <span class="admin-asset-size">${humanSize(a.size)}</span>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="asset-remove" data-mkey="${esc(a.key)}" aria-label="Remove">✕</button>
+      </div>`).join('') : '<span class="admin-faint">No resource files yet.</span>';
+  }
+}
+
+function fileIcon(type, name) {
+  const t = (type || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+  if (t.startsWith('image/')) return '🖼️';
+  if (t === 'application/pdf' || n.endsWith('.pdf')) return '📄';
+  if (t.startsWith('video/')) return '🎬';
+  if (t.startsWith('audio/')) return '🎵';
+  if (/\.(docx?|pages)$/.test(n)) return '📝';
+  if (/\.(pptx?|key)$/.test(n)) return '📊';
+  if (/\.(xlsx?|csv|numbers)$/.test(n)) return '📈';
+  return '📎';
 }
 
 async function handleMediaFile(mkey, file) {
@@ -949,6 +1248,23 @@ async function handleMediaFile(mkey, file) {
   if (file.type && !okType) { toast(`That doesn't look like ${kind === 'video' ? 'a video' : 'an audio'} file.`); return; }
   const res = await media.put(mkey, file);
   toast(res ? `${kind === 'video' ? 'Video' : 'Song'} stored (${humanSize(res.size)}).` : 'Could not store the file.');
+  refreshPotwMedia();
+}
+
+// Store one or more resource files sequentially under potw:<key>:asset:<n>.
+async function handleAssetFiles(key, fileList) {
+  if (!key) return;
+  const existing = await media.list(`potw:${key}:asset:`);
+  let next = existing.reduce((mx, a) => {
+    const m = a.key.match(/:asset:(\d+)$/);
+    return m ? Math.max(mx, Number(m[1])) : mx;
+  }, 0) + 1;
+  let n = 0;
+  for (const f of [...fileList]) {
+    const res = await media.put(`potw:${key}:asset:${next}`, f);
+    if (res) { next++; n++; }
+  }
+  toast(n ? `Added ${n} resource file${n === 1 ? '' : 's'}.` : 'Could not store files.');
   refreshPotwMedia();
 }
 
@@ -1457,6 +1773,32 @@ function onClick(e) {
     case 'quest-complete': openQuestCompleteModal(Number(btn.dataset.core)); break;
     case 'quest-complete-confirm': confirmQuestComplete(Number(btn.dataset.core)); break;
 
+    // shop
+    case 'shop-new': openShopForm(null); break;
+    case 'shop-edit': openShopForm(btn.dataset.id); break;
+    case 'shop-save': saveShopItem(); break;
+    case 'shop-close': revokeShopUrls(); shopForm = null; closeModal(); break;
+    case 'shop-img-del': {
+      syncShopFromDom();
+      if (shopForm.imageUrl && shopUrls.has(shopForm.imageUrl)) { try { URL.revokeObjectURL(shopForm.imageUrl); } catch (e) {} shopUrls.delete(shopForm.imageUrl); }
+      shopForm.imageFile = null; shopForm.imageStored = false; shopForm.imageUrl = '';
+      renderShopModal();
+      break;
+    }
+    case 'shop-del': {
+      const id = btn.dataset.id;
+      const it = store.getShopItems().find((x) => x.id === id);
+      openConfirm(`Delete item “${it ? it.name : ''}”?`, 'This removes it from the shop catalog.', () => {
+        if (it?.image?.startsWith('media:')) media.delete(it.image.slice('media:'.length));
+        store.deleteShopItem(id); renderBody(); toast('Item deleted.');
+      });
+      break;
+    }
+
+    // backup & restore
+    case 'backup-export': exportBackup(); break;
+    case 'backup-import': { const inp = el('admin-import-file'); if (inp) inp.click(); break; }
+
     // settings
     case 'settings-save': saveSettings(); break;
     case 'theme-mode': {
@@ -1510,6 +1852,11 @@ function onClick(e) {
     case 'media-remove': {
       const mkey = btn.dataset.mkey;
       media.delete(mkey).then(() => { toast('File removed.'); refreshPotwMedia(); });
+      break;
+    }
+    case 'asset-remove': {
+      const mkey = btn.dataset.mkey;
+      media.delete(mkey).then(() => { toast('Resource removed.'); refreshPotwMedia(); });
       break;
     }
     case 'potw-src-add': syncPotwFromDom(); potwForm.sources.push({ emoji: '', name: '', desc: '' }); renderPotwModal(); break;
@@ -1835,11 +2182,60 @@ function injectStyles() {
   .admin-qrow{display:grid;grid-template-columns:1fr 1fr 44px;gap:6px;align-items:center;}
   @media (max-width:600px){.admin-srow,.admin-qrow{grid-template-columns:1fr;}}
 
+  /* shop tab */
+  .admin-key-row .admin-btn{flex-shrink:0;}
+  .admin-shop-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
+  .admin-shop-thumb{flex-shrink:0;width:48px;height:48px;border-radius:.6rem;background:var(--color-card2);border:1px solid var(--color-line);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .admin-shop-emoji{font-size:1.6rem;line-height:1;}
+  .admin-shop-thumb-img{width:100%;height:100%;object-fit:cover;}
+  .admin-shop-effect{font-size:.76rem;color:var(--color-text-soft);margin-top:4px;font-weight:600;}
+  .admin-shop-cost{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
+  .admin-shop-cost small{display:block;font-size:.6rem;font-weight:700;color:var(--color-text-soft);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
+  .admin-eff-group{display:flex;flex-direction:column;gap:8px;margin-bottom:4px;}
+  .admin-eff-opt{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;padding:12px 14px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-card2);cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease;}
+  .admin-eff-opt.on{border-color:#f59e0b;box-shadow:0 0 0 1px #f59e0b;}
+  .admin-eff-opt input{grid-row:1/3;width:20px;height:20px;accent-color:#f59e0b;align-self:center;}
+  .admin-eff-label{font-weight:700;color:var(--color-text);}
+  .admin-eff-explain{grid-column:2;font-size:.8rem;color:var(--color-text-soft);line-height:1.35;}
+  .admin-shop-imgprev{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-page);}
+  .admin-shop-imgprev-img{width:56px;height:56px;object-fit:cover;border-radius:.5rem;border:1px solid var(--color-line);}
+
+  /* video & assets (potw card) */
+  .admin-drops-one{grid-template-columns:1fr;max-width:420px;}
+  .admin-va-title{font-weight:700;font-size:.95rem;color:var(--color-text);margin-bottom:8px;}
+  .admin-assets-label{font-weight:600;font-size:.85rem;color:var(--color-text);margin:6px 0;}
+  .admin-assets-drop{min-height:64px;}
+  .admin-assets{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .admin-asset-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--color-card2);border:1px solid var(--color-line);border-radius:.6rem;}
+  .admin-asset-icon{font-size:1.2rem;flex-shrink:0;}
+  .admin-asset-name{flex:1;min-width:0;font-size:.85rem;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .admin-asset-size{font-size:.72rem;color:var(--color-text-soft);flex-shrink:0;}
+
+  /* backup */
+  .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;}
+
   /* toast */
   .admin-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;
     background:var(--color-card2);border:1px solid #f59e0b;color:var(--color-text);padding:12px 22px;border-radius:.75rem;
     font-weight:600;font-size:.9rem;box-shadow:0 12px 40px rgba(0,0,0,.5);animation:admin-toast-in .25s ease both;}
   @keyframes admin-toast-in{from{opacity:0;transform:translate(-50%,12px);}to{opacity:1;transform:translate(-50%,0);}}
+
+  /* light-mode contrast fixes: darken amber/cyan accents that read too light on white */
+  html[data-mode="light"] .admin-title,
+  html[data-mode="light"] .admin-q-pts,
+  html[data-mode="light"] .admin-shop-cost,
+  html[data-mode="light"] .admin-preview-label,
+  html[data-mode="light"] .admin-modal-title,
+  html[data-mode="light"] .admin-panel-eyebrow,
+  html[data-mode="light"] .admin-potw-meta code,
+  html[data-mode="light"] .admin-mini code,
+  html[data-mode="light"] .admin-files code,
+  html[data-mode="light"] .admin-steps code{color:#b45309;}
+  html[data-mode="light"] .admin-date-badge,
+  html[data-mode="light"] .admin-drop-name,
+  html[data-mode="light"] .admin-pres-tag,
+  html[data-mode="light"] .admin-feat-chip,
+  html[data-mode="light"] .admin-details summary{color:#0e7490;}
 
   @media (prefers-reduced-motion:reduce){
     .admin-panel,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
@@ -1873,13 +2269,17 @@ export default {
     clickHandler = onClick;
     rootEl.addEventListener('click', clickHandler);
 
-    // file-input change (click-to-browse) for media drop zones
+    // input change: effect radios, import-file picker, media/shop/asset file inputs
     changeHandler = (e) => {
+      if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
+      if (e.target.id === 'admin-import-file') { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ''; return; }
       const inp = e.target.closest('input.admin-file');
       if (!inp) return;
       const files = inp.files;
       if (files && files.length) {
-        if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
+        if (inp.dataset.shopimg) stageShopImage(files[0]);
+        else if (inp.dataset.assets) handleAssetFiles(inp.dataset.assets, files);
+        else if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
         else handleMediaFile(inp.dataset.mkey, files[0]);
       }
       inp.value = ''; // allow re-picking the same file
@@ -1896,7 +2296,9 @@ export default {
       z.classList.remove('over');
       const files = e.dataTransfer && e.dataTransfer.files;
       if (!files || !files.length) return;
-      if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
+      if (z.dataset.shopimg) stageShopImage(files[0]);
+      else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
+      else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
       else handleMediaFile(z.dataset.mkey, files[0]);
     };
     rootEl.addEventListener('dragover', dragOverHandler);
@@ -1917,12 +2319,13 @@ export default {
       if (dropHandler) rootEl.removeEventListener('drop', dropHandler);
     }
     revokePresUrls();
+    revokeShopUrls();
     const st = el('admin-styles');
     if (st) st.remove();
     // stray fixed-position panels/modals/toasts live inside rootEl; registry clears
     // #module-root on navigate, but null our refs so nothing dangles.
     rootEl = null; ctxRef = null;
     clickHandler = changeHandler = dragOverHandler = dragLeaveHandler = dropHandler = null;
-    panelView = null; form = null; potwForm = null;
+    panelView = null; form = null; potwForm = null; shopForm = null;
   },
 };
