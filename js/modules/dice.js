@@ -51,12 +51,14 @@ function createStyles() {
         border-color: #3b82f6; background: #1e3a8a;
         box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);
       }
-      .dice-mode-btn.d20-special {
+      /* d20 button: neutral/grey like the others when unselected (just a faint
+         gold border hint); the full gold gradient/glow/serif only when active. */
+      .dice-mode-btn.d20-special { border-color: #6b5322; }
+      .dice-mode-btn.d20-special.active {
         background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: #1a1a1a; border-color: #fcd34d;
-        box-shadow: 0 0 16px rgba(245, 158, 11, 0.5); font-family: Georgia, serif;
+        color: #1a1a1a; border-color: #fcd34d; font-family: Georgia, serif;
+        box-shadow: 0 0 24px rgba(245, 158, 11, 0.8);
       }
-      .dice-mode-btn.d20-special.active { box-shadow: 0 0 24px rgba(245, 158, 11, 0.8); }
 
       /* 3D stage — fixed 16:9 box; all result/celebration/plaque UI overlays it
          so nothing below can ever resize the canvas. */
@@ -97,27 +99,6 @@ function createStyles() {
         0% { transform: translateX(-50%) scale(0.55); opacity: 0.2; }
         60% { transform: translateX(-50%) scale(1.18); }
         100% { transform: translateX(-50%) scale(1); }
-      }
-
-      /* Celebration: the result number grows large in the center of the tray. */
-      .dice-celebrate {
-        position: absolute; inset: 0; display: none; z-index: 8;
-        align-items: center; justify-content: center; pointer-events: none;
-      }
-      .dice-celebrate.open { display: flex; }
-      .dice-celebrate-num {
-        font-size: clamp(4.5rem, 16vw, 9rem); font-weight: 900; color: #fde68a;
-        font-variant-numeric: tabular-nums; line-height: 1;
-        text-shadow: 0 6px 30px rgba(0,0,0,0.95), 0 0 46px rgba(252,211,77,0.55);
-        animation: dice-grow 0.8s cubic-bezier(0.2,0.85,0.2,1) both;
-      }
-      .dice-celebrate.nat1 .dice-celebrate-num { color: #fca5a5; text-shadow: 0 6px 30px rgba(0,0,0,0.95), 0 0 46px rgba(239,68,68,0.6); }
-      .dice-celebrate.nat20 .dice-celebrate-num { color: #fcd34d; text-shadow: 0 6px 30px rgba(0,0,0,0.95), 0 0 60px rgba(252,211,77,0.8); }
-      @keyframes dice-grow {
-        0% { transform: scale(0.15); opacity: 0; }
-        35% { opacity: 1; }
-        72% { transform: scale(1.16); }
-        100% { transform: scale(1); }
       }
 
       /* Outcome / prophecy plaque overlay — centered over the dice field. */
@@ -256,10 +237,8 @@ async function performRoll(el) {
   rollInProgress = true;
   setRollEnabled(el, false);
 
-  // A new roll clears any lingering celebration / plaque.
+  // A new roll clears any lingering suspense timer / plaque.
   clearTimeout(celebrateTimer);
-  const cel = el.querySelector('.dice-celebrate');
-  if (cel) { cel.classList.remove('open'); cel.innerHTML = ''; }
   closePlaque(el);
 
   const mode = currentMode;
@@ -294,21 +273,13 @@ function showD20Result(el, value) {
   const prophecy = getProphecy(value);
   const variant = value === 1 ? 'nat1' : value === 20 ? 'nat20' : '';
 
+  // In-tray bottom number pops as usual; hold a suspense beat, then the plaque
+  // pops in centered over the dice (no grow-in-center number).
   updateTrayResult(el, `${value}`);
   if (value === 20) setTimeout(() => audio.sfx('fanfare'), 300);
 
-  // Celebration: the number grows large in the center (~0.8s), then HOLDS for a
-  // dramatic suspense beat before the outcome plaque pops up.
-  const cel = el.querySelector('.dice-celebrate');
-  if (cel) {
-    cel.className = `dice-celebrate open ${variant}`;
-    cel.innerHTML = `<div class="dice-celebrate-num">${value}</div>`;
-  }
   clearTimeout(celebrateTimer);
-  celebrateTimer = setTimeout(() => {
-    if (cel) { cel.classList.remove('open'); cel.innerHTML = ''; }
-    showOutcomePlaque(el, prophecy, variant);
-  }, 2100); // ~0.8s grow + ~1.3s hold
+  celebrateTimer = setTimeout(() => showOutcomePlaque(el, prophecy, variant), 1200);
 
   history.unshift({ mode: 'd20', value1: value, total: value, outcome: prophecy.title });
   if (history.length > MAX_HISTORY) history.pop();
@@ -395,7 +366,6 @@ export default {
         <div class="dice-stage">
           <div class="dice-canvas-host"></div>
           <div class="dice-tray-result"></div>
-          <div class="dice-celebrate"></div>
           <div class="dice-plaque-backdrop"></div>
         </div>
         <div class="dice-controls">
@@ -454,8 +424,6 @@ export default {
         sim?.clear();
         closePlaque(el);
         clearTimeout(celebrateTimer);
-        const cel = el.querySelector('.dice-celebrate');
-        if (cel) { cel.classList.remove('open'); cel.innerHTML = ''; }
         const r = el.querySelector('.dice-tray-result');
         if (r) { r.textContent = ''; r.classList.remove('pop'); }
         const num = el.querySelector('.dice-fallback-num');

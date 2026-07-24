@@ -35,6 +35,7 @@ const FLY_TO_MS = 27000;      // camera fly-to duration (~27s — gentle on a bi
 const ORBIT_MS = 240000;      // ms per slow-orbit revolution once landed
 const LAND_SETTLE_MS = 300;   // pause after landing before lesson card + orbit start
 const INTRO_FADE_MS = 1000;   // video/intro crossfade out to reveal the 3D map
+const CARD_EARLY_S = 4;       // reveal card pops this many seconds before the video ends
 const YT_CROP_PX = 120;       // overscan: player is this much taller than the 16:9 box,
                               // centered, so YouTube's title bar + watermark sit outside the crop
 const YT_API_TIMEOUT_MS = 5000;   // if the IFrame API doesn't load in time, use a plain iframe
@@ -485,7 +486,7 @@ function startYtPoll() {
     killYtCaptions(ytPlayer);
     let d = 0, c = 0;
     try { d = ytPlayer.getDuration(); c = ytPlayer.getCurrentTime(); } catch (x) { return; }
-    if (isFinite(d) && d > 0 && d - c <= 2) showRevealCard();
+    if (isFinite(d) && d > 0 && d - c <= CARD_EARLY_S) showRevealCard();
   }, 250);
 }
 
@@ -565,7 +566,7 @@ function onVideoTimeUpdate() {
   if (!videoEl) return;
   const d = videoEl.duration;
   // Guard NaN/Infinity (metadata not loaded / streamed) — 'ended' covers those.
-  if (isFinite(d) && d > 0 && d - videoEl.currentTime <= 2) showRevealCard();
+  if (isFinite(d) && d > 0 && d - videoEl.currentTime <= CARD_EARLY_S) showRevealCard();
 }
 
 // Hand the intro off to the map: card stays, video/song layer crossfades away.

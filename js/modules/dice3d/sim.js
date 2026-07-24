@@ -19,17 +19,54 @@ const CONFIG = {
   trayColor: '#111827',
   trayRimColor: '#1f2937',
   gravity: -9.82 * 2,   // snappy rolls
-  restitution: 0.35,    // bouncy-but-settling
-  friction: 0.25,
+  restitution: 0.55,    // livelier — dice visibly bounce several times
+  friction: 0.14,       // slick so they skitter and roll longer before settling
 };
 
 // Physics rest-detection (ported from Die.tsx).
 const REST_LIN_VEL = 0.16;
 const REST_ANG_VEL = 0.22;
 const REST_FRAMES = 10;
+const REST_MAX_Y = 2.0;   // a die centre above this is still airborne (big dice)
 const COCKED_DOT = 0.92;
 const MAX_NUDGES = 3;
 const WALL_HEIGHT = 7;
+const SUBSTEPS = 8;       // headroom so fast dice never tunnel a wall/floor
+
+// --- theatrical roll dynamics (all tunable) --------------------------------
+const ROLL = {
+  spawnHeight: 5.5,          // higher launch arc
+  spawnStagger: 1.6,         // extra height per additional die
+  downVelocity: -3.0,        // initial downward kick → a harder first strike
+  launchSpeed: 5.6,          // lateral launch speed (single die, across centre)
+  launchSpeedVar: 3.0,       // random extra lateral speed
+  launchSpeed2: 3.6,         // per-die outward speed for multi-dice
+  spin: 24,                  // angular-velocity magnitude (was 14) → more tumble
+  minRollMs: 2300,           // never read the face before this (keeps rolls lively)
+  hardCapMs: 6000,           // a roll can NEVER run longer than this
+  dampRampStartMs: 4000,     // after this, bleed off velocity so it must settle
+  dampRampPerFrame: 0.93,    // fraction of velocity retained each frame while ramping
+  settleAnticipationMs: 250, // beat between physics rest and the result pop
+  impactMinSpeed: 2.0,       // ignore impacts gentler than this (no sfx/shake)
+  impactSfxThrottleMs: 90,   // at most ~11 bounce thuds per second
+  shakeSpeed: 6.0,           // impact speed above which the stage shakes
+  shakeMs: 130,              // shake duration
+  shakePx: 3,                // max shake offset in px
+};
+
+// --- fate weighting (teacher-configured drama) -----------------------------
+// The physics roll stays 100% real. Before the roll is shown, we invisibly
+// pre-simulate the exact same throw to see which face WOULD land, pick a desired
+// target value (biased to the die's UPPER half with probability FATE_HIGH_CHANCE),
+// then pre-rotate the die's starting orientation by a ROTATIONAL SYMMETRY of its
+// own shape so the identical tumble lands the target face up instead. Because a
+// symmetry leaves the collision shape unchanged, the visible physics is genuine;
+// we ALWAYS display the actually-settled face and fall back to the real result
+// on the rare numerical divergence (never snapping the mesh).
+// Nudges are disabled while fate is on so the pre-sim and visible roll agree.
+const FATE_ENABLED = true;
+const FATE_HIGH_CHANCE = 0.60;
+const NUDGES_ENABLED = !FATE_ENABLED;
 
 const MODE_DICE = { '1d6': ['d6'], '2d6': ['d6', 'd6'], d20: ['d20'] };
 
@@ -77,7 +114,16 @@ export function createDiceSim({ container, audio }) {
   canvas.style.display = 'block';
   canvas.style.width = '100%';
   canvas.style.height = '100%';
+  canvas.style.willChange = 'transform';
   container.appendChild(canvas);
+
+  const reducedMotion = !!(window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // Impact feedback state (per-bounce thud throttle + brief stage shake).
+  let lastImpactSfxT = 0;
+  let shakeUntil = 0;
+  let shakeMag = 0;
 
   // --- scene / camera -----------------------------------------------------
   const scene = new THREE.Scene();
@@ -234,15 +280,190 @@ export function createDiceSim({ container, audio }) {
     camera.updateMatrixWorld();
   }
 
+  // --- throw generation + headless pre-simulation + fate ------------------
+
+  // Uniform random orientation over SO(3) (Shoemake). A fair die must start
+  // orientation-uniform; the previous per-axis Euler spin was NOT uniform.
+  function randomQuaternion() {
+    const u1 = Math.random(), u2 = Math.random(), u3 = Math.random();
+    const s1 = Math.sqrt(1 - u1), s2 = Math.sqrt(u1);
+    const t1 = 2 * Math.PI * u2, t2 = 2 * Math.PI * u3;
+    return new THREE.Quaternion(s1 * Math.sin(t1), s1 * Math.cos(t1), s2 * Math.sin(t2), s2 * Math.cos(t2));
+  }
+
+  // Initial conditions for one die, generated once so the exact same throw can
+  // be pre-simulated invisibly and then replayed on screen. orientMode 'euler'
+  // reproduces the old biased spin (used only by the fairness audit baseline).
+  function computeSpawn(type, i, count, orientMode) {
+    const data = getDieGeometry(type);
+    const radius = data.radius * DIE_SCALE;
+    const margin = radius + 0.5;
+    const spread = (v, half) => Math.max(-half + margin, Math.min(half - margin, v));
+    const minDim = Math.min(trayW, trayD);
+    const rnd = () => (Math.random() - 0.5);
+    const gx = rollBaseAngle + i * (Math.PI * 2 / count);
+
+    let ox, oz, vx, vz;
+    if (count === 1) {
+      const off = minDim * 0.22;
+      ox = Math.cos(gx) * off; oz = Math.sin(gx) * off;
+      const spd = ROLL.launchSpeed + Math.random() * ROLL.launchSpeedVar;
+      vx = -Math.cos(gx) * spd + rnd() * 1.8;
+      vz = -Math.sin(gx) * spd + rnd() * 1.8;
+    } else {
+      const off = minDim * 0.24;
+      ox = Math.cos(gx) * off; oz = Math.sin(gx) * off;
+      vx = Math.cos(gx) * ROLL.launchSpeed2 + rnd() * 2.2;
+      vz = Math.sin(gx) * ROLL.launchSpeed2 + rnd() * 2.2;
+    }
+
+    const quaternion = orientMode === 'euler'
+      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2))
+      : randomQuaternion();
+
+    return {
+      position: new THREE.Vector3(
+        spread(ox + rnd() * 1.0, trayW / 2),
+        ROLL.spawnHeight + i * ROLL.spawnStagger,
+        spread(oz + rnd() * 1.0, trayD / 2)),
+      quaternion,
+      velocity: new THREE.Vector3(vx, ROLL.downVelocity, vz),
+      angularVelocity: new THREE.Vector3(rnd() * ROLL.spin, rnd() * ROLL.spin, rnd() * ROLL.spin),
+    };
+  }
+
+  function makeDieShape(type) {
+    const data = getDieGeometry(type);
+    if (type === 'd6') {
+      return new CANNON.Box(new CANNON.Vec3(0.42 * DIE_SCALE, 0.42 * DIE_SCALE, 0.42 * DIE_SCALE));
+    }
+    return new CANNON.ConvexPolyhedron({
+      vertices: data.convex.vertices.map(
+        (v) => new CANNON.Vec3(v[0] * DIE_SCALE, v[1] * DIE_SCALE, v[2] * DIE_SCALE)),
+      faces: data.convex.faces,
+    });
+  }
+
+  const HEADLESS_DT = 1 / 60;
+  const RAMP_STEP = Math.round(ROLL.dampRampStartMs * 0.001 * 60);
+  const CAP_STEP = Math.round(ROLL.hardCapMs * 0.001 * 60);
+
+  // Invisible, deterministic simulation of a whole throw to rest. Mirrors the
+  // visible loop (fixed step, damp ramp, velocity-threshold rest, NO nudges) and
+  // returns each die's landing face. All dice are simulated together so die-die
+  // collisions in 2d6 are reproduced.
+  function simulateHeadless(entries) {
+    const w = new CANNON.World({ gravity: new CANNON.Vec3(0, CONFIG.gravity, 0) });
+    w.broadphase = new CANNON.SAPBroadphase(w);
+    const fMat = new CANNON.Material('floor');
+    const dMat = new CANNON.Material('dice');
+    w.addContactMaterial(new CANNON.ContactMaterial(fMat, dMat, { restitution: CONFIG.restitution, friction: CONFIG.friction }));
+    w.addContactMaterial(new CANNON.ContactMaterial(dMat, dMat, { restitution: CONFIG.restitution, friction: CONFIG.friction }));
+
+    const W = trayW, D = trayD;
+    const tb = new CANNON.Body({ mass: 0, material: fMat });
+    tb.addShape(new CANNON.Box(new CANNON.Vec3(W / 2 + 1, 0.5, D / 2 + 1)), new CANNON.Vec3(0, -0.5, 0));
+    const walls = [
+      [[W / 2, WALL_HEIGHT / 2, 0.5], [0, WALL_HEIGHT / 2, -D / 2 - 0.5]],
+      [[W / 2, WALL_HEIGHT / 2, 0.5], [0, WALL_HEIGHT / 2, D / 2 + 0.5]],
+      [[0.5, WALL_HEIGHT / 2, D / 2 + 1], [-W / 2 - 0.5, WALL_HEIGHT / 2, 0]],
+      [[0.5, WALL_HEIGHT / 2, D / 2 + 1], [W / 2 + 0.5, WALL_HEIGHT / 2, 0]],
+    ];
+    for (const [half, pos] of walls) tb.addShape(new CANNON.Box(new CANNON.Vec3(...half)), new CANNON.Vec3(...pos));
+    w.addBody(tb);
+
+    const sims = entries.map(({ type, ic }) => {
+      const body = new CANNON.Body({ mass: 1, material: dMat, shape: makeDieShape(type) });
+      body.allowSleep = false;
+      body.linearDamping = 0.03;
+      body.angularDamping = 0.07;
+      body.position.set(ic.position.x, ic.position.y, ic.position.z);
+      body.quaternion.set(ic.quaternion.x, ic.quaternion.y, ic.quaternion.z, ic.quaternion.w);
+      body.velocity.set(ic.velocity.x, ic.velocity.y, ic.velocity.z);
+      body.angularVelocity.set(ic.angularVelocity.x, ic.angularVelocity.y, ic.angularVelocity.z);
+      w.addBody(body);
+      return { data: getDieGeometry(type), body, restFrames: 0, resolved: false, faceIdx: 0, alignment: 0 };
+    });
+
+    const q = new THREE.Quaternion();
+    for (let step = 0; step < CAP_STEP; step++) {
+      w.step(HEADLESS_DT);
+      const overdue = step >= CAP_STEP - 1;
+      const ramping = step >= RAMP_STEP;
+      let done = true;
+      for (const d of sims) {
+        if (d.resolved) continue;
+        const b = d.body;
+        if (ramping) {
+          b.velocity.scale(ROLL.dampRampPerFrame, b.velocity);
+          b.angularVelocity.scale(ROLL.dampRampPerFrame, b.angularVelocity);
+        }
+        const speed = b.velocity.length();
+        const spin = b.angularVelocity.length();
+        if ((speed < REST_LIN_VEL && spin < REST_ANG_VEL && b.position.y < REST_MAX_Y) || overdue) d.restFrames++;
+        else d.restFrames = 0;
+        if (d.restFrames < REST_FRAMES && !overdue) { done = false; continue; }
+        q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
+        const [fi, al] = readFace(d.data, q);
+        d.faceIdx = fi; d.alignment = al; d.resolved = true;
+      }
+      if (done) break;
+    }
+    return sims.map((d) => ({
+      faceIdx: d.faceIdx, alignment: d.alignment,
+      value: d.data.faces[d.faceIdx].value, display: d.data.faces[d.faceIdx].display,
+    }));
+  }
+
+  // Pick a target value biased to the upper half (d20: 11-20, d6: 4-6).
+  function pickTargetValue(type) {
+    const sides = type === 'd20' ? 20 : 6;
+    const half = sides / 2;
+    const high = Math.random() < FATE_HIGH_CHANCE;
+    return (high ? half + 1 : 1) + Math.floor(Math.random() * half);
+  }
+
+  function faceIndexOfValue(data, value) {
+    return data.faces.findIndex((f) => f.value === value);
+  }
+
+  // Orthonormal frame (tangent, bitangent, normal) of a face in local space.
+  function faceFrame(data, faceIdx) {
+    const n = data.faces[faceIdx].normal.clone().normalize();
+    const vi = data.convex.faces[faceIdx][0];
+    const v = new THREE.Vector3(
+      data.convex.vertices[vi][0], data.convex.vertices[vi][1], data.convex.vertices[vi][2]);
+    const t = v.clone().addScaledVector(n, -v.dot(n)).normalize();
+    const b = new THREE.Vector3().crossVectors(n, t);
+    return new THREE.Matrix4().makeBasis(t, b, n);
+  }
+
+  // A rotational SYMMETRY of the die mapping the target face's flag onto the
+  // landing face's flag (simply-transitive on flags for cube/icosahedron, so
+  // this frame-match IS a genuine symmetry). Returns null if the sanity check
+  // fails, in which case the caller skips fate for that die.
+  function symmetryRotation(data, targetIdx, landingIdx) {
+    const Ft = faceFrame(data, targetIdx);
+    const Fl = faceFrame(data, landingIdx);
+    const R = new THREE.Matrix4().multiplyMatrices(Fl, Ft.clone().invert());
+    const q = new THREE.Quaternion().setFromRotationMatrix(R);
+    const mapped = data.faces[targetIdx].normal.clone().applyQuaternion(q);
+    return mapped.dot(data.faces[landingIdx].normal) > 0.999 ? q : null;
+  }
+
   // --- live dice ----------------------------------------------------------
   let dice = [];         // { type, data, mesh, body, radius, restFrames, nudges, resolved, value, display }
   let rolling = false;
   let rollBaseAngle = 0;   // randomized per roll → no systematic spawn-side bias
-  let rollDeadline = 0;
+  let rollStart = 0;
   let settleResolve = null;
+  let settleTimer = null;
   let pauseAt = 0;
+  const fateStats = { targeted: 0, hits: 0 };
 
   function removeDie(die) {
+    die.body.removeEventListener('collide', onCollide);
     scene.remove(die.mesh);
     world.removeBody(die.body);
   }
@@ -253,7 +474,9 @@ export function createDiceSim({ container, audio }) {
     renderOnce();
   }
 
-  function spawnDie(type, i, count) {
+  // Build a live die (mesh + rigid body) from precomputed initial conditions.
+  // `target` is the fate-desired value (or null) for post-settle hit accounting.
+  function spawnDie(type, ic, target) {
     const data = getDieGeometry(type);
     const { material } = getMaterial(type, currentHouse);
     const mesh = new THREE.Mesh(data.geometry, material);
@@ -262,72 +485,60 @@ export function createDiceSim({ container, audio }) {
     mesh.receiveShadow = true;
     scene.add(mesh);
 
-    const shape = type === 'd6'
-      ? new CANNON.Box(new CANNON.Vec3(0.42 * DIE_SCALE, 0.42 * DIE_SCALE, 0.42 * DIE_SCALE))
-      : new CANNON.ConvexPolyhedron({
-          vertices: data.convex.vertices.map(
-            (v) => new CANNON.Vec3(v[0] * DIE_SCALE, v[1] * DIE_SCALE, v[2] * DIE_SCALE)),
-          faces: data.convex.faces,
-        });
-
-    const body = new CANNON.Body({ mass: 1, material: diceMat, shape });
+    const body = new CANNON.Body({ mass: 1, material: diceMat, shape: makeDieShape(type) });
     body.allowSleep = true;
     body.sleepSpeedLimit = 0.15;
     body.sleepTimeLimit = 0.4;
-    body.linearDamping = 0.06;
-    body.angularDamping = 0.14;
-
-    const radius = data.radius * DIE_SCALE;
-    const margin = radius + 0.5;
-    const spread = (v, half) => Math.max(-half + margin, Math.min(half - margin, v));
-    const minDim = Math.min(trayW, trayD);
-    const rnd = () => (Math.random() - 0.5);
-
-    // Per-roll random base angle removes the old deterministic +x (right-side)
-    // bias: index 0 no longer always maps to angle 0. Dice fan out symmetrically
-    // around that random angle so 2d6 still starts on opposite sides.
-    const gx = rollBaseAngle + i * (Math.PI * 2 / count);
-
-    let ox, oz, vx, vz;
-    if (count === 1) {
-      // Single die: spawn offset to a random side, then fling the impulse back
-      // ACROSS the center → the die traverses the middle and, with damping,
-      // tends to settle centrally instead of hugging one wall.
-      const off = minDim * 0.22;
-      ox = Math.cos(gx) * off;
-      oz = Math.sin(gx) * off;
-      const spd = 2.6 + Math.random() * 1.4;
-      vx = -Math.cos(gx) * spd + rnd() * 1.6;
-      vz = -Math.sin(gx) * spd + rnd() * 1.6;
-    } else {
-      // Multiple dice: symmetric offsets + gentle outward impulse so the large
-      // dice spread apart and never pile into each other at dead center.
-      const off = minDim * 0.24;
-      ox = Math.cos(gx) * off;
-      oz = Math.sin(gx) * off;
-      vx = Math.cos(gx) * 2.4 + rnd() * 2;
-      vz = Math.sin(gx) * 2.4 + rnd() * 2;
-    }
-
-    const x = spread(ox + rnd() * 1.0, trayW / 2);
-    const z = spread(oz + rnd() * 1.0, trayD / 2);
-    // Spawn just above the tray — low enough that the drop-in stays within the
-    // frame, high enough (plus the strong spin below) to tumble convincingly.
-    body.position.set(x, 3.4 + i * 1.9, z);
-    body.quaternion.setFromEuler(
-      Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
-    body.angularVelocity.set(rnd() * 14, rnd() * 14, rnd() * 14);
-    body.velocity.set(vx, -1, vz);
+    body.linearDamping = 0.03;   // low → keeps skittering
+    body.angularDamping = 0.07;  // low → keeps tumbling/rolling longer
+    body.position.set(ic.position.x, ic.position.y, ic.position.z);
+    body.quaternion.set(ic.quaternion.x, ic.quaternion.y, ic.quaternion.z, ic.quaternion.w);
+    body.velocity.set(ic.velocity.x, ic.velocity.y, ic.velocity.z);
+    body.angularVelocity.set(ic.angularVelocity.x, ic.angularVelocity.y, ic.angularVelocity.z);
+    body.addEventListener('collide', onCollide);
     world.addBody(body);
 
     return {
-      type, data, mesh, body, radius,
+      type, data, mesh, body, target,
       restFrames: 0, nudges: 0, resolved: false, value: null, display: null,
     };
   }
 
   function setAccent(hex) {
     rim.color.set(hex);
+  }
+
+  // Per-bounce feedback from cannon-es 'collide' events (physics-driven, honest).
+  function onCollide(e) {
+    if (!rolling || !e.contact) return;
+    const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    if (v < ROLL.impactMinSpeed) return;
+    const now = performance.now();
+    if (now - lastImpactSfxT >= ROLL.impactSfxThrottleMs) {
+      audio?.sfx?.('thud');
+      lastImpactSfxT = now;
+    }
+    if (v > ROLL.shakeSpeed) triggerShake((v - ROLL.shakeSpeed) / 8);
+  }
+
+  function triggerShake(intensity) {
+    if (reducedMotion) return;
+    shakeUntil = performance.now() + ROLL.shakeMs;
+    shakeMag = Math.max(shakeMag, Math.min(1, intensity) * ROLL.shakePx);
+  }
+
+  function applyShake(now) {
+    if (now < shakeUntil && shakeMag > 0) {
+      const decay = (shakeUntil - now) / ROLL.shakeMs; // 1 → 0
+      const m = shakeMag * decay;
+      const dx = (Math.random() * 2 - 1) * m;
+      const dy = (Math.random() * 2 - 1) * m;
+      // scale(1.03) hides the sliver of stage revealed by the translate.
+      canvas.style.transform = `translate(${dx}px,${dy}px) scale(1.03)`;
+    } else if (shakeMag > 0 || canvas.style.transform) {
+      shakeMag = 0;
+      canvas.style.transform = '';
+    }
   }
 
   /** Recolor dice to the active house (null = All → defaults). No remount needed. */
@@ -348,9 +559,30 @@ export function createDiceSim({ container, audio }) {
     audio?.sfx?.('roll');
 
     rollBaseAngle = Math.random() * Math.PI * 2;
-    dice = types.map((t, i) => spawnDie(t, i, types.length));
+
+    // Generate the throw once, then (optionally) apply fate weighting: pre-sim
+    // all dice together to see where they land, pick a biased target per die,
+    // and pre-rotate each start orientation by a symmetry so the same tumble
+    // lands the target. The collision shapes are unchanged, so the roll is real.
+    const ics = types.map((t, i) => computeSpawn(t, i, types.length));
+    const targets = types.map(() => null);
+    if (FATE_ENABLED) {
+      const landings = simulateHeadless(types.map((t, i) => ({ type: t, ic: ics[i] })));
+      for (let i = 0; i < types.length; i++) {
+        const data = getDieGeometry(types[i]);
+        const targetVal = pickTargetValue(types[i]);
+        const targetIdx = faceIndexOfValue(data, targetVal);
+        const R = targetIdx >= 0 ? symmetryRotation(data, targetIdx, landings[i].faceIdx) : null;
+        if (R) {
+          ics[i].quaternion = ics[i].quaternion.clone().multiply(R);
+          targets[i] = targetVal;
+        }
+      }
+    }
+
+    dice = types.map((t, i) => spawnDie(t, ics[i], targets[i]));
     rolling = true;
-    rollDeadline = performance.now() + 3500;
+    rollStart = performance.now();
     startLoop();
 
     return new Promise((resolve) => { settleResolve = resolve; });
@@ -367,16 +599,27 @@ export function createDiceSim({ container, audio }) {
 
   const _q = new THREE.Quaternion();
   function checkRest(now) {
-    const overdue = now > rollDeadline;
+    const elapsed = now - rollStart;
+    const overdue = elapsed > ROLL.hardCapMs;
+    // Enforce a lively minimum: keep simulating (never read the settled face)
+    // until minRollMs, so even a quick-settling die still gets a full roll.
+    if (elapsed < ROLL.minRollMs && !overdue) return;
+    // After the ramp point, bleed velocity every frame so even a die that keeps
+    // skittering is guaranteed to come to rest well before the hard cap.
+    const ramping = elapsed > ROLL.dampRampStartMs;
     let allResolved = true;
 
     for (const die of dice) {
       if (die.resolved) continue;
       const b = die.body;
+      if (ramping) {
+        b.velocity.scale(ROLL.dampRampPerFrame, b.velocity);
+        b.angularVelocity.scale(ROLL.dampRampPerFrame, b.angularVelocity);
+      }
       const speed = b.velocity.length();
       const spin = b.angularVelocity.length();
 
-      if ((speed < REST_LIN_VEL && spin < REST_ANG_VEL && b.position.y < 1.8) || overdue) {
+      if ((speed < REST_LIN_VEL && spin < REST_ANG_VEL && b.position.y < REST_MAX_Y) || overdue) {
         die.restFrames++;
       } else {
         die.restFrames = 0;
@@ -386,7 +629,7 @@ export function createDiceSim({ container, audio }) {
       _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
       const [faceIdx, alignment] = readFace(die.data, _q);
 
-      if (alignment < COCKED_DOT && die.nudges < MAX_NUDGES && !overdue) {
+      if (NUDGES_ENABLED && alignment < COCKED_DOT && die.nudges < MAX_NUDGES && !overdue) {
         nudge(die);
         allResolved = false;
         continue;
@@ -402,10 +645,24 @@ export function createDiceSim({ container, audio }) {
 
   function settle(now) {
     rolling = false;
-    pauseAt = now + 900;
+    pauseAt = now + 900 + ROLL.settleAnticipationMs;
     audio?.sfx?.('thud');
+    // Fate accounting: we always DISPLAY the real settled face; a target miss
+    // (rare numerical divergence) just means the physics face is shown instead.
+    for (const d of dice) {
+      if (d.target == null) continue;
+      fateStats.targeted++;
+      if (d.value === d.target) fateStats.hits++;
+      else console.warn(`dice: fate miss — wanted ${d.target}, physics gave ${d.value} (${d.type}); showing real face`);
+    }
     const results = dice.map((d) => ({ value: d.value, display: d.display }));
-    if (settleResolve) { settleResolve(results); settleResolve = null; }
+    // Brief anticipation beat: dice are at rest, but hold the result reveal a
+    // moment so the number pop lands with weight. Capture the resolver locally
+    // so a later roll can never resolve this promise with the wrong values.
+    const resolve = settleResolve;
+    settleResolve = null;
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => { if (resolve) resolve(results); }, ROLL.settleAnticipationMs);
   }
 
   // --- render loop (render-on-demand; idles when settled) -----------------
@@ -427,13 +684,15 @@ export function createDiceSim({ container, audio }) {
   function frame(now) {
     const dt = Math.min((now - last) / 1000 || 0, 1 / 30);
     last = now;
-    world.step(1 / 60, dt, 6);
+    world.step(1 / 60, dt, SUBSTEPS);
     syncMeshes();
     if (rolling) checkRest(now);
+    applyShake(now);
     renderer.render(scene, camera);
 
-    // Idle the loop once nothing is moving and the settle grace has elapsed.
-    if (!rolling && now > pauseAt) {
+    // Idle the loop once nothing is moving, the settle grace has elapsed, and
+    // the impact shake has finished.
+    if (!rolling && now > pauseAt && now >= shakeUntil) {
       rafId = null;
       return;
     }
@@ -472,6 +731,9 @@ export function createDiceSim({ container, audio }) {
   function dispose() {
     if (rafId != null) cancelAnimationFrame(rafId);
     rafId = null;
+    clearTimeout(settleTimer);
+    settleTimer = null;
+    canvas.style.transform = '';
     ro.disconnect();
     clear();
     clearTray();
@@ -489,6 +751,47 @@ export function createDiceSim({ container, audio }) {
     if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
   }
 
+  // Automated headless distribution test. Runs `n` full throws (no rendering)
+  // and tallies the settled value per face. opts.fate applies the fate pipeline;
+  // opts.orient ('euler'|'uniform') selects the spawn-orientation model (used to
+  // show the fairness before/after). Returns { counts, targeted, hits }.
+  function audit(mode, n, opts = {}) {
+    const types = MODE_DICE[mode] || ['d6'];
+    const orient = opts.orient || 'uniform';
+    const savedAngle = rollBaseAngle;
+    const counts = {};
+    let targeted = 0, hits = 0;
+
+    for (let r = 0; r < n; r++) {
+      rollBaseAngle = Math.random() * Math.PI * 2;
+      const ics = types.map((t, i) => computeSpawn(t, i, types.length, orient));
+      const landings = simulateHeadless(types.map((t, i) => ({ type: t, ic: ics[i] })));
+
+      if (!opts.fate) {
+        for (const l of landings) counts[l.value] = (counts[l.value] || 0) + 1;
+        continue;
+      }
+
+      const fated = types.map((t, i) => {
+        const data = getDieGeometry(t);
+        const tv = pickTargetValue(t);
+        const ti = faceIndexOfValue(data, tv);
+        const R = ti >= 0 ? symmetryRotation(data, ti, landings[i].faceIdx) : null;
+        if (!R) return { ic: ics[i], target: null };
+        return { ic: { ...ics[i], quaternion: ics[i].quaternion.clone().multiply(R) }, target: tv };
+      });
+      const finals = simulateHeadless(types.map((t, i) => ({ type: t, ic: fated[i].ic })));
+      for (let i = 0; i < types.length; i++) {
+        const v = finals[i].value;
+        counts[v] = (counts[v] || 0) + 1;
+        if (fated[i].target != null) { targeted++; if (v === fated[i].target) hits++; }
+      }
+    }
+
+    rollBaseAngle = savedAngle;
+    return { counts, targeted, hits };
+  }
+
   return {
     roll,
     clear,
@@ -496,5 +799,7 @@ export function createDiceSim({ container, audio }) {
     setHouse,
     dispose,
     isRolling: () => rolling,
+    audit,
+    getFateStats: () => ({ ...fateStats }),
   };
 }
