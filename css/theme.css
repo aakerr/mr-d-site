@@ -115,11 +115,11 @@ html, body { background: var(--color-page); }
   transition: transform var(--transition-fast), opacity var(--transition-fast);
 }
 .shell-brand:active { transform: scale(0.96); }
-.shell-brand:hover .brand-label { color: var(--accent); }
+/* brand label stays white in all states (teacher request) */
 .brand-label { transition: color var(--transition-fast); }
 /* Brand doubles as the Home control: a quiet tint while away from the
    dashboard signals "tap to return," carried over from the old Home button. */
-.shell-brand[data-active="true"] .brand-label { color: var(--accent); }
+
 
 /* core switcher */
 .core-switch-btn {

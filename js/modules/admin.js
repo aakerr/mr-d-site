@@ -11,9 +11,9 @@ import { backup } from '../core/backup.js';
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
   { id: 'planner', label: '📅 Planner' },
-  { id: 'quests', label: '🗺️ Quests' },
-  { id: 'shop', label: '🔮 Shop' },
-  { id: 'potw', label: '🌍 Place of the Week' },
+  { id: 'quests', label: "<img src='images/icon-quest.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Quests" },
+  { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
+  { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
 ];
 const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
 const TABS = [...MAIN_TABS, SETTINGS_TAB];

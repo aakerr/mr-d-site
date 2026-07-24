@@ -101,7 +101,7 @@ function renderHeader(store) {
     <div class="quest-in flex items-end justify-between flex-wrap gap-2">
       <div>
         <h1 class="font-display font-extrabold text-2xl xl:text-3xl tracking-wide" style="color:${color};">
-          🗺️ CLASS QUESTS
+          <img src="images/icon-quest.png" alt="" class="inline-block h-9 xl:h-11 w-auto object-contain align-[-0.35em] mr-1" onerror="this.style.display='none'"/> CLASS QUESTS
         </h1>
         <p class="text-gray-400 text-sm xl:text-base mt-0.5">One quest at a time. Glory for all.</p>
       </div>

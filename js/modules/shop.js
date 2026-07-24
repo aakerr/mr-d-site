@@ -375,7 +375,7 @@ function render(s) {
   rootEl.innerHTML = `
     <div class="shop-root">
       <div class="shop-header">
-        <div class="shop-title font-display">🔮 THE FRIDAY MAGIC SHOP</div>
+        <div class="shop-title font-display"><img src="images/icon-market.png" alt="" style="display:inline-block;height:1.2em;width:auto;vertical-align:-0.2em;margin-right:.25em" onerror="this.style.display='none'"/> THE FRIDAY MAGIC SHOP</div>
         <div class="shop-subtitle">Spend your hoard. Strike your rivals. Guard your gold.</div>
       </div>
 
