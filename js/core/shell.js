@@ -23,9 +23,20 @@ function hexToRgbTriplet(hex) {
 
 function formatToday() {
   try {
-    return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+    return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date());
   } catch (e) { return ''; }
 }
+
+// Lucide-style calendar glyph, authored inline (no asset) — 22-24px,
+// stroke currentColor so it inherits whatever muted text color it sits in.
+const CALENDAR_ICON_SVG = `
+  <svg class="date-cal-icon w-[22px] h-[22px] sm:w-6 sm:h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect width="18" height="18" x="3" y="4" rx="2" ry="2"></rect>
+    <line x1="16" y1="2" x2="16" y2="6"></line>
+    <line x1="8" y1="2" x2="8" y2="6"></line>
+    <line x1="3" y1="10" x2="21" y2="10"></line>
+  </svg>
+`;
 
 function housesByCore(store) {
   return [1, 2, 3, 4].map((c) => store.HOUSES[c]).filter(Boolean);
@@ -144,7 +155,6 @@ export function initShell(ctx) {
 
     let termInfo = { week: 1, totalWeeks: 9, label: '' };
     try { termInfo = store.getTermInfo(); } catch (e) { /* keep default */ }
-    const pct = Math.max(4, Math.min(100, Math.round((termInfo.week / termInfo.totalWeeks) * 100)));
 
     const homeActive = !!(currentModuleId && currentModuleId !== 'dashboard');
 
@@ -171,9 +181,12 @@ export function initShell(ctx) {
 
     topbarRoot.innerHTML = `
       <div class="h-full w-full flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-5">
-        <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex items-center gap-2 px-2 sm:px-3 rounded-xl" title="Home" aria-label="Go to dashboard">
-          <span class="text-3xl sm:text-4xl leading-none">🏰</span>
-          <span class="brand-label hidden md:inline font-body font-semibold text-base sm:text-lg md:text-xl text-gray-50">MR. D'S CLASSROOM</span>
+        <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex items-center gap-2 sm:gap-3 px-2 sm:px-3 rounded-xl" title="Home" aria-label="Go to dashboard">
+          <img src="images/class-shield.png" alt="Mr. D's Classroom crest" class="h-10 sm:h-11 w-auto object-contain shrink-0" />
+          <div class="hidden md:flex flex-col items-start leading-tight">
+            <span class="brand-label font-body font-semibold text-base sm:text-lg md:text-xl text-gray-50">MR. D'S CLASSROOM</span>
+            <span class="shell-subline text-[11px] sm:text-xs font-normal text-gray-400">Green Middle School</span>
+          </div>
         </button>
 
         <div class="relative flex-1 max-w-[30.6rem]" data-core-switcher>
@@ -192,11 +205,11 @@ export function initShell(ctx) {
           </button>
           `}
 
-          <div class="hidden sm:flex flex-col items-end justify-center min-w-[130px] md:min-w-[160px]">
-            <span class="text-xs md:text-sm font-semibold text-gray-100">${formatToday()}</span>
-            <span class="text-[10px] md:text-xs text-gray-400 truncate max-w-[160px]">${termInfo.label}</span>
-            <div class="term-progress-track w-24 md:w-36 h-1.5 mt-1">
-              <div class="term-progress-fill" style="width:${pct}%"></div>
+          <div class="hidden sm:flex items-center gap-2 text-gray-400">
+            ${CALENDAR_ICON_SVG}
+            <div class="flex flex-col items-end justify-center min-w-[130px] md:min-w-[160px]">
+              <span class="text-xs md:text-sm font-semibold text-gray-100">${formatToday()}</span>
+              <span class="shell-subline text-[11px] sm:text-xs font-normal text-gray-400">Week ${termInfo.week} of ${termInfo.totalWeeks}</span>
             </div>
           </div>
 

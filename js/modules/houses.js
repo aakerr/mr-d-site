@@ -48,9 +48,18 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Portrait, transparent-bg house shield — always contain-fit, never cropped.
 function houseImg(house, cls) {
-  return `<img src="${house.image}" alt="${house.name} artwork" class="${cls}"
+  return `<img src="${house.image}" alt="${house.name} crest" class="${cls}"
     onerror="this.onerror=null;this.style.display='none';this.parentElement.classList.add('hse-img-fallback');" />`;
+}
+
+// <img> with a graceful emoji-fallback sibling, shown if the PNG 404s.
+function pngWithEmojiFallback(src, emoji, cls, wrapCls) {
+  return `<div class="${wrapCls} relative inline-flex items-center justify-center shrink-0 align-middle">
+    <img src="${src}" alt="" class="${cls}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+    <span class="hidden absolute inset-0 items-center justify-center">${emoji}</span>
+  </div>`;
 }
 
 function fmtTime(ts) {
@@ -86,13 +95,17 @@ function renderArtworkHeaders(state, store) {
   if (state.activeCore !== 'all' && activeHouse) {
     const h = activeHouse;
     return `
-      <div class="hse-in hse-banner relative w-full rounded-2xl overflow-hidden border-2 h-40 xl:h-56 bg-gradient-to-br from-card2 to-card flex items-center justify-center"
+      <div class="hse-in hse-banner relative w-full rounded-2xl overflow-hidden border-2 min-h-[180px] xl:min-h-[240px] flex items-center"
            style="border-color:${h.accent}; --hse-glow:${h.accentSoft};">
-        ${houseImg(h, 'absolute inset-0 w-full h-full object-cover')}
-        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
-        <div class="absolute bottom-3 left-5 xl:bottom-5 xl:left-6">
-          <div class="font-display font-extrabold text-3xl xl:text-5xl tracking-wide" style="color:${h.accent}; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">${h.name}</div>
-          <div class="text-gray-200 italic text-sm xl:text-lg" style="text-shadow: 0 1px 6px rgba(0,0,0,0.8);">&ldquo;${escapeHtml(h.motto)}&rdquo;</div>
+        <div class="absolute inset-0 bg-gradient-to-br from-card2 to-card"></div>
+        <img src="${h.heroImage}" alt="" class="absolute inset-0 w-full h-full object-cover" onerror="this.onerror=null;this.style.display='none';" />
+        <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-black/10"></div>
+        <div class="relative z-10 flex items-center gap-5 p-5 xl:p-7 w-full">
+          ${houseImg(h, 'h-32 xl:h-44 w-auto object-contain shrink-0 drop-shadow-[0_8px_20px_rgba(0,0,0,0.6)]')}
+          <div>
+            <div class="font-display font-extrabold text-3xl xl:text-5xl tracking-wide text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]">${h.name}</div>
+            <div class="text-white/90 italic text-lg xl:text-2xl mt-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</div>
+          </div>
         </div>
       </div>`;
   }
@@ -100,11 +113,11 @@ function renderArtworkHeaders(state, store) {
   return `
     <div class="hse-in grid grid-cols-2 xl:grid-cols-4 gap-3">
       ${houses.map((h) => `
-        <button data-select-core="${h.core}" class="hse-card relative rounded-2xl overflow-hidden border-2 h-28 xl:h-36 bg-gradient-to-br from-card2 to-card"
+        <button data-select-core="${h.core}" class="hse-card relative rounded-2xl overflow-hidden border-2 h-32 xl:h-40 bg-card flex flex-col items-center justify-center gap-2 p-3"
                 style="border-color:${h.accent};">
-          ${houseImg(h, 'absolute inset-0 w-full h-full object-cover')}
-          <div class="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-          <div class="absolute bottom-2 left-3 font-display font-extrabold text-base xl:text-xl" style="color:${h.accent}; text-shadow:0 2px 8px rgba(0,0,0,0.8);">${h.name}</div>
+          <div class="absolute inset-0" style="background: radial-gradient(circle at 50% 22%, ${h.accentSoft}, transparent 70%);"></div>
+          ${houseImg(h, 'relative z-10 h-16 xl:h-20 w-auto object-contain drop-shadow-lg')}
+          <span class="relative z-10 font-display font-extrabold text-sm xl:text-lg" style="color:${h.accent};">${h.name}</span>
         </button>
       `).join('')}
     </div>`;
@@ -127,9 +140,7 @@ function renderLeaderboard(state, store, s) {
           return `
           <div class="flex items-center gap-3 rounded-xl p-2.5 ${isActive ? 'bg-card2 ring-1' : ''}" ${isActive ? `style="--tw-ring-color:${t.house.accent}"` : ''}>
             <div class="w-8 text-center text-xl xl:text-2xl shrink-0">${medals[i] || '🏅'}</div>
-            <div class="w-10 h-10 xl:w-12 xl:h-12 rounded-lg overflow-hidden border shrink-0" style="border-color:${t.house.accent}">
-              ${houseImg(t.house, 'w-full h-full object-cover')}
-            </div>
+            ${houseImg(t.house, 'h-10 xl:h-12 w-auto object-contain shrink-0 drop-shadow')}
             <div class="flex-1 min-w-0">
               <div class="flex justify-between items-baseline gap-2">
                 <span class="font-bold truncate" style="color:${t.house.accent}">${t.house.name}</span>
@@ -138,7 +149,7 @@ function renderLeaderboard(state, store, s) {
                   <span class="font-extrabold text-gray-100 text-lg">${t.total}</span>
                 </span>
               </div>
-              <div class="h-2.5 rounded-full bg-card2 mt-1 overflow-hidden">
+              <div class="h-2.5 rounded-full mt-1 overflow-hidden" style="background: var(--color-line, #374151);">
                 <div class="hse-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
               </div>
             </div>
@@ -170,7 +181,7 @@ function renderScoringPanel(state, store, s) {
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div class="text-gray-400 text-sm font-semibold uppercase tracking-wide">Award / Deduct Points</div>
         <div class="flex items-center gap-2 font-bold" style="color:${target.accent}">
-          <span class="w-6 h-6 rounded-full overflow-hidden border" style="border-color:${target.accent}">${houseImg(target, 'w-full h-full object-cover')}</span>
+          ${houseImg(target, 'h-7 w-auto object-contain')}
           ${target.name}
         </div>
       </div>
@@ -246,7 +257,10 @@ function render(root, ctx, s) {
   root.innerHTML = `
     <div class="h-full w-full p-4 xl:p-6 flex flex-col gap-4 xl:gap-5 overflow-y-auto hse-scroll">
       <div class="flex items-center justify-between flex-wrap gap-3">
-        <h1 class="font-display font-extrabold text-2xl xl:text-3xl text-gray-50">🏆 House Points</h1>
+        <h1 class="font-display font-extrabold text-2xl xl:text-3xl text-gray-50 flex items-center gap-2">
+          ${pngWithEmojiFallback('images/icon-points.png', '🏆', 'h-8 w-8 xl:h-9 xl:w-9 object-contain', 'h-8 w-8 xl:h-9 xl:w-9 text-3xl')}
+          House Points
+        </h1>
         ${renderSegToggle(s)}
       </div>
       ${renderArtworkHeaders(state, store)}

@@ -32,7 +32,7 @@
   --transition-med: 250ms ease;
   --transition-slow: 300ms ease;
 
-  --topbar-height: 72px;
+  --topbar-height: 76px; /* two-line brand/date blocks need a touch more room than a single line */
 }
 
 * { -webkit-tap-highlight-color: transparent; }
@@ -164,17 +164,11 @@ html, body { background: var(--color-page); }
   background: rgba(255,255,255,0.05);
 }
 
-/* term progress bar */
-.term-progress-track {
-  background: var(--color-line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.term-progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 999px;
-  transition: width var(--transition-slow) ease, background var(--transition-med);
+/* shared muted secondary line — brand's "Green Middle School" and the date
+   block's "Week N of M" both use this so they read as one visual system. */
+.shell-subline {
+  line-height: 1.2;
+  transition: color var(--transition-fast);
 }
 
 /* subtle teacher admin access — deliberately low-key, not a student affordance */
