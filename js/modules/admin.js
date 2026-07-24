@@ -42,7 +42,7 @@ const TYPES = {
   'homework':   { label: 'Homework',   color: '#3b82f6', outline: false },
   'itinerary':  { label: 'Itinerary',  color: '#22c55e', outline: false },
   'potw':       { label: 'Place of Week', color: '#06b6d4', outline: false },
-  'note':       { label: 'Note',       color: '#9ca3af', outline: false },
+  'note':       { label: 'Note',       color: 'rgb(156, 163, 175)', outline: false },
 };
 // Order used for legend + chip sorting.
 const TYPE_ORDER = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'potw', 'note', 'term-start', 'term-end'];
@@ -105,6 +105,7 @@ function renderShell() {
         </div>
         <div class="admin-seg" role="tablist">
           <button class="admin-seg-btn" data-action="tab" data-tab="planner">📅 Planner</button>
+          <button class="admin-seg-btn" data-action="tab" data-tab="quests">🗺️ Quests</button>
           <button class="admin-seg-btn" data-action="tab" data-tab="settings">⚙️ Term Settings</button>
           <button class="admin-seg-btn" data-action="tab" data-tab="potw">🌍 Place of the Week</button>
         </div>
@@ -129,6 +130,7 @@ function renderBody() {
   const ae = document.activeElement;
   if (ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
+  else if (activeTab === 'quests') body.innerHTML = renderQuests();
   else if (activeTab === 'settings') body.innerHTML = renderSettings();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
 }
@@ -517,12 +519,171 @@ function applyDup() {
 }
 
 // ===========================================================================
-// TAB 2 — TERM SETTINGS
+// TAB — QUESTS (active per-core quests, catalog manager, completions)
+// ===========================================================================
+function questDateStr(ts) {
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function renderQuests() {
+  const store = ctxRef.store;
+  const catalog = store.getQuestCatalog().slice().sort((a, b) => b.points - a.points);
+  const completed = store.getCompletedQuests({ limit: 20 });
+
+  const activeCards = [1, 2, 3, 4].map((core) => {
+    const house = store.HOUSES[core];
+    const q = store.getActiveQuest(core);
+    const body = q
+      ? `<div class="admin-q-active-body">
+           <div class="admin-q-active-title">${esc(q.title)}</div>
+           <div class="admin-q-active-meta">💎 ${q.points} pts · started ${esc(questDateStr(q.startedTs))}</div>
+           <div class="admin-q-active-actions">
+             <button class="admin-btn admin-btn-primary" data-action="quest-complete" data-core="${core}">✅ Confirm Complete</button>
+             <button class="admin-btn admin-btn-danger" data-action="quest-clear" data-core="${core}">✖ Clear</button>
+           </div>
+         </div>`
+      : '<div class="admin-q-active-empty">—</div>';
+    return `
+      <div class="admin-q-active" style="--house:${house.accent}">
+        <div class="admin-q-active-head" style="color:${house.accent}">${esc(house.name)} <span class="admin-faint">· Core ${core}</span></div>
+        ${body}
+      </div>`;
+  }).join('');
+
+  const catalogRows = catalog.map((q) => `
+    <div class="admin-q-row">
+      <div class="admin-q-pts">${q.points}<small>pts</small></div>
+      <div class="admin-q-main">
+        <div class="admin-q-title">${esc(q.title)}</div>
+        <div class="admin-q-desc">${esc(q.desc || '')}</div>
+      </div>
+      <div class="admin-q-row-actions">
+        <button class="admin-btn admin-btn-icon" data-action="quest-edit" data-id="${esc(q.id)}" aria-label="Edit">✏️</button>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="quest-del" data-id="${esc(q.id)}" aria-label="Delete">🗑️</button>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="admin-quests">
+      <div class="admin-card">
+        <div class="admin-card-title">Active Quests</div>
+        <div class="admin-mini">One quest can be active per house core. Students pick quests on the Quest Board; you confirm completion here to award the points.</div>
+        <div class="admin-q-active-grid">${activeCards}</div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-rows-head">
+          <span class="admin-card-title" style="margin:0">Quest Catalog <span class="admin-faint">(${catalog.length})</span></span>
+          <button class="admin-btn admin-btn-primary" data-action="quest-new">+ New Quest</button>
+        </div>
+        <div class="admin-q-list">
+          ${catalogRows || '<div class="admin-empty admin-empty-sm">No quests yet. Add one to get started.</div>'}
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-title">Recent Completions</div>
+        <div class="admin-q-list">
+          ${completed.length ? completed.map((c) => {
+            const house = store.HOUSES[c.core];
+            return `<div class="admin-q-done">
+              <span class="admin-evt-dot" style="background:${house.accent};border:2px solid ${house.accent}"></span>
+              <div class="admin-q-main">
+                <div class="admin-q-title">${esc(c.title)}</div>
+                <div class="admin-q-desc">${esc(house.name)} · +${c.points} pts · ${esc(questDateStr(c.ts))}</div>
+              </div>
+            </div>`;
+          }).join('') : '<div class="admin-empty admin-empty-sm">No quests completed yet.</div>'}
+        </div>
+      </div>
+    </div>`;
+}
+
+function openQuestForm(id) {
+  const store = ctxRef.store;
+  const q = id ? store.getQuestCatalog().find((x) => x.id === id) : null;
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${q ? '✏️ Edit Quest' : '🗺️ New Quest'}</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <label class="admin-flabel" for="admin-quest-title">Title</label>
+        <input id="admin-quest-title" class="admin-input" type="text" value="${esc(q?.title || '')}" placeholder="School Event Squad" />
+        <label class="admin-flabel" for="admin-quest-desc">What needs to be done</label>
+        <textarea id="admin-quest-desc" class="admin-input admin-textarea" rows="3" placeholder="Attend a school event together. Proof: photos showing at least half the class there.">${esc(q?.desc || '')}</textarea>
+        <label class="admin-flabel" for="admin-quest-points">Point value</label>
+        <input id="admin-quest-points" class="admin-input" type="number" min="1" max="9999" value="${esc(q?.points ?? 20)}" style="max-width:160px" />
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="quest-save" ${q ? `data-id="${esc(q.id)}"` : ''}>Save quest</button>
+      </div>
+    </div>`;
+  const t = el('admin-quest-title'); if (t) t.focus();
+}
+
+function saveQuestFromForm(id) {
+  const store = ctxRef.store;
+  const title = el('admin-quest-title').value.trim();
+  const desc = el('admin-quest-desc').value.trim();
+  const points = Number(el('admin-quest-points').value);
+  if (!title) { toast('A quest title is required.'); return; }
+  if (!(points >= 1)) { toast('Point value must be at least 1.'); return; }
+  const saved = store.saveQuest({ id: id || undefined, title, desc, points });
+  if (!saved) { toast('Could not save quest.'); return; }
+  closeModal();
+  renderBody();
+  toast(id ? 'Quest updated.' : 'Quest added.');
+}
+
+function openQuestCompleteModal(core) {
+  const store = ctxRef.store;
+  const q = store.getActiveQuest(core);
+  if (!q) { toast('No active quest for that core.'); return; }
+  const house = store.HOUSES[core];
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">✅ Confirm Completion</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <p class="admin-modal-lead">Mark <b>${esc(q.title)}</b> complete for <b style="color:${house.accent}">${esc(house.name)}</b> and award <b>+${q.points} points</b>?</p>
+        <div class="admin-mini">This logs a points transaction and archives the completion.</div>
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="quest-complete-confirm" data-core="${core}">Confirm &amp; award +${q.points}</button>
+      </div>
+    </div>`;
+}
+
+function confirmQuestComplete(core) {
+  const store = ctxRef.store;
+  const house = store.HOUSES[core];
+  const quest = store.completeQuest(core);
+  closeModal();
+  renderBody();
+  if (quest) { toast(`🎉 +${quest.points} to ${house.name} — “${quest.title}” complete!`); ctxRef.audio?.sfx?.('fanfare'); }
+}
+
+// ===========================================================================
+// TAB — TERM SETTINGS
 // ===========================================================================
 function renderSettings() {
   const store = ctxRef.store;
   const s = store.getSettings();
   const info = store.getTermInfo();
+  const theme = s.theme || { mode: 'dark', seasonal: false };
+  const mode = theme.mode === 'light' ? 'light' : 'dark';
+  const seasonal = !!theme.seasonal;
+  const apiKey = s.mapsApiKeyOverride || '';
   const termEvents = store.getEvents({ type: 'term-start' })
     .concat(store.getEvents({ type: 'term-end' }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -564,6 +725,38 @@ function renderSettings() {
             </div>`;
           }).join('') : '<div class="admin-empty admin-empty-sm">No term markers planned yet.</div>'}
         </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-card-title">Display &amp; Theme</div>
+
+        <label class="admin-flabel">Appearance</label>
+        <div class="admin-seg admin-theme-seg">
+          <button class="admin-theme-opt${mode === 'dark' ? ' on' : ''}" data-action="theme-mode" data-mode="dark">🌙 Dark</button>
+          <button class="admin-theme-opt${mode === 'light' ? ' on' : ''}" data-action="theme-mode" data-mode="light">☀️ Light</button>
+        </div>
+
+        <label class="admin-flabel">Seasonal theming</label>
+        <div class="admin-toggle-row">
+          <button class="admin-toggle${seasonal ? ' on' : ''}" data-action="theme-seasonal" role="switch" aria-checked="${seasonal}"><span class="admin-toggle-knob"></span></button>
+          <span class="admin-mini" style="margin:0">Adds automatic seasonal accents to the board — leaves in fall, snow in winter…</span>
+        </div>
+
+        <label class="admin-flabel" for="admin-maps-key">Google Maps API key (optional)</label>
+        <div class="admin-key-row">
+          <input id="admin-maps-key" class="admin-input" type="text" value="${esc(apiKey)}" placeholder="AIza… (blank = use bundled key)" autocomplete="off" spellcheck="false" />
+          <button class="admin-btn admin-btn-primary" data-action="maps-key-save">Save key</button>
+        </div>
+        <div class="admin-mini">Paste Mr. D's own key here so the app stops using the bundled one. Takes effect after refresh.</div>
+        <details class="admin-details">
+          <summary>How to get a key</summary>
+          <ol class="admin-steps">
+            <li>Go to <code>console.cloud.google.com</code> and create a new project.</li>
+            <li>Enable both <b>Maps JavaScript API</b> and <b>Map Tiles API</b>.</li>
+            <li>Open <b>Credentials → Create credentials → API key</b>.</li>
+            <li>Restrict the key to <b>Websites</b> (HTTP referrers), then paste it above.</li>
+          </ol>
+        </details>
       </div>
 
       <div class="admin-card admin-danger${dangerOpen ? ' open' : ''}">
@@ -670,13 +863,15 @@ function renderPotw() {
           if (pres?.type === 'pdf') presBadge = `<span class="admin-pres-tag">📊 PDF <span class="admin-pres-size" data-mkey="potw:${esc(k)}:slides.pdf"></span></span>`;
           else if (pres?.type === 'images') presBadge = `<span class="admin-pres-tag">📊 ${pres.count || 0} slide${pres.count === 1 ? '' : 's'}</span>`;
           else if (pres?.type === 'gslides') presBadge = '<span class="admin-pres-tag">📊 Google Slides</span>';
+          const urlBadge = pr.videoUrl ? '<span class="admin-pres-tag">🔗 Video URL</span>' : '';
+          const linkBadge = (pr.links || []).length ? `<span class="admin-pres-tag">🔖 ${pr.links.length} link${pr.links.length === 1 ? '' : 's'}</span>` : '';
           return `
           <div class="admin-potw-card${isActive ? ' active' : ''}">
             <div class="admin-potw-top">
               <div class="admin-potw-info">
                 <div class="admin-potw-title">${esc(pr.title)} ${isActive ? '<span class="admin-badge">ACTIVE</span>' : ''}</div>
                 <div class="admin-potw-sub">${esc(pr.subtitle || '')}</div>
-                <div class="admin-potw-meta">${dateBadge} ${presBadge} · ${(pr.quickFacts || []).length} facts · ${(pr.primarySources || []).length} sources · ${(pr.quiz || []).length} quiz · key <code>${esc(k)}</code></div>
+                <div class="admin-potw-meta">${dateBadge} ${presBadge} ${urlBadge} ${linkBadge} · ${(pr.quickFacts || []).length} facts · ${(pr.primarySources || []).length} sources · ${(pr.quiz || []).length} quiz · key <code>${esc(k)}</code></div>
               </div>
               <div class="admin-potw-actions">
                 <button class="admin-btn" data-action="potw-active" data-key="${esc(k)}"${isActive ? ' disabled' : ''}>${isActive ? 'Active' : 'Set Active'}</button>
@@ -688,6 +883,7 @@ function renderPotw() {
               ${dropZoneHTML('video', k)}
               ${dropZoneHTML('song', k)}
             </div>
+            <div class="admin-mini" style="margin:0">Playback priority: <b>dropped file › video URL › bundled fallback</b>. Set a video URL &amp; links in <b>Edit</b>.</div>
           </div>`;
         }).join('')}
       </div>
@@ -772,6 +968,8 @@ function openPotwEditor(key) {
       sources: (p.primarySources || []).map((s) => ({ emoji: s.emoji || '', name: s.name || '', desc: s.desc || '' })),
       quiz: (p.quiz || []).map((q) => ({ q: q.q || '', a: q.a || '' })),
       pres: { type: p.presentation?.type || null, pdf: null, images: [], url: p.presentation?.type === 'gslides' ? (p.presentation.url || '') : '' },
+      videoUrl: p.videoUrl || '',
+      links: (p.links || []).map((l) => ({ title: l.title || '', url: l.url || '' })),
     };
   } else {
     potwForm = {
@@ -781,6 +979,8 @@ function openPotwEditor(key) {
       sources: [{ emoji: '', name: '', desc: '' }],
       quiz: [{ q: '', a: '' }],
       pres: { type: null, pdf: null, images: [], url: '' },
+      videoUrl: '',
+      links: [],
     };
   }
   renderPotwModal();
@@ -879,6 +1079,7 @@ function renderPotwModal() {
         <div class="admin-qrows">${quizRows || '<div class="admin-empty admin-empty-sm">No questions yet.</div>'}</div>
 
         ${presSectionHTML()}
+        ${linksSectionHTML()}
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="potw-close">Cancel</button>
@@ -1001,6 +1202,42 @@ function normalizeGslides(raw) {
   return u.includes('/pub') ? u.replace('/pub', '/embed') : u;
 }
 
+// YouTube watch/share/shorts → embed form; direct .mp4 / relative paths pass through.
+function normalizeVideoUrl(raw) {
+  const u = (raw || '').trim();
+  if (!u) return '';
+  const m =
+    u.match(/youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/) ||
+    u.match(/[?&]v=([A-Za-z0-9_-]{6,})/) ||
+    u.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/) ||
+    u.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/);
+  if (m) return `https://www.youtube.com/embed/${m[1]}`;
+  return u; // direct video URL or site-relative path — leave as-is
+}
+
+// "Link media by URL" — video URL + Docs & Links rows, edited in-memory and
+// committed on Save. Sits alongside the card's drag-drop zones.
+function linksSectionHTML() {
+  const f = potwForm;
+  const linkRows = (f.links || []).map((l, i) => `
+    <div class="admin-link-row">
+      <input class="admin-input admin-link-title" type="text" value="${esc(l.title)}" placeholder="Link title" aria-label="Link title" />
+      <input class="admin-input admin-link-url" type="text" value="${esc(l.url)}" placeholder="https://…" aria-label="Link URL" />
+      <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="potw-link-del" data-i="${i}" aria-label="Remove">✕</button>
+    </div>`).join('');
+  return `
+    <div class="admin-rows-head"><span class="admin-card-title admin-mini-title" style="margin:0">Link media by URL</span></div>
+    <label class="admin-flabel" for="admin-p-videourl">Intro video URL</label>
+    <input id="admin-p-videourl" class="admin-input" type="text" value="${esc(f.videoUrl)}" placeholder="YouTube link, direct .mp4 URL, or videos/intro.mp4" autocomplete="off" spellcheck="false" />
+    <div class="admin-mini admin-pres-hint">Priority when the lesson plays: <b>dropped file › video URL › bundled fallback</b>. YouTube watch/share links are auto-converted to the embed form.</div>
+
+    <div class="admin-rows-head" style="margin-top:14px">
+      <span class="admin-card-title admin-mini-title" style="margin:0">Docs &amp; Links</span>
+      <button class="admin-btn admin-btn-sm" data-action="potw-link-add">+ Add link</button>
+    </div>
+    <div class="admin-link-rows">${linkRows || '<div class="admin-empty admin-empty-sm">No links yet — add reference docs, articles, or activities.</div>'}</div>`;
+}
+
 // Reconcile IndexedDB with the chosen presentation, returning the profile.presentation
 // value. Only ever touches this profile's :slides.pdf / :slide:NNN keys — never :video/:song.
 async function commitPresentation(key) {
@@ -1066,6 +1303,11 @@ function syncPotwFromDom() {
     a: r.querySelector('.admin-q-a').value.trim(),
   }));
   if (potwForm.pres && el('admin-pres-url')) potwForm.pres.url = el('admin-pres-url').value;
+  if (el('admin-p-videourl')) potwForm.videoUrl = el('admin-p-videourl').value;
+  potwForm.links = [...rootEl.querySelectorAll('.admin-link-row')].map((r) => ({
+    title: r.querySelector('.admin-link-title').value.trim(),
+    url: r.querySelector('.admin-link-url').value.trim(),
+  }));
 }
 
 async function savePotw() {
@@ -1100,6 +1342,10 @@ async function savePotw() {
     quiz: f.quiz.filter((q) => q.q || q.a),
   };
   if (presentation) profile.presentation = presentation;
+  const videoUrl = normalizeVideoUrl(f.videoUrl);
+  if (videoUrl) profile.videoUrl = videoUrl;
+  const links = (f.links || []).filter((l) => l.title || l.url).map((l) => ({ title: l.title, url: l.url }));
+  if (links.length) profile.links = links;
   const ok = ctxRef.store.savePotwProfile(finalKey, profile);
   if (!ok) { toast('Save failed — check the title.'); return; }
   upsertPotwEvent(finalKey, title, date);
@@ -1126,6 +1372,26 @@ function upsertPotwEvent(key, title, date) {
 function closeModal() {
   const m = el('admin-modal-root');
   if (m) m.innerHTML = '';
+  pendingConfirm = null;
+}
+
+let pendingConfirm = null;
+function openConfirm(title, body, onYes, { danger = true, yesLabel = 'Delete' } = {}) {
+  pendingConfirm = onYes;
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal${danger ? ' admin-modal-danger' : ''}">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${esc(title)}</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body"><p class="admin-modal-lead">${esc(body)}</p></div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
+        <button class="admin-btn admin-btn-lg ${danger ? 'admin-btn-nuke' : 'admin-btn-primary'}" data-action="confirm-yes">${esc(yesLabel)}</button>
+      </div>
+    </div>`;
 }
 
 // ===========================================================================
@@ -1175,8 +1441,42 @@ function onClick(e) {
     case 'dup-open': openDupModal(); break;
     case 'dup-apply': applyDup(); break;
 
+    // quests
+    case 'quest-new': openQuestForm(null); break;
+    case 'quest-edit': openQuestForm(btn.dataset.id); break;
+    case 'quest-save': saveQuestFromForm(btn.dataset.id || null); break;
+    case 'quest-del': {
+      const id = btn.dataset.id;
+      const q = store.getQuestCatalog().find((x) => x.id === id);
+      openConfirm(`Delete quest “${q ? q.title : ''}”?`, 'This removes it from the catalog and clears it from any core it is active on.', () => {
+        store.deleteQuest(id); renderBody(); toast('Quest deleted.');
+      });
+      break;
+    }
+    case 'quest-clear': store.abandonQuest(Number(btn.dataset.core)); renderBody(); toast('Active quest cleared.'); break;
+    case 'quest-complete': openQuestCompleteModal(Number(btn.dataset.core)); break;
+    case 'quest-complete-confirm': confirmQuestComplete(Number(btn.dataset.core)); break;
+
     // settings
     case 'settings-save': saveSettings(); break;
+    case 'theme-mode': {
+      const cur = store.getSettings().theme || { mode: 'dark', seasonal: false };
+      store.updateSettings({ theme: { ...cur, mode: btn.dataset.mode === 'light' ? 'light' : 'dark' } });
+      renderBody(); toast(`${btn.dataset.mode === 'light' ? 'Light' : 'Dark'} mode set.`);
+      break;
+    }
+    case 'theme-seasonal': {
+      const cur = store.getSettings().theme || { mode: 'dark', seasonal: false };
+      store.updateSettings({ theme: { ...cur, seasonal: !cur.seasonal } });
+      renderBody(); toast(`Seasonal theming ${!cur.seasonal ? 'on' : 'off'}.`);
+      break;
+    }
+    case 'maps-key-save': {
+      const v = el('admin-maps-key') ? el('admin-maps-key').value.trim() : '';
+      store.updateSettings({ mapsApiKeyOverride: v });
+      toast(v ? 'Maps key saved — refresh to apply.' : 'Maps key cleared — using bundled key.');
+      break;
+    }
     case 'danger-toggle': dangerOpen = !dangerOpen; renderBody(); break;
     case 'reset-open': openResetModal(); break;
     case 'reset-confirm': if (!btn.disabled) doReset(); break;
@@ -1216,6 +1516,8 @@ function onClick(e) {
     case 'potw-src-del': syncPotwFromDom(); potwForm.sources.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-quiz-add': syncPotwFromDom(); potwForm.quiz.push({ q: '', a: '' }); renderPotwModal(); break;
     case 'potw-quiz-del': syncPotwFromDom(); potwForm.quiz.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
+    case 'potw-link-add': syncPotwFromDom(); potwForm.links.push({ title: '', url: '' }); renderPotwModal(); break;
+    case 'potw-link-del': syncPotwFromDom(); potwForm.links.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-save': savePotw(); break;
     case 'potw-close': revokePresUrls(); potwForm = null; closeModal(); break;
 
@@ -1229,6 +1531,7 @@ function onClick(e) {
     case 'pres-img-clear': syncPotwFromDom(); revokeImageUrls(potwForm.pres.images); potwForm.pres.images = []; potwForm.pres.type = null; renderPotwModal(); break;
 
     // generic modal
+    case 'confirm-yes': { const cb = pendingConfirm; pendingConfirm = null; closeModal(); if (cb) cb(); break; }
     case 'modal-close': closeModal(); break;
 
     default: break;
@@ -1243,27 +1546,27 @@ function injectStyles() {
   const s = document.createElement('style');
   s.id = 'admin-styles';
   s.textContent = `
-  .admin-wrap{height:100%;display:flex;flex-direction:column;background:#0b0f19;color:#f9fafb;overflow:hidden;}
-  .admin-head{flex-shrink:0;padding:16px 20px 12px;border-bottom:1px solid #1f2937;
+  .admin-wrap{height:100%;display:flex;flex-direction:column;background:var(--color-page);color:var(--color-text);overflow:hidden;}
+  .admin-head{flex-shrink:0;padding:16px 20px 12px;border-bottom:1px solid var(--color-card2);
     background:linear-gradient(180deg,rgba(245,158,11,.06),transparent);}
   .admin-titlebar{display:flex;align-items:center;gap:14px;margin-bottom:12px;}
   .admin-key{font-size:2rem;filter:drop-shadow(0 0 12px rgba(245,158,11,.5));}
   .admin-title{font-family:Cinzel,serif;font-weight:800;font-size:1.5rem;color:#f59e0b;letter-spacing:.03em;}
-  .admin-sub{color:#9ca3af;font-size:.85rem;}
-  .admin-seg{display:inline-flex;gap:4px;padding:4px;background:#111827;border:1px solid #374151;border-radius:1rem;flex-wrap:wrap;}
+  .admin-sub{color:var(--color-text-soft);font-size:.85rem;}
+  .admin-seg{display:inline-flex;gap:4px;padding:4px;background:var(--color-card);border:1px solid var(--color-line);border-radius:1rem;flex-wrap:wrap;}
   .admin-seg-btn{min-height:44px;padding:10px 20px;border:none;border-radius:.75rem;background:transparent;
-    color:#9ca3af;font-weight:700;font-size:.95rem;cursor:pointer;transition:background .18s ease,color .18s ease;}
-  .admin-seg-btn:hover{color:#e5e7eb;}
+    color:var(--color-text-soft);font-weight:700;font-size:.95rem;cursor:pointer;transition:background .18s ease,color .18s ease;}
+  .admin-seg-btn:hover{color:var(--color-text);}
   .admin-seg-btn.active{background:#f59e0b;color:#0b0f19;box-shadow:0 4px 16px rgba(245,158,11,.35);}
   .admin-body{flex:1;overflow-y:auto;padding:20px;}
   .admin-body::-webkit-scrollbar{width:9px;}
-  .admin-body::-webkit-scrollbar-thumb{background:#374151;border-radius:8px;}
+  .admin-body::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:8px;}
 
   /* buttons */
-  .admin-btn{min-height:44px;padding:9px 16px;border-radius:.7rem;border:1px solid #374151;background:#1f2937;
-    color:#e5e7eb;font-weight:600;font-size:.9rem;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .1s ease;
+  .admin-btn{min-height:44px;padding:9px 16px;border-radius:.7rem;border:1px solid var(--color-line);background:var(--color-card2);
+    color:var(--color-text);font-weight:600;font-size:.9rem;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .1s ease;
     display:inline-flex;align-items:center;justify-content:center;gap:6px;}
-  .admin-btn:hover:not(:disabled){background:#374151;}
+  .admin-btn:hover:not(:disabled){background:var(--color-line);}
   .admin-btn:active:not(:disabled){transform:scale(.97);}
   .admin-btn:disabled{opacity:.4;cursor:default;}
   .admin-btn-icon{min-width:44px;padding:9px;font-size:1rem;}
@@ -1280,13 +1583,13 @@ function injectStyles() {
   .admin-btn-nuke:hover:not(:disabled){background:#dc2626;}
 
   /* inputs */
-  .admin-input{width:100%;min-height:44px;padding:10px 12px;border-radius:.7rem;border:1px solid #374151;
-    background:#111827;color:#f9fafb;font-size:.95rem;font-family:inherit;}
+  .admin-input{width:100%;min-height:44px;padding:10px 12px;border-radius:.7rem;border:1px solid var(--color-line);
+    background:var(--color-card);color:var(--color-text);font-size:.95rem;font-family:inherit;}
   .admin-input:focus{outline:none;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18);}
   .admin-input[readonly]{opacity:.65;}
   .admin-textarea{min-height:110px;resize:vertical;line-height:1.5;}
   .admin-flabel{display:block;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-    color:#9ca3af;margin:14px 0 6px;}
+    color:var(--color-text-soft);margin:14px 0 6px;}
   .admin-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
   .admin-cam-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
   @media (max-width:640px){.admin-two,.admin-cam-grid{grid-template-columns:1fr;}}
@@ -1295,74 +1598,74 @@ function injectStyles() {
   .admin-planner{max-width:1400px;margin:0 auto;}
   .admin-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
   .admin-nav{display:flex;gap:6px;}
-  .admin-month{font-family:Cinzel,serif;font-weight:800;font-size:1.4rem;color:#f9fafb;min-width:220px;}
+  .admin-month{font-family:Cinzel,serif;font-weight:800;font-size:1.4rem;color:var(--color-text);min-width:220px;}
   .admin-legend{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap;}
-  .admin-leg{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:#9ca3af;}
+  .admin-leg{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--color-text-soft);}
   .admin-leg-sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
 
   /* calendar grid */
   .admin-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;}
-  .admin-dow>div{text-align:center;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;padding:4px 0;}
-  .admin-dow>div.weekend{color:#4b5563;}
+  .admin-dow>div{text-align:center;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-soft);padding:4px 0;}
+  .admin-dow>div.weekend{color:var(--color-text-soft);}
   .admin-grid{display:flex;flex-direction:column;gap:6px;}
   .admin-week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
   .admin-cell{min-height:96px;text-align:left;display:flex;flex-direction:column;gap:4px;padding:6px;
-    background:#111827;border:1px solid #1f2937;border-radius:.75rem;cursor:pointer;overflow:hidden;
+    background:var(--color-card);border:1px solid var(--color-card2);border-radius:.75rem;cursor:pointer;overflow:hidden;
     transition:border-color .16s ease,background .16s ease,transform .1s ease;font-family:inherit;}
-  .admin-cell:hover{border-color:#f59e0b;background:#131b2e;}
+  .admin-cell:hover{border-color:#f59e0b;background:var(--color-card2);}
   .admin-cell:active{transform:scale(.985);}
   .admin-cell.out{opacity:.42;}
-  .admin-cell.weekend{background:#0d1220;}
+  .admin-cell.weekend{background:var(--color-page);}
   .admin-cell.today{border-color:#f59e0b;box-shadow:inset 0 0 0 1px #f59e0b,0 0 16px rgba(245,158,11,.2);}
-  .admin-cell-num{font-weight:700;font-size:.9rem;color:#e5e7eb;flex-shrink:0;}
+  .admin-cell-num{font-weight:700;font-size:.9rem;color:var(--color-text);flex-shrink:0;}
   .admin-cell.today .admin-cell-num{color:#f59e0b;}
   .admin-cell-chips{display:flex;flex-direction:column;gap:3px;overflow:hidden;}
   .admin-chip{font-size:.68rem;font-weight:600;padding:2px 6px;border-radius:.4rem;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-  .admin-chip-more{font-size:.66rem;font-weight:700;color:#9ca3af;padding:1px 4px;}
+  .admin-chip-more{font-size:.66rem;font-weight:700;color:var(--color-text-soft);padding:1px 4px;}
   .admin-hint{margin-top:16px;padding:12px 14px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);
-    border-radius:.75rem;color:#d1d5db;font-size:.85rem;line-height:1.5;}
+    border-radius:.75rem;color:var(--color-text-soft);font-size:.85rem;line-height:1.5;}
 
   /* side panel */
   #admin-panel-root:empty{display:none;}
   .admin-panel{position:fixed;top:0;right:0;height:100vh;width:min(440px,100vw);z-index:70;
-    background:#111827;border-left:1px solid #374151;box-shadow:-16px 0 50px rgba(0,0,0,.5);
+    background:var(--color-card);border-left:1px solid var(--color-line);box-shadow:-16px 0 50px rgba(0,0,0,.5);
     display:flex;flex-direction:column;animation:admin-slide-in .25s ease both;}
   @keyframes admin-slide-in{from{transform:translateX(100%);}to{transform:translateX(0);}}
   .admin-panel-head{flex-shrink:0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
-    padding:18px 20px;border-bottom:1px solid #1f2937;background:linear-gradient(180deg,rgba(245,158,11,.06),transparent);}
+    padding:18px 20px;border-bottom:1px solid var(--color-card2);background:linear-gradient(180deg,rgba(245,158,11,.06),transparent);}
   .admin-panel-eyebrow{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#f59e0b;}
-  .admin-panel-title{font-weight:800;font-size:1.15rem;color:#f9fafb;margin-top:2px;}
+  .admin-panel-title{font-weight:800;font-size:1.15rem;color:var(--color-text);margin-top:2px;}
   .admin-panel-body{flex:1;overflow-y:auto;padding:16px 20px;}
   .admin-panel-body::-webkit-scrollbar{width:8px;}
-  .admin-panel-body::-webkit-scrollbar-thumb{background:#374151;border-radius:8px;}
-  .admin-panel-foot{flex-shrink:0;padding:14px 20px;border-top:1px solid #1f2937;}
+  .admin-panel-body::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:8px;}
+  .admin-panel-foot{flex-shrink:0;padding:14px 20px;border-top:1px solid var(--color-card2);}
   .admin-foot-split{display:flex;gap:10px;}
   .admin-foot-split .admin-btn{flex:1;}
 
   /* event rows */
-  .admin-evt{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1f2937;border:1px solid #374151;
+  .admin-evt{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--color-card2);border:1px solid var(--color-line);
     border-radius:.75rem;margin-bottom:8px;}
-  .admin-evt-static{background:#161e2e;}
+  .admin-evt-static{background:var(--color-card2);}
   .admin-evt-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;}
   .admin-evt-main{flex:1;min-width:0;}
-  .admin-evt-title{font-weight:600;color:#f3f4f6;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .admin-evt-meta{font-size:.75rem;color:#9ca3af;margin-top:1px;}
+  .admin-evt-title{font-weight:600;color:var(--color-text);font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .admin-evt-meta{font-size:.75rem;color:var(--color-text-soft);margin-top:1px;}
   .admin-evt-list{margin-top:8px;}
-  .admin-empty{text-align:center;color:#6b7280;font-style:italic;padding:24px 12px;font-size:.9rem;}
+  .admin-empty{text-align:center;color:var(--color-text-soft);font-style:italic;padding:24px 12px;font-size:.9rem;}
   .admin-empty-sm{padding:12px;font-size:.85rem;}
 
   /* type chips */
   .admin-type-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-  .admin-type-chip{min-height:44px;padding:8px 10px;border-radius:.65rem;border:1px solid #374151;background:#1f2937;
-    color:#d1d5db;font-weight:600;font-size:.85rem;cursor:pointer;transition:all .15s ease;
+  .admin-type-chip{min-height:44px;padding:8px 10px;border-radius:.65rem;border:1px solid var(--color-line);background:var(--color-card2);
+    color:var(--color-text-soft);font-weight:600;font-size:.85rem;cursor:pointer;transition:all .15s ease;
     border-left:3px solid var(--c);}
-  .admin-type-chip:hover{background:#374151;}
-  .admin-type-chip.on{background:color-mix(in srgb,var(--c) 22%,#1f2937);border-color:var(--c);color:#fff;
+  .admin-type-chip:hover{background:var(--color-line);}
+  .admin-type-chip.on{background:color-mix(in srgb,var(--c) 22%,var(--color-card2));border-color:var(--c);color:#fff;
     box-shadow:0 0 0 1px var(--c);}
 
   /* itinerary builder */
-  .admin-builder{margin-top:16px;padding-top:14px;border-top:1px dashed #374151;}
+  .admin-builder{margin-top:16px;padding-top:14px;border-top:1px dashed var(--color-line);}
   .admin-builder-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
   .admin-brows{display:flex;flex-direction:column;gap:8px;margin-bottom:10px;}
   .admin-brow{display:flex;gap:8px;align-items:center;}
@@ -1371,17 +1674,17 @@ function injectStyles() {
   .admin-brow-ctrls{display:flex;gap:2px;flex-shrink:0;}
   .admin-brow-ctrls .admin-btn-icon{min-width:38px;padding:7px;font-size:.8rem;}
   .admin-dup{margin-top:12px;}
-  .admin-dup-note{font-size:.76rem;color:#9ca3af;margin-top:6px;line-height:1.45;}
+  .admin-dup-note{font-size:.76rem;color:var(--color-text-soft);margin-top:6px;line-height:1.45;}
 
   /* settings */
   .admin-settings{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:18px;}
-  .admin-card{background:#111827;border:1px solid #374151;border-radius:1rem;padding:20px;}
-  .admin-card-title{font-weight:800;font-size:1.05rem;color:#f9fafb;margin-bottom:12px;}
+  .admin-card{background:var(--color-card);border:1px solid var(--color-line);border-radius:1rem;padding:20px;}
+  .admin-card-title{font-weight:800;font-size:1.05rem;color:var(--color-text);margin-bottom:12px;}
   .admin-mini-title{font-size:.95rem;margin:18px 0 4px;}
-  .admin-mini{font-size:.82rem;color:#9ca3af;margin-bottom:10px;line-height:1.5;}
+  .admin-mini{font-size:.82rem;color:var(--color-text-soft);margin-bottom:10px;line-height:1.5;}
   .admin-preview{display:flex;align-items:center;gap:12px;margin:16px 0;padding:14px 16px;
     background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:.75rem;}
-  .admin-preview-eyebrow{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;}
+  .admin-preview-eyebrow{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--color-text-soft);}
   .admin-preview-label{font-family:Cinzel,serif;font-weight:800;font-size:1.15rem;color:#f59e0b;}
 
   /* danger zone */
@@ -1391,46 +1694,46 @@ function injectStyles() {
     background:none;border:none;color:#f87171;font-weight:800;font-size:1.05rem;cursor:pointer;padding:0;min-height:44px;}
   .admin-danger-caret{font-size:.9rem;}
   .admin-danger-body{margin-top:14px;}
-  .admin-danger-text{color:#d1d5db;font-size:.88rem;line-height:1.55;margin-bottom:14px;}
+  .admin-danger-text{color:var(--color-text-soft);font-size:.88rem;line-height:1.55;margin-bottom:14px;}
   .admin-nuke-word{color:#f87171;letter-spacing:.1em;}
 
   /* potw */
   .admin-potw{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:16px;}
   .admin-potw-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   .admin-potw-list{display:flex;flex-direction:column;gap:12px;}
-  .admin-potw-card{display:flex;flex-direction:column;gap:14px;padding:16px;background:#111827;border:1px solid #374151;
+  .admin-potw-card{display:flex;flex-direction:column;gap:14px;padding:16px;background:var(--color-card);border:1px solid var(--color-line);
     border-radius:1rem;}
   .admin-potw-card.active{border-color:#f59e0b;box-shadow:0 0 22px rgba(245,158,11,.15);}
   .admin-potw-top{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;}
   .admin-potw-info{flex:1;min-width:200px;}
-  .admin-potw-title{font-weight:800;font-size:1.1rem;color:#f9fafb;display:flex;align-items:center;gap:10px;}
-  .admin-potw-sub{color:#9ca3af;font-size:.88rem;margin-top:2px;}
-  .admin-potw-meta{color:#6b7280;font-size:.76rem;margin-top:6px;}
-  .admin-potw-meta code,.admin-mini code,.admin-files code{background:#1f2937;padding:1px 6px;border-radius:.35rem;color:#fbbf24;font-size:.9em;}
+  .admin-potw-title{font-weight:800;font-size:1.1rem;color:var(--color-text);display:flex;align-items:center;gap:10px;}
+  .admin-potw-sub{color:var(--color-text-soft);font-size:.88rem;margin-top:2px;}
+  .admin-potw-meta{color:var(--color-text-soft);font-size:.76rem;margin-top:6px;}
+  .admin-potw-meta code,.admin-mini code,.admin-files code{background:var(--color-card2);padding:1px 6px;border-radius:.35rem;color:#fbbf24;font-size:.9em;}
   .admin-potw-actions{display:flex;gap:8px;flex-wrap:wrap;}
   .admin-badge{font-size:.65rem;font-weight:800;letter-spacing:.08em;background:#f59e0b;color:#0b0f19;
     padding:2px 8px;border-radius:.4rem;}
   .admin-date-badge{color:#22d3ee;font-weight:700;}
-  .admin-date-badge.muted{color:#6b7280;font-weight:600;font-style:italic;}
+  .admin-date-badge.muted{color:var(--color-text-soft);font-weight:600;font-style:italic;}
   .admin-files pre{margin-top:10px;}
-  .admin-code{background:#0b0f19;border:1px solid #374151;border-radius:.6rem;padding:14px 16px;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;color:#d1d5db;line-height:1.6;
+  .admin-code{background:var(--color-page);border:1px solid var(--color-line);border-radius:.6rem;padding:14px 16px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;color:var(--color-text-soft);line-height:1.6;
     overflow-x:auto;white-space:pre;}
 
   /* media drop zones */
   .admin-drops{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   @media (max-width:640px){.admin-drops{grid-template-columns:1fr;}}
-  .admin-drop{border:2px dashed #374151;border-radius:.85rem;background:#0d1220;padding:14px;cursor:pointer;
+  .admin-drop{border:2px dashed var(--color-line);border-radius:.85rem;background:var(--color-page);padding:14px;cursor:pointer;
     min-height:88px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s ease,background .15s ease;}
-  .admin-drop:hover{border-color:#06b6d4;background:#0e1626;}
+  .admin-drop:hover{border-color:#06b6d4;background:var(--color-card2);}
   .admin-drop.over{border-color:#06b6d4;border-style:solid;background:rgba(6,182,212,.12);box-shadow:0 0 0 1px #06b6d4;}
-  .admin-drop-label{font-weight:700;font-size:.9rem;color:#e5e7eb;}
+  .admin-drop-label{font-weight:700;font-size:.9rem;color:var(--color-text);}
   .admin-drop-body{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-height:36px;}
-  .admin-drop-prompt{color:#6b7280;font-size:.82rem;}
+  .admin-drop-prompt{color:var(--color-text-soft);font-size:.82rem;}
   .admin-drop-file{display:flex;flex-direction:column;min-width:0;flex:1;}
   .admin-drop-name{font-size:.85rem;color:#22d3ee;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
-  .admin-drop-size{font-size:.72rem;color:#9ca3af;}
-  .admin-faint{color:#6b7280;font-weight:400;font-size:.78rem;}
+  .admin-drop-size{font-size:.72rem;color:var(--color-text-soft);}
+  .admin-faint{color:var(--color-text-soft);font-weight:400;font-size:.78rem;}
 
   /* itinerary step numbers */
   .admin-bstep{flex-shrink:0;width:30px;height:30px;border-radius:50%;background:rgba(34,197,94,.15);
@@ -1440,11 +1743,11 @@ function injectStyles() {
   .admin-chip-link:hover{filter:brightness(1.25);text-decoration:underline;}
 
   /* presentation editor */
-  .admin-pres-seg{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;background:#0d1220;}
-  .admin-pres-opt{min-height:44px;padding:10px 14px;border:1px solid #374151;border-radius:.7rem;background:#1f2937;
-    color:#d1d5db;font-weight:700;font-size:.9rem;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  .admin-pres-seg{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;background:var(--color-page);}
+  .admin-pres-opt{min-height:44px;padding:10px 14px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-card2);
+    color:var(--color-text-soft);font-weight:700;font-size:.9rem;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
     transition:background .15s ease,border-color .15s ease,color .15s ease;}
-  .admin-pres-opt:hover{background:#374151;}
+  .admin-pres-opt:hover{background:var(--color-line);}
   .admin-pres-opt.on{background:#06b6d4;border-color:#06b6d4;color:#04222b;}
   .admin-pres-opt.feat{border-color:#06b6d4;}
   .admin-pres-opt.feat.on{box-shadow:0 0 0 1px #06b6d4,0 0 16px rgba(6,182,212,.35);}
@@ -1453,13 +1756,57 @@ function injectStyles() {
   .admin-pres-opt.on .admin-feat-chip{background:rgba(4,34,43,.25);color:#04222b;border-color:rgba(4,34,43,.4);}
   .admin-pres-body{margin-bottom:4px;}
   .admin-pres-hint{margin-top:8px;padding:10px 12px;background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.25);border-radius:.6rem;}
-  .admin-pres-file{padding:12px;border:1px solid #374151;border-radius:.7rem;background:#0d1220;}
+  .admin-pres-file{padding:12px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-page);}
   .admin-pres-list{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
-  .admin-pres-thumb{display:flex;align-items:center;gap:10px;padding:8px;background:#1f2937;border:1px solid #374151;border-radius:.7rem;}
+  .admin-pres-thumb{display:flex;align-items:center;gap:10px;padding:8px;background:var(--color-card2);border:1px solid var(--color-line);border-radius:.7rem;}
   .admin-pres-num{background:rgba(6,182,212,.15);border-color:#06b6d4;color:#22d3ee;}
-  .admin-pres-img{width:64px;height:40px;object-fit:cover;border-radius:.35rem;border:1px solid #374151;flex-shrink:0;background:#0b0f19;}
-  .admin-pres-name{flex:1;min-width:0;font-size:.85rem;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .admin-pres-tag{color:#22d3ee;font-weight:700;}
+  .admin-pres-img{width:64px;height:40px;object-fit:cover;border-radius:.35rem;border:1px solid var(--color-line);flex-shrink:0;background:var(--color-page);}
+  .admin-pres-name{flex:1;min-width:0;font-size:.85rem;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .admin-pres-tag{color:#22d3ee;font-weight:700;white-space:nowrap;}
+
+  /* link rows (potw editor) */
+  .admin-link-rows{display:flex;flex-direction:column;gap:8px;}
+  .admin-link-row{display:grid;grid-template-columns:1fr 1.4fr 44px;gap:6px;align-items:center;}
+  @media (max-width:600px){.admin-link-row{grid-template-columns:1fr;}}
+
+  /* quests tab */
+  .admin-quests{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:18px;}
+  .admin-q-active-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:8px;}
+  @media (max-width:640px){.admin-q-active-grid{grid-template-columns:1fr;}}
+  .admin-q-active{background:var(--color-page);border:1px solid var(--color-line);border-left:4px solid var(--house,var(--color-line));border-radius:.85rem;padding:14px;}
+  .admin-q-active-head{font-weight:800;font-size:.95rem;margin-bottom:8px;}
+  .admin-q-active-title{font-weight:700;color:var(--color-text);font-size:1rem;}
+  .admin-q-active-meta{color:var(--color-text-soft);font-size:.78rem;margin:4px 0 12px;}
+  .admin-q-active-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .admin-q-active-empty{color:var(--color-text-soft);font-size:1.6rem;font-weight:800;text-align:center;padding:14px 0;}
+  .admin-q-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+  .admin-q-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
+  .admin-q-pts{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
+  .admin-q-pts small{display:block;font-size:.6rem;font-weight:700;color:var(--color-text-soft);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
+  .admin-q-main{flex:1;min-width:0;}
+  .admin-q-title{font-weight:700;color:var(--color-text);font-size:.95rem;}
+  .admin-q-desc{color:var(--color-text-soft);font-size:.8rem;margin-top:3px;line-height:1.4;}
+  .admin-q-row-actions{display:flex;gap:6px;flex-shrink:0;}
+  .admin-q-done{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.75rem;}
+
+  /* theme toggle */
+  .admin-theme-seg{display:inline-flex;gap:6px;margin-bottom:6px;background:var(--color-page);}
+  .admin-theme-opt{min-height:44px;padding:10px 20px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-card2);
+    color:var(--color-text-soft);font-weight:700;font-size:.9rem;cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;}
+  .admin-theme-opt:hover{background:var(--color-line);}
+  .admin-theme-opt.on{background:#f59e0b;border-color:#f59e0b;color:#0b0f19;}
+  .admin-toggle-row{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .admin-toggle{width:52px;height:30px;min-height:30px;border-radius:999px;border:1px solid var(--color-line);background:var(--color-card2);
+    position:relative;cursor:pointer;flex-shrink:0;padding:0;transition:background .18s ease,border-color .18s ease;}
+  .admin-toggle-knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--color-text-soft);transition:left .18s ease,background .18s ease;}
+  .admin-toggle.on{background:#f59e0b;border-color:#f59e0b;}
+  .admin-toggle.on .admin-toggle-knob{left:25px;background:#0b0f19;}
+  .admin-key-row{display:flex;gap:8px;align-items:center;}
+  .admin-key-row .admin-input{flex:1;min-width:0;}
+  .admin-details{margin-top:10px;border:1px solid var(--color-line);border-radius:.6rem;background:var(--color-page);padding:0 12px;}
+  .admin-details summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:.85rem;color:#22d3ee;min-height:44px;display:flex;align-items:center;}
+  .admin-steps{margin:0 0 12px 18px;padding:0;color:var(--color-text-soft);font-size:.82rem;line-height:1.6;display:flex;flex-direction:column;gap:4px;}
+  .admin-steps code{background:var(--color-card2);padding:1px 6px;border-radius:.35rem;color:#fbbf24;}
 
   /* modals */
   #admin-modal-root:empty{display:none;}
@@ -1467,20 +1814,20 @@ function injectStyles() {
     animation:admin-fade .2s ease both;}
   @keyframes admin-fade{from{opacity:0;}to{opacity:1;}}
   .admin-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:81;
-    width:min(560px,94vw);max-height:90vh;background:#111827;border:1px solid #374151;border-radius:1.25rem;
+    width:min(560px,94vw);max-height:90vh;background:var(--color-card);border:1px solid var(--color-line);border-radius:1.25rem;
     display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.6);animation:admin-pop .22s ease both;}
   .admin-modal-lg{width:min(760px,96vw);}
   .admin-modal-danger{border-color:#ef4444;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 40px rgba(239,68,68,.2);}
   @keyframes admin-pop{from{opacity:0;transform:translate(-50%,-46%) scale(.96);}to{opacity:1;transform:translate(-50%,-50%) scale(1);}}
-  .admin-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #1f2937;}
+  .admin-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--color-card2);}
   .admin-modal-title{font-family:Cinzel,serif;font-weight:800;font-size:1.2rem;color:#f59e0b;}
   .admin-modal-body{padding:18px 22px;overflow-y:auto;}
   .admin-modal-scroll{max-height:64vh;}
-  .admin-modal-lead{color:#d1d5db;font-size:.9rem;line-height:1.55;margin-bottom:8px;}
-  .admin-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 22px;border-top:1px solid #1f2937;}
+  .admin-modal-lead{color:var(--color-text-soft);font-size:.9rem;line-height:1.55;margin-bottom:8px;}
+  .admin-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 22px;border-top:1px solid var(--color-card2);}
   .admin-dow-picker{display:flex;gap:8px;flex-wrap:wrap;}
-  .admin-check{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;min-height:44px;background:#1f2937;
-    border:1px solid #374151;border-radius:.6rem;cursor:pointer;font-size:.85rem;color:#e5e7eb;}
+  .admin-check{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;min-height:44px;background:var(--color-card2);
+    border:1px solid var(--color-line);border-radius:.6rem;cursor:pointer;font-size:.85rem;color:var(--color-text);}
   .admin-check input{width:18px;height:18px;accent-color:#f59e0b;}
   .admin-rows-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;}
   .admin-srows,.admin-qrows{display:flex;flex-direction:column;gap:8px;}
@@ -1490,7 +1837,7 @@ function injectStyles() {
 
   /* toast */
   .admin-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;
-    background:#1f2937;border:1px solid #f59e0b;color:#fef3c7;padding:12px 22px;border-radius:.75rem;
+    background:var(--color-card2);border:1px solid #f59e0b;color:var(--color-text);padding:12px 22px;border-radius:.75rem;
     font-weight:600;font-size:.9rem;box-shadow:0 12px 40px rgba(0,0,0,.5);animation:admin-toast-in .25s ease both;}
   @keyframes admin-toast-in{from{opacity:0;transform:translate(-50%,12px);}to{opacity:1;transform:translate(-50%,0);}}
 

@@ -12,6 +12,7 @@ let rootEl = null;            // Stage 0 mount target (inside #module-root)
 let overlayEl = null;         // full-screen overlay (inside #overlay-root)
 let mapEl = null;             // <gmp-map-3d>
 let videoEl = null;           // intro <video>
+let ytIntroEl = null;         // YouTube-embed intro container (when profile.videoUrl is a YT embed)
 let songEl = null;            // fallback audio element
 let profile = null;           // active POTW profile snapshot
 let activeKey = null;         // active POTW profile key (for media lookups)
@@ -80,6 +81,7 @@ async function openOverlay() {
   advanced = false;
   usingFallback = false;
   cardShown = false;
+  ytIntroEl = null;
   const shortName = profile.title.split(/\s+/).pop();
 
   overlayEl = document.createElement('div');
@@ -132,13 +134,31 @@ async function openOverlay() {
   overlayEl.querySelector('.potw-end').addEventListener('click', closeOverlay);
   wireLesson();
 
-  // --- resolve the intro video source: teacher-uploaded blob first ----------
-  // 1) potw:<key>:video blob (local, instant)  2) static CONFIG.POTW_VIDEO
+  // --- resolve the intro source, in priority order --------------------------
+  // 1) teacher-dropped blob  2) profile.videoUrl (YouTube embed -> iframe, else
+  //    direct/relative -> <video>)  3) static CONFIG.POTW_VIDEO  4) song fallback
   const blobVideoUrl = await media.url(`potw:${activeKey}:video`);
   if (!overlayEl) return; // torn down while awaiting IndexedDB
-  const usedBlobVideo = !!blobVideoUrl;
+  const url = profile.videoUrl;
 
-  // --- start the intro video with robust fallback ---------------------------
+  if (blobVideoUrl) {
+    startVideoIntro(blobVideoUrl, true);            // local blob — guaranteed present
+  } else if (url && isYouTubeEmbed(url)) {
+    startYouTubeIntro(url);                          // embedded player (Skip / timer advance)
+  } else if (url) {
+    startVideoIntro(url, false);                    // direct .mp4 / relative path
+  } else {
+    startVideoIntro(CONFIG.POTW_VIDEO, false);      // today's static-file behavior
+  }
+}
+
+function isYouTubeEmbed(u) {
+  return typeof u === 'string' && /(?:^|\/\/)(?:www\.)?youtube(?:-nocookie)?\.com\/embed\//i.test(u);
+}
+
+// <video> intro (blob / direct .mp4 / relative / static). Full behavior set:
+// aspect-contain, last-2s card, crossfade on 'ended', error -> song fallback.
+function startVideoIntro(src, isBlob) {
   videoEl = overlayEl.querySelector('.potw-video');
   let videoOk = false;
   const markOk = () => { videoOk = true; };
@@ -147,11 +167,11 @@ async function openOverlay() {
   videoEl.addEventListener('timeupdate', onVideoTimeUpdate); // pop card in last 2s
   videoEl.addEventListener('ended', advanceToReveal);        // then crossfade to map
   videoEl.addEventListener('error', startSongFallback);
-  videoEl.src = blobVideoUrl || CONFIG.POTW_VIDEO;
+  videoEl.src = src;
 
   // A local blob is guaranteed present, so skip the 2s race for it — but keep
-  // the error handler regardless (a corrupt/undecodable blob still falls back).
-  if (!usedBlobVideo) {
+  // the error handler regardless (a corrupt/undecodable source still falls back).
+  if (!isBlob) {
     later(() => { if (!videoOk && !advanced && !usingFallback) startSongFallback(); }, 2000);
   }
 
@@ -159,6 +179,26 @@ async function openOverlay() {
   if (p && typeof p.catch === 'function') {
     p.catch(() => { if (!advanced && !usingFallback) startSongFallback(); });
   }
+}
+
+// YouTube-embed intro: a letterboxed <iframe>. YT iframes can't reliably signal
+// 'ended' without the IFrame API, so the Skip button (already wired) is the
+// advance mechanism, plus a fallback auto-advance timer. No last-2s / crossfade.
+function startYouTubeIntro(url) {
+  const vid = overlayEl.querySelector('.potw-video');
+  if (vid) vid.style.display = 'none';      // hide the unused <video>
+  videoEl = vid;                            // keep ref so teardown pause() is safe
+
+  const src = url + (url.includes('?') ? '&' : '?') + 'autoplay=1&rel=0&playsinline=1';
+  ytIntroEl = document.createElement('div');
+  ytIntroEl.className = 'potw-yt';
+  ytIntroEl.innerHTML =
+    `<div class="potw-yt-inner"><iframe class="potw-yt-frame" allow="autoplay; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+  ytIntroEl.querySelector('iframe').src = src;
+
+  const intro = overlayEl.querySelector('.potw-intro-layer');
+  intro.insertBefore(ytIntroEl, intro.firstChild); // Skip button (later sibling, z-50) stays on top
+  later(advanceToReveal, CONFIG.POTW_SONG_DURATION_S * 1000); // fallback auto-advance
 }
 
 // Fallback: hide the (missing) video, play the theme song over an animated title.
@@ -215,6 +255,8 @@ function advanceToReveal() {
   try { videoEl && videoEl.pause(); } catch (e) {}
   try { ctxRef.audio.stopAll(); } catch (e) {}   // stop the song track if any
   songEl = null;
+  // Stop any YouTube embed immediately (a hidden iframe keeps playing audio).
+  if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
 
   const intro = overlayEl.querySelector('.potw-intro-layer');
   intro.style.transition = `opacity ${INTRO_FADE_MS}ms ease`;
@@ -312,16 +354,28 @@ function buildLessonHTML() {
     ? `<button type="button" class="potw-pres-launch font-display">📽️ Launch Presentation</button>`
     : '';
 
+  // Optional "Resources" tab from profile.links [{title,url}]
+  const links = Array.isArray(profile.links) ? profile.links.filter((l) => l && l.url) : [];
+  const linksTab = links.length
+    ? `<button type="button" class="potw-tab" data-tab="links">🔗 Resources</button>` : '';
+  const linksPanel = links.length
+    ? `<div class="potw-panel" data-panel="links">${links.map((l) =>
+        `<a class="potw-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
+           <span class="potw-link-ico" aria-hidden="true">🔗</span><span>${esc(l.title || l.url)}</span>
+         </a>`).join('')}</div>` : '';
+
   return `
     ${presBtn}
     <div class="potw-tabs" role="tablist">
       <button type="button" class="potw-tab active" data-tab="facts">Quick Facts</button>
       <button type="button" class="potw-tab" data-tab="sources">Primary Sources</button>
       <button type="button" class="potw-tab" data-tab="quiz">House Bounty Quiz</button>
+      ${linksTab}
     </div>
     <div class="potw-panel active" data-panel="facts">${facts}</div>
     <div class="potw-panel" data-panel="sources">${sources}</div>
-    <div class="potw-panel" data-panel="quiz">${quiz}</div>`;
+    <div class="potw-panel" data-panel="quiz">${quiz}</div>
+    ${linksPanel}`;
 }
 
 function wireLesson() {
@@ -592,6 +646,7 @@ function closeOverlay() {
   try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
   if (videoEl) { try { videoEl.pause(); } catch (e) {} }
   if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
+  if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
   if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
   videoEl = null; songEl = null; mapReadyPromise = null;
   advanced = false; usingFallback = false; cardShown = false;
@@ -649,6 +704,10 @@ function injectStyles() {
     transition:opacity .8s ease;}
   /* fit-by-width: full width, correct aspect ratio, clean black letterbox bars */
   .potw-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;}
+  /* YouTube-embed intro — 16:9 letterboxed on black */
+  .potw-yt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000;}
+  .potw-yt-inner{position:relative;width:min(100%, 177.78vh);aspect-ratio:16 / 9;max-height:100%;}
+  .potw-yt-frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;}
   .potw-song{position:absolute;inset:0;display:none;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;
     background:radial-gradient(ellipse at 50% 40%,#111827,#000 72%);}
@@ -739,6 +798,15 @@ function injectStyles() {
   .potw-float{position:absolute;top:-6px;left:50%;color:#f59e0b;font-weight:800;font-size:1.35rem;
     pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.6);animation:potw-float 1s ease-out forwards;}
 
+  .potw-link{display:flex;align-items:center;gap:12px;min-height:56px;padding:16px 18px;margin-bottom:12px;
+    background:#1f2937;border:1px solid #374151;border-left:3px solid #f59e0b;border-radius:.9rem;
+    color:#f9fafb;font-weight:700;font-size:1.05rem;text-decoration:none;
+    transition:background .2s ease,border-color .2s ease;}
+  .potw-link:hover{background:#243044;border-color:#f59e0b;}
+  .potw-link:active{transform:scale(.99);}
+  .potw-link-ico{flex-shrink:0;}
+  .potw-link span:last-child{overflow-wrap:anywhere;}
+
   .potw-pres-launch{width:100%;margin-bottom:14px;min-height:48px;border:none;border-radius:.9rem;cursor:pointer;
     background:linear-gradient(135deg,#f59e0b,#b45309);color:#0b0f19;font-weight:800;
     font-size:clamp(1rem,2.2vw,1.2rem);letter-spacing:.02em;box-shadow:0 8px 24px rgba(245,158,11,.35);
@@ -811,6 +879,7 @@ export default {
     destroyPresentation();
     try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
     if (videoEl) { try { videoEl.pause(); } catch (e) {} }
+    if (ytIntroEl) { try { ytIntroEl.remove(); } catch (e) {} ytIntroEl = null; }
     if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
     if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
     const st = document.getElementById('potw-styles');

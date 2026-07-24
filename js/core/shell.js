@@ -54,6 +54,70 @@ export function initShell(ctx) {
     root.style.setProperty('--accent-rgb', hexToRgbTriplet(accent));
   }
 
+  // ---------------- shared: teacher theme settings (mode + seasonal) ----------------
+  const SEASON_EMOJI = { fall: '🍂', winter: '❄️', spring: '🌸', summer: '☀️' };
+  let seasonFxRoot = null;
+  let currentSeason = null; // last-applied season, so we don't churn the DOM every store tick
+
+  function ensureSeasonFxRoot() {
+    if (seasonFxRoot && seasonFxRoot.isConnected) return seasonFxRoot;
+    seasonFxRoot = document.createElement('div');
+    seasonFxRoot.id = 'season-fx-root';
+    seasonFxRoot.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(seasonFxRoot);
+    return seasonFxRoot;
+  }
+
+  // A handful of slow, near-invisible drifting emoji — purely ambient, never
+  // interactive (pointer-events:none in CSS) and reduced-motion-safe (the
+  // global prefers-reduced-motion rule in theme.css freezes .season-particle
+  // like every other animation).
+  function renderSeasonParticles(season) {
+    if (season === currentSeason) return;
+    currentSeason = season;
+    const root = ensureSeasonFxRoot();
+    root.innerHTML = '';
+    const emoji = season && SEASON_EMOJI[season];
+    if (!emoji) return;
+    const COUNT = 6;
+    for (let i = 0; i < COUNT; i++) {
+      const span = document.createElement('span');
+      span.className = 'season-particle';
+      span.textContent = emoji;
+      const left = Math.max(2, Math.min(96, Math.round((i / COUNT) * 100 + (Math.random() * 8 - 4))));
+      const dur = 18 + Math.random() * 10;
+      span.style.left = `${left}%`;
+      span.style.fontSize = `${14 + Math.random() * 10}px`;
+      span.style.animationDuration = `${dur}s`;
+      span.style.animationDelay = `${-(Math.random() * dur)}s`;
+      root.appendChild(span);
+    }
+  }
+
+  function seasonForDate(d = new Date()) {
+    const m = d.getMonth(); // 0=Jan … 11=Dec
+    if (m >= 8 && m <= 10) return 'fall';   // Sep–Nov
+    if (m === 11 || m <= 1) return 'winter'; // Dec–Feb
+    if (m >= 2 && m <= 4) return 'spring';   // Mar–May
+    return 'summer';                          // Jun–Aug
+  }
+
+  function applyThemeSettings() {
+    let settings = null;
+    try { settings = store.getSettings(); } catch (e) { settings = null; }
+    const theme = (settings && settings.theme) || { mode: 'dark', seasonal: false };
+    document.documentElement.dataset.mode = theme.mode === 'light' ? 'light' : 'dark';
+
+    if (theme.seasonal) {
+      const season = seasonForDate();
+      document.documentElement.dataset.season = season;
+      renderSeasonParticles(season);
+    } else {
+      delete document.documentElement.dataset.season;
+      renderSeasonParticles(null);
+    }
+  }
+
   // ================= TOP BAR =================
   let coreMenuOpen = false;
   let currentModuleId = null;
@@ -312,6 +376,7 @@ export function initShell(ctx) {
   // ---------------- store reactivity ----------------
   function rerenderAll() {
     applyAccentVars();
+    applyThemeSettings();
     renderTopbar();
     // Keep the FAB's preselected house following the active core, but only
     // while the panel is closed — never yank a selection mid-interaction.
@@ -329,6 +394,7 @@ export function initShell(ctx) {
   // somehow booted straight into 'admin', don't flash the FAB into view.
   try { currentModuleId = registry.currentId?.() ?? currentModuleId; } catch (e) { /* keep default */ }
   applyAccentVars();
+  applyThemeSettings(); // apply any saved theme (mode + seasonal) immediately on load
   renderTopbar();
   renderFab();
   setFabAdminHidden(currentModuleId === 'admin');

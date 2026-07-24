@@ -81,6 +81,12 @@ html, body { background: var(--color-page); }
   100% { background-position: 200% 50%; }
 }
 
+@keyframes season-drift {
+  0%   { transform: translateY(-8vh) translateX(0) rotate(0deg); }
+  50%  { transform: translateY(50vh) translateX(14px) rotate(12deg); }
+  100% { transform: translateY(110vh) translateX(-10px) rotate(-10deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -258,4 +264,119 @@ html, body { background: var(--color-page); }
   font-size: 22px;
   text-shadow: 0 2px 10px rgba(0,0,0,0.6);
   animation: float-up 1.4s ease-out forwards;
+}
+
+/* ============================================================
+   LIGHT MODE — driven by html[data-mode="light"], set by shell.js
+   from store.getSettings().theme.mode.
+
+   Anything already styled with our CSS custom properties (--color-*,
+   --accent, etc.) flips for free from the token redefinition below.
+   Several modules, though, were built against Tailwind's FIXED dark
+   utility classes (bg-page/bg-card/bg-card2/border-line/text-gray-*,
+   defined as static hex colors in the tailwind.config in index.html) —
+   those don't read CSS variables at all, so each one actually used
+   across the app is overridden directly here, best-effort, without
+   touching any other file. text-gray-900 is deliberately left alone in
+   both modes: it's used for text sitting ON house-accent-colored
+   buttons/pills, not on the page background, so it needs to stay dark
+   for contrast regardless of theme.
+
+   Cinematic full-bleed modules — Place of the Week's overlay, Battle
+   Day, and the Die of Destiny 3D dice stage — style themselves with
+   their own bespoke classes (potw-*, battle-*, dice-*) rather than
+   these Tailwind utilities, so they intentionally stay dark in both
+   modes; that reads as an intentional "lights down" cinematic moment
+   rather than a bug. A full design pass for those is a separate task.
+   ============================================================ */
+html[data-mode="light"] {
+  --color-page: #f3f4f6;
+  --color-card: #ffffff;
+  --color-card2: #e5e7eb;
+  --color-line: #d1d5db;
+  --color-text: #111827;
+  --color-text-soft: #4b5563;
+}
+
+html[data-mode="light"] .bg-page { background-color: #f3f4f6 !important; }
+html[data-mode="light"] .bg-card { background-color: #ffffff !important; }
+html[data-mode="light"] .bg-card2 { background-color: #e5e7eb !important; }
+html[data-mode="light"] .border-line { border-color: #d1d5db !important; }
+
+html[data-mode="light"] .text-gray-50,
+html[data-mode="light"] .text-gray-100 { color: #111827 !important; }
+html[data-mode="light"] .text-gray-200 { color: #1f2937 !important; }
+html[data-mode="light"] .text-gray-300 { color: #374151 !important; }
+html[data-mode="light"] .text-gray-400 { color: #4b5563 !important; }
+html[data-mode="light"] .text-gray-500 { color: #6b7280 !important; }
+
+/* Tailwind gradient utilities work via --tw-gradient-* custom properties —
+   override those directly so `bg-gradient-to-* from-card to-card2` (used
+   for card sheens/vignettes) still resolves to a light-mode-appropriate
+   gradient instead of a dark one baked in by the tailwind.config colors. */
+html[data-mode="light"] .from-card {
+  --tw-gradient-from: #ffffff var(--tw-gradient-from-position, 0%) !important;
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position, 100%) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+html[data-mode="light"] .to-card {
+  --tw-gradient-to: #ffffff var(--tw-gradient-to-position, 100%) !important;
+}
+html[data-mode="light"] .from-card2 {
+  --tw-gradient-from: #e5e7eb var(--tw-gradient-from-position, 0%) !important;
+  --tw-gradient-to: rgb(229 231 235 / 0) var(--tw-gradient-to-position, 100%) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+html[data-mode="light"] .to-card2 {
+  --tw-gradient-to: #e5e7eb var(--tw-gradient-to-position, 100%) !important;
+}
+
+/* ============================================================
+   SEASONAL DECOR — driven by html[data-season="fall|winter|spring|summer"],
+   set by shell.js from store.getSettings().theme.seasonal + current month.
+   Tasteful and quiet: a thin emoji garland along the very top edge of the
+   topbar, a faint seasonal tint mixed into the topbar's glow, and a handful
+   of slow, near-invisible drifting particles over the module content (shell
+   creates #season-fx-root once and populates/clears it in JS).
+   ============================================================ */
+#topbar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 14px;
+  line-height: 14px;
+  font-size: 11px;
+  letter-spacing: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-slow);
+}
+
+html[data-season="fall"] #topbar::before   { content: '🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂🍂'; opacity: 0.5; }
+html[data-season="winter"] #topbar::before { content: '❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️❄️'; opacity: 0.5; }
+html[data-season="spring"] #topbar::before { content: '🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸🌸'; opacity: 0.5; }
+html[data-season="summer"] #topbar::before { content: '☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️☀️'; opacity: 0.4; }
+
+html[data-season="fall"] #topbar   { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(217,119,6,0.35); }
+html[data-season="winter"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(56,189,248,0.35); }
+html[data-season="spring"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(244,114,182,0.35); }
+html[data-season="summer"] #topbar { box-shadow: 0 1px 24px -4px var(--accent-soft), 0 6px 26px -10px rgba(250,204,21,0.35); }
+
+#season-fx-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5; /* above in-flow module content, below #topbar (40) and the FAB (60) */
+}
+.season-particle {
+  position: absolute;
+  top: -10%;
+  opacity: 0.14;
+  filter: saturate(0.85);
+  animation-name: season-drift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }

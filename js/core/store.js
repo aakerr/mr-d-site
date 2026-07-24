@@ -9,6 +9,32 @@ const HOUSES = {
   4: { id: 4, core: 4, name: 'Rivendell', motto: 'Wisdom of the Ages',   color: 'green', accent: '#22c55e', accentSoft: 'rgba(34,197,94,0.35)',  image: 'images/rivendell.jpg' },
 };
 
+function defaultQuestCatalog() {
+  // Starter catalog — points scale with effort and benefit to class/school.
+  return [
+    { id: 'q-school-event',   points: 20, title: 'School Event Squad',       desc: 'Attend a school event together. Proof: photos showing at least half the class there.' },
+    { id: 'q-library',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.' },
+    { id: 'q-cleanup',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.' },
+    { id: 'q-kindness',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.' },
+    { id: 'q-tutors',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).' },
+    { id: 'q-attendance',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.' },
+    { id: 'q-homework',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.' },
+    { id: 'q-food-drive',     points: 40, title: 'Food Drive Forces',        desc: 'Bring in 50+ items for the school food drive.' },
+    { id: 'q-recycling',      points: 20, title: 'Recycling Rangers',        desc: 'Collect and sort recycling from all 7th-grade rooms for one week.' },
+    { id: 'q-thank-you',      points: 15, title: 'Teacher Appreciation Op',  desc: 'Write and deliver thank-you cards to five teachers or staff members.' },
+    { id: 'q-greeters',       points: 20, title: 'Morning Ambassadors',      desc: 'Greet students at the front doors for three mornings with school-approved signs.' },
+    { id: 'q-spirit',         points: 25, title: 'Spirit Week Sweep',        desc: 'At least 75% of the class participates in every day of Spirit Week.' },
+    { id: 'q-welcome',        points: 15, title: 'New Student Welcome',      desc: 'Build a welcome guide and buddy system for students who join mid-year.' },
+    { id: 'q-garden',         points: 30, title: 'School Garden Guardians',  desc: 'Plant or maintain the school garden for two weeks. Proof: photo log.' },
+    { id: 'q-history-fair',   points: 50, title: 'History Fair Heroes',      desc: 'Every student completes and presents a history fair entry.' },
+    { id: 'q-current-events', points: 20, title: 'Current Events Council',   desc: 'Deliver five student-led current-events briefings to the class.' },
+    { id: 'q-book-drive',     points: 35, title: 'Book Drive Battalion',     desc: 'Collect 40 gently used books to donate to the school library.' },
+    { id: 'q-transitions',    points: 10, title: 'Silent Transition Masters',desc: 'One full week of fast, silent transitions between activities.' },
+    { id: 'q-fundraiser',     points: 45, title: 'Fundraiser Front Line',    desc: 'Hit the class goal in a school fundraiser (or raise the most of any class).' },
+    { id: 'q-museum',         points: 40, title: 'Museum of Us',             desc: 'Build a classroom museum exhibit and host another class for a guided tour.' },
+  ];
+}
+
 function defaultState() {
   return {
     version: 1,
@@ -16,6 +42,14 @@ function defaultState() {
     settings: {                 // teacher-configurable (admin panel)
       termStart: CONFIG.TERM.startDate,   // 'YYYY-MM-DD' (Monday)
       termWeeks: CONFIG.TERM.totalWeeks,
+      theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
+      mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
+    },
+    quests: {
+      // One quest active per core at a time; completion is teacher-confirmed.
+      catalog: defaultQuestCatalog(),
+      active: {},     // core -> { questId, startedTs }
+      completed: [],  // { id, questId, title, core, ts, points }
     },
     // Planner events (admin panel). One record per calendar item:
     // { id, date:'YYYY-MM-DD', endDate?, type:'term-start'|'term-end'|'vacation'|'test'|'quiz'|'homework'|'itinerary'|'note',
@@ -238,6 +272,68 @@ export const store = {
       .map((e) => ({ due: fmtDue(e.date), text: e.title || e.type }));
     if (upcoming.length) return upcoming;
     return state.homework[core] || [];
+  },
+
+  // ----- quests (one active per core; teacher confirms completion) -----
+
+  getQuestCatalog() {
+    return state.quests.catalog;
+  },
+
+  saveQuest(quest) {
+    if (!quest?.title || !(Number(quest.points) > 0)) return null;
+    const q = { id: quest.id || `q-${Date.now()}`, title: quest.title, desc: quest.desc || '', points: Math.round(Number(quest.points)) };
+    const i = state.quests.catalog.findIndex((x) => x.id === q.id);
+    if (i >= 0) state.quests.catalog[i] = q; else state.quests.catalog.push(q);
+    emit();
+    return q;
+  },
+
+  deleteQuest(id) {
+    state.quests.catalog = state.quests.catalog.filter((q) => q.id !== id);
+    // A deleted quest cannot stay active anywhere.
+    for (const core of Object.keys(state.quests.active)) {
+      if (state.quests.active[core]?.questId === id) delete state.quests.active[core];
+    }
+    emit();
+  },
+
+  getActiveQuest(core = state.activeCore) {
+    const a = state.quests.active[core];
+    if (!a) return null;
+    const quest = state.quests.catalog.find((q) => q.id === a.questId);
+    return quest ? { ...quest, startedTs: a.startedTs } : null;
+  },
+
+  startQuest(core, questId) {
+    if (core === 'all' || state.quests.active[core]) return false;
+    if (!state.quests.catalog.find((q) => q.id === questId)) return false;
+    state.quests.active[core] = { questId, startedTs: Date.now() };
+    emit();
+    return true;
+  },
+
+  abandonQuest(core) {
+    if (!state.quests.active[core]) return false;
+    delete state.quests.active[core];
+    emit();
+    return true;
+  },
+
+  // Teacher check-off: awards the points and archives the completion.
+  completeQuest(core) {
+    const quest = store.getActiveQuest(core);
+    if (!quest) return null;
+    delete state.quests.active[core];
+    state.quests.completed.push({ id: `qc-${Date.now()}`, questId: quest.id, title: quest.title, core: Number(core), ts: Date.now(), points: quest.points });
+    store.addPoints(core, quest.points, { reason: `Quest complete: ${quest.title}`, tag: 'quest' });
+    return quest;
+  },
+
+  getCompletedQuests({ core = null, limit = 20 } = {}) {
+    let list = state.quests.completed;
+    if (core != null) list = list.filter((c) => c.core === Number(core));
+    return list.slice(-limit).reverse();
   },
 
   // ----- Place of the Week profiles (teacher admin) -----
