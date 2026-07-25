@@ -30,6 +30,9 @@ let presState = null;         // { type, count, idx, url, pdfKey, imgCache, pdfj
 let presKeyHandler = null;    // keydown handler while presenting
 let presResizeHandler = null; // debounced resize -> re-render at new viewport size
 let presIdleTimer = null;     // hides the nav chrome after PRES_IDLE_MS
+let gsClickHandler = null;    // gslides only: returns focus to Google's player
+let flyMusicEl = null;        // flyover background track (element returned by ctx.audio.play)
+let flyFadeTimer = null;      // interval id ramping flyMusicEl.volume down to 0
 let deckInfo = null;          // resolved deck for this voyage (null = no presentation)
 let deckPromise = null;       // memoizes resolveDeck() for the current voyage
 let previewMode = false;      // TEST FLIGHT: fly + orbit only, no intro/reveal/deck/lesson
@@ -42,6 +45,10 @@ const timers = new Set();     // all pending setTimeout ids, cleared on teardown
 const FLY_TO_MS = 27000;      // camera fly-to duration (~27s — gentle on a big smartboard)
 const ORBIT_MS = 240000;      // ms per slow-orbit revolution once landed
 const LAND_SETTLE_MS = 300;   // pause after landing before lesson card + orbit start
+// Flyover background music: starts on the "🚀 Fly to…" tap, fades out over this
+// long the moment the presentation (or, with no deck, the lesson card) appears.
+// IDEAL TRACK LENGTH ≈ 30s  =  27.0s flight + 0.3s settle + 3.0s fade.
+const FLYOVER_FADE_MS = 3000;
 const INTRO_FADE_MS = 1000;   // video/intro crossfade out to reveal the 3D map
 const CARD_EARLY_S = 4;       // reveal card pops this many seconds before the video ends
 const YT_CROP_PX = 120;       // overscan: player is this much taller than the 16:9 box,
@@ -317,8 +324,13 @@ async function openOverlay() {
 
     <div class="potw-lesson">${buildLessonHTML()}</div>
 
-    <button type="button" class="potw-lesson-btn">📋 Lesson</button>
-    <button type="button" class="potw-end">✕ End Voyage</button>`;
+    <header class="potw-head potw-chrome">
+      <button type="button" class="potw-home">🏠 Main Screen</button>
+      <div class="potw-quick" role="group" aria-label="Quick launch"></div>
+      <button type="button" class="potw-end">✕ End Voyage</button>
+    </header>
+
+    <button type="button" class="potw-lesson-btn">📋 Lesson</button>`;
   host.appendChild(overlayEl);
 
   // --- create the 3D map now so it can load during the ~37s intro -----------
@@ -329,7 +341,13 @@ async function openOverlay() {
   overlayEl.querySelector('.potw-fly-btn').addEventListener('click', gotoFlight);
   overlayEl.querySelector('.potw-lesson-btn').addEventListener('click', toggleLessonCard);
   overlayEl.querySelector('.potw-end').addEventListener('click', closeOverlay);
+  overlayEl.querySelector('.potw-home').addEventListener('click', goHome);
+  buildQuickLaunch();   // async: profile.links + stored assets as header buttons
   wireLesson();
+
+  // Overlay chrome (header + presentation bar) fades when idle, returns on input.
+  ['mousemove', 'pointerdown', 'touchstart'].forEach((evt) =>
+    overlayEl.addEventListener(evt, pokeChrome, { passive: true }));
 
   // --- resolve the intro source, in priority order --------------------------
   // 1) teacher-dropped blob  2) profile.videoUrl (YouTube embed -> iframe, else
@@ -549,6 +567,55 @@ async function startSongFallback() {
 }
 
 // =============================================================================
+// OVERLAY HEADER — 🏠 Main Screen + quick launch for this destination's other
+// resources (profile.links and stored non-slide assets). Auto-hides with the
+// rest of the chrome and never overlaps the map or the slides.
+// =============================================================================
+
+// End the voyage AND leave the module: back to the dashboard in one tap.
+function goHome() {
+  closeOverlay();
+  try { ctxRef && ctxRef.registry && ctxRef.registry.home(); } catch (e) { console.warn('potw:', e); }
+}
+
+function quickLinkHTML(title, url) {
+  return `<a class="potw-quick-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+    <span aria-hidden="true">🔗</span><span class="potw-quick-label">${esc(title)}</span><span class="potw-quick-out" aria-hidden="true">↗</span>
+  </a>`;
+}
+
+// Fill the header's quick-launch strip. URL links render immediately; stored
+// assets arrive from IndexedDB a moment later. No items = no clutter (the
+// header just keeps 🏠 Main Screen and ✕ End Voyage).
+async function buildQuickLaunch() {
+  if (!overlayEl) return;
+  const wrap = overlayEl.querySelector('.potw-quick');
+  if (!wrap) return;
+
+  const links = Array.isArray(profile.links) ? profile.links.filter((l) => l && l.url) : [];
+  wrap.innerHTML = links.map((l) => quickLinkHTML(l.title || l.url, l.url)).join('');
+
+  let assets = [];
+  try { assets = await media.list(`potw:${activeKey}:asset:`); } catch (e) { assets = []; }
+  if (!overlayEl || !wrap.isConnected) return;   // torn down while awaiting IndexedDB
+  assets = (assets || []).filter(Boolean).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+
+  assets.forEach((a) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'potw-quick-btn';
+    btn.innerHTML = `<span aria-hidden="true">${assetIcon(a.type)}</span>
+      <span class="potw-quick-label">${esc(a.name || a.key)}</span><span class="potw-quick-out" aria-hidden="true">↗</span>`;
+    btn.addEventListener('click', async () => {
+      const url = await media.url(a.key);
+      if (!url) { btn.classList.add('potw-asset-missing'); return; }
+      window.open(url, '_blank', 'noopener');
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+// =============================================================================
 // STAGE 2 — reveal card (pops in over the still-playing video, then the video
 // crossfades out to expose the 3D map parked at the Smithville start camera)
 // =============================================================================
@@ -558,7 +625,10 @@ function showRevealCard() {
   if (cardShown || !overlayEl) return;
   cardShown = true;
   overlayEl.querySelector('.potw-reveal').classList.add('show');
-  overlayEl.querySelector('.potw-end').style.display = 'block';
+  const head = overlayEl.querySelector('.potw-head');
+  if (head) head.classList.add('show');
+  overlayEl.classList.add('head-on');   // nudges Skip clear of the header bar
+  pokeChrome();
 }
 
 // During the last 2s of the video, reveal the card over the live video.
@@ -615,8 +685,57 @@ function createMap3d() {
 // Shared by the classroom voyage and TEST FLIGHT; `previewMode` suppresses the
 // reveal card, the presentation auto-launch and the lesson card.
 // =============================================================================
+
+// ---- flyover background music -----------------------------------------------
+// Starts on the "🚀 Fly to…" tap (the reveal card waits for a human, so nothing
+// earlier could stay in sync) and fades out when the destination is reached.
+// Source order: teacher blob (potw:<key>:flyover) → profile.flyoverUrl → silence.
+async function startFlyoverMusic() {
+  if (previewMode || flyMusicEl || !overlayEl) return;
+  let src = null;
+  try { src = await media.url(`potw:${activeKey}:flyover`); } catch (e) { src = null; }
+  if (!src) {
+    const u = profile && profile.flyoverUrl;
+    if (typeof u === 'string' && u.trim()) src = u.trim();
+  }
+  if (!src || !overlayEl || flyMusicEl) return;   // nothing set — silence, no error
+  try {
+    // ctx.audio honours the sound switch (a muted track still returns an element
+    // at volume 0, which the fade below then ramps harmlessly).
+    const el = ctxRef.audio.play(src, { loop: true });
+    if (!el) return;
+    flyMusicEl = el;
+    el.addEventListener('error', () => { if (flyMusicEl === el) stopFlyoverMusic(); });
+    if (!overlayEl) stopFlyoverMusic();           // torn down during the await
+  } catch (e) { console.warn('potw: flyover music unavailable', e); }
+}
+
+// Smooth ramp to silence, then stop and release the element. Idempotent.
+function fadeOutFlyoverMusic(ms = FLYOVER_FADE_MS) {
+  const el = flyMusicEl;
+  if (!el || flyFadeTimer) return;
+  const from = Number(el.volume) || 0;
+  const t0 = Date.now();
+  flyFadeTimer = setInterval(() => {
+    if (!flyMusicEl) { stopFlyoverMusic(); return; }
+    const k = Math.min(1, (Date.now() - t0) / Math.max(1, ms));
+    try { el.volume = Math.max(0, Math.min(1, from * (1 - k))); } catch (e) {}
+    if (k >= 1) stopFlyoverMusic();
+  }, 50);
+}
+
+function stopFlyoverMusic() {
+  if (flyFadeTimer) { clearInterval(flyFadeTimer); flyFadeTimer = null; }
+  const el = flyMusicEl;
+  flyMusicEl = null;
+  if (!el) return;
+  try { el.pause(); } catch (e) {}
+  try { el.removeAttribute('src'); el.load(); } catch (e) {}
+}
+
 function gotoFlight() {
   if (!overlayEl) return;
+  startFlyoverMusic();   // music rides the whole flight, from this tap
   const reveal = overlayEl.querySelector('.potw-reveal');
   if (reveal) {                       // absent in preview mode
     reveal.style.transition = 'opacity .6s ease';
@@ -653,6 +772,7 @@ function gotoFlight() {
         if (!overlayEl) return;
         if (deck) openPresentation();
         else slideLesson();
+        fadeOutFlyoverMusic();   // arrived: hand the room over to the lesson
       });
     }, flying ? flyMs + LAND_SETTLE_MS : 700);
   });
@@ -977,6 +1097,7 @@ async function openPresentation(deck) {
   if (!overlayEl || presLayerEl) return;
   const d = deck || deckInfo || (await resolveDeck());
   if (!overlayEl || presLayerEl || !d || !d.type) return;
+  fadeOutFlyoverMusic();   // the deck is the room's focus now (no-op if silent)
   try { ctxRef.audio.sfx('coin'); } catch (e) {}
 
   // Hide the lesson card while presenting (ambient orbit keeps running).
@@ -986,27 +1107,66 @@ async function openPresentation(deck) {
   presState = {
     type: d.type, count: Number(d.count) || 0, idx: 1, url: d.url || '',
     pdfKey: d.pdfKey || `potw:${activeKey}:slides.pdf`,
-    imgCache: {}, pdfjs: null, pdfDoc: null, pageCache: new Map(), token: 0,
+    imgCache: {}, pdfjs: null, pdfDoc: null, pageCache: new Map(), token: 0, gsIframe: null,
   };
 
+  // One slim control bar along the bottom: prev/next at the ends, the counter
+  // centred, grid + close alongside. Google Slides is a different animal — the
+  // deck keeps its transitions/animations/embedded video and Google's own
+  // player drives it, so our slide controls step aside there (see below).
   const isGslides = d.type === 'gslides';
-  const nav = isGslides ? '' : `
-    <button type="button" class="potw-pres-arrow potw-pres-prev potw-chrome" aria-label="Previous slide">&#8249;</button>
-    <button type="button" class="potw-pres-arrow potw-pres-next potw-chrome" aria-label="Next slide">&#8250;</button>
-    <div class="potw-pres-counter potw-chrome">&mdash;</div>
-    <button type="button" class="potw-pres-grid potw-chrome" aria-label="Slide overview (G)">▦</button>
-    <div class="potw-pres-progress"><div class="potw-pres-bar"></div></div>
-    <div class="potw-pres-overview"><div class="potw-pres-thumbs"></div></div>`;
+  const hint = isGslides
+    ? `<div class="potw-pres-hint">Google runs this deck — use your remote, the arrow keys, or the controls at the bottom of the slides.
+         <span class="potw-pres-tip">Sound tip: audio dropped into Slides may stay silent in a published deck — an embedded YouTube video plays fine.</span></div>`
+    : (remoteHintDismissed() ? '' : `<div class="potw-pres-hint">Your presenter remote works — or use the arrow keys.
+         <button type="button" class="potw-hint-x" aria-label="Got it">✕</button></div>`);
+  const gsLeft = isGslides
+    ? `<button type="button" class="potw-pres-focus">🎯 Give remote control to slides</button>` : '';
+  const gsRight = isGslides
+    ? `<a class="potw-pres-open" href="${esc(gslidesOpenUrl(d))}" target="_blank" rel="noopener noreferrer">⧉ Open full screen in Google Slides</a>` : '';
+
   presLayerEl = document.createElement('div');
-  presLayerEl.className = 'potw-pres';
+  presLayerEl.className = 'potw-pres' + (isGslides ? ' gslides' : '');
   presLayerEl.innerHTML = `
     <div class="potw-pres-stage"></div>
-    ${nav}
-    <button type="button" class="potw-pres-close potw-chrome">✕ Back to ${esc(profile.title)}</button>`;
+    <div class="potw-pres-overview"><div class="potw-pres-thumbs"></div></div>
+    <footer class="potw-pres-bar potw-chrome">
+      <div class="potw-pres-progress"><div class="potw-pres-fill"></div></div>
+      <div class="potw-pres-side">
+        <button type="button" class="potw-pres-arrow potw-pres-prev" aria-label="Previous slide">&#8249;</button>
+        <button type="button" class="potw-pres-grid" aria-label="Slide overview (G)">▦</button>
+        ${gsLeft}
+      </div>
+      <div class="potw-pres-mid">
+        <div class="potw-pres-counter">&mdash;</div>
+        ${hint}
+      </div>
+      <div class="potw-pres-side end">
+        ${gsRight}
+        <button type="button" class="potw-pres-close">✕ Back to ${esc(profile.title)}</button>
+        <button type="button" class="potw-pres-arrow potw-pres-next" aria-label="Next slide">&#8250;</button>
+      </div>
+    </footer>`;
   overlayEl.appendChild(presLayerEl);
 
   presLayerEl.querySelector('.potw-pres-close').addEventListener('click', closePresentation);
-  if (!isGslides) {
+  const hintX = presLayerEl.querySelector('.potw-hint-x');
+  if (hintX) hintX.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dismissRemoteHint();
+    const h = presLayerEl && presLayerEl.querySelector('.potw-pres-hint');
+    if (h) h.remove();
+  });
+  pokeChrome();
+  if (isGslides) {
+    const focusBtn = presLayerEl.querySelector('.potw-pres-focus');
+    if (focusBtn) focusBtn.addEventListener('click', (e) => { e.stopPropagation(); focusDeck(); });
+    // Any tap on our own chrome (or on the deck) steals focus from Google's
+    // player, which would silently kill the presenter remote — so hand focus
+    // straight back after every click anywhere in the voyage overlay.
+    gsClickHandler = () => { later(focusDeck, 60); };
+    overlayEl.addEventListener('click', gsClickHandler);
+  } else {
     presLayerEl.querySelector('.potw-pres-prev').addEventListener('click', (e) => { e.stopPropagation(); presGo(-1); });
     presLayerEl.querySelector('.potw-pres-next').addEventListener('click', (e) => { e.stopPropagation(); presGo(1); });
     presLayerEl.querySelector('.potw-pres-grid').addEventListener('click', (e) => { e.stopPropagation(); toggleOverview(); });
@@ -1016,10 +1176,6 @@ async function openPresentation(deck) {
       const r = stage.getBoundingClientRect();
       presGo(e.clientX - r.left < r.width / 2 ? -1 : 1);
     });
-    // Nav chrome fades when idle and returns on any pointer/tap activity.
-    ['mousemove', 'pointerdown', 'touchstart'].forEach((evt) =>
-      presLayerEl.addEventListener(evt, pokeChrome, { passive: true }));
-    pokeChrome();
 
     // Re-render at the new viewport size (debounced) so slides stay crisp.
     let rzTimer = 0;
@@ -1055,22 +1211,31 @@ async function openPresentation(deck) {
   else { presRenderGslides(); }
 }
 
-// ---- nav chrome idle fade ----
+// ---- chrome idle fade (header + presentation bar together) ----
 function pokeChrome() {
-  if (!presLayerEl) return;
-  presLayerEl.classList.remove('idle');
+  if (!overlayEl) return;
+  overlayEl.classList.remove('idle');
   clearTimeout(presIdleTimer);
   presIdleTimer = setTimeout(() => {
-    if (presLayerEl && !isOverviewOpen()) presLayerEl.classList.add('idle');
+    if (overlayEl && !isOverviewOpen()) overlayEl.classList.add('idle');
   }, PRES_IDLE_MS);
+}
+
+// "Your presenter remote works" hint — shown until the teacher dismisses it once.
+const REMOTE_HINT_KEY = 'mrd:potw:remote-hint';
+function remoteHintDismissed() {
+  try { return localStorage.getItem(REMOTE_HINT_KEY) === '1'; } catch (e) { return false; }
+}
+function dismissRemoteHint() {
+  try { localStorage.setItem(REMOTE_HINT_KEY, '1'); } catch (e) {}
 }
 
 function presUpdateCounter() {
   if (!presLayerEl || !presState) return;
   const c = presLayerEl.querySelector('.potw-pres-counter');
   if (c) c.textContent = `${presState.idx} / ${presState.count}`;
-  const bar = presLayerEl.querySelector('.potw-pres-bar');
-  if (bar) bar.style.width = presState.count > 0 ? `${(presState.idx / presState.count) * 100}%` : '0%';
+  const fill = presLayerEl.querySelector('.potw-pres-fill');
+  if (fill) fill.style.width = presState.count > 0 ? `${(presState.idx / presState.count) * 100}%` : '0%';
   presLayerEl.querySelectorAll('.potw-thumb').forEach((t) =>
     t.classList.toggle('active', Number(t.dataset.i) === presState.idx));
 }
@@ -1102,7 +1267,7 @@ function toggleOverview(force) {
   if (!ov || !presState) return;
   const open = force === undefined ? !ov.classList.contains('show') : !!force;
   ov.classList.toggle('show', open);
-  if (open) { presLayerEl.classList.remove('idle'); buildThumbs(); }
+  if (open) { if (overlayEl) overlayEl.classList.remove('idle'); buildThumbs(); }
   else pokeChrome();
 }
 
@@ -1261,6 +1426,51 @@ function presPreloadPdf(st, idx, stage) {
 }
 
 // ---- google slides ----
+// Google Slides is the RICH path: a published embed keeps slide transitions,
+// object animations and embedded YouTube video, which a PDF export throws away.
+// Google publishes no postMessage API, so this page genuinely cannot drive the
+// deck — but a presenter remote sends plain PageUp/PageDown keystrokes, and
+// Google's own player handles those whenever the iframe holds focus. So instead
+// of faking prev/next we manage focus, and keep Google's control bar visible
+// for direct taps on the smartboard.
+
+// Keep the teacher's embed URL, but make sure it does not auto-run.
+function gslidesEmbedUrl(raw) {
+  const u = String(raw || '');
+  if (!u) return '';
+  try {
+    const url = new URL(u, window.location.href);
+    if (!url.searchParams.has('start')) url.searchParams.set('start', 'false');
+    if (!url.searchParams.has('loop')) url.searchParams.set('loop', 'false');
+    return url.href;
+  } catch (e) { return u; }
+}
+
+// A link the teacher can open in Google's own full-screen player (speaker notes,
+// presenter view). Prefers an explicit `presentation.openUrl` if Admin stores
+// one; otherwise derived from the embed URL: /d/e/<token>/embed → /pub (a
+// published deck), /d/<id>/embed → /present (a shared deck).
+function gslidesOpenUrl(d) {
+  const explicit = d && (d.openUrl || d.sourceUrl);
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
+  const u = String((d && d.url) || '');
+  if (!u) return '';
+  try {
+    const url = new URL(u, window.location.href);
+    if (/\/presentation\/d\/e\//.test(url.pathname)) url.pathname = url.pathname.replace(/\/embed\/?$/, '/pub');
+    else url.pathname = url.pathname.replace(/\/embed\/?$/, '/present');
+    return url.href;
+  } catch (e) { return u; }
+}
+
+// Hand keyboard/remote control back to Google's player.
+function focusDeck() {
+  const ifr = presState && presState.gsIframe;
+  if (!ifr || !ifr.isConnected) return;
+  try { ifr.contentWindow && ifr.contentWindow.focus(); } catch (e) {}
+  try { ifr.focus({ preventScroll: true }); } catch (e) { try { ifr.focus(); } catch (x) {} }
+}
+
 function presRenderGslides() {
   const st = presState;
   const stage = presLayerEl && presLayerEl.querySelector('.potw-pres-stage');
@@ -1269,11 +1479,35 @@ function presRenderGslides() {
   stage.innerHTML = `<div class="potw-pres-shimmer"></div>`;
   const iframe = document.createElement('iframe');
   iframe.setAttribute('allowfullscreen', '');
-  iframe.setAttribute('allow', 'fullscreen');
+  iframe.setAttribute('allow', 'fullscreen; autoplay');
   iframe.setAttribute('referrerpolicy', 'no-referrer');
-  iframe.addEventListener('load', () => { const sh = stage.querySelector('.potw-pres-shimmer'); if (sh) sh.remove(); });
-  iframe.src = st.url; // needs internet; embed provides its own click nav
+  let loaded = false;
+  iframe.addEventListener('load', () => {
+    loaded = true;
+    const sh = stage.querySelector('.potw-pres-shimmer'); if (sh) sh.remove();
+    focusDeck();                       // hand the keyboard/remote to Google
+    later(focusDeck, 400);             // ...again once its player has settled
+  });
+  // Google's own control bar stays (rm=minimal is deliberately NOT used): it is
+  // the only on-screen way to page through this deck by touch.
+  iframe.src = gslidesEmbedUrl(st.url);
+  st.gsIframe = iframe;
   stage.appendChild(iframe);
+  focusDeck();
+
+  // If the embed never loads (offline, blocked, or a share link that isn't an
+  // /embed URL), say so plainly instead of leaving a black rectangle.
+  later(() => {
+    if (loaded || presState !== st || !presLayerEl) return;
+    const sh = stage.querySelector('.potw-pres-shimmer'); if (sh) sh.remove();
+    const note = document.createElement('div');
+    note.className = 'potw-pres-error potw-pres-note';
+    note.innerHTML = `<div class="big" aria-hidden="true">⚠️</div>
+      <div>This Google Slides deck isn't loading. Check the internet connection, and make sure the link came from
+      <b>File → Share → Publish to the web → Embed</b>.<br><br>
+      No internet in the room? A PDF uploaded here is offline-safe and fully controlled by this app.</div>`;
+    stage.appendChild(note);
+  }, 8000);
 }
 
 // Tear the presentation layer down (PDF doc/canvases destroyed, listeners dropped).
@@ -1281,6 +1515,10 @@ function presRenderGslides() {
 function destroyPresentation() {
   if (presKeyHandler) { try { window.removeEventListener('keydown', presKeyHandler); } catch (e) {} presKeyHandler = null; }
   if (presResizeHandler) { try { window.removeEventListener('resize', presResizeHandler); } catch (e) {} presResizeHandler = null; }
+  if (gsClickHandler) {
+    try { overlayEl && overlayEl.removeEventListener('click', gsClickHandler); } catch (e) {}
+    gsClickHandler = null;
+  }
   clearTimeout(presIdleTimer); presIdleTimer = null;
   if (presState) {
     if (presState.pdfDoc) { try { presState.pdfDoc.destroy(); } catch (e) {} }
@@ -1294,9 +1532,11 @@ function destroyPresentation() {
 // NOT forced back into view — a subtle "📋 Lesson" control offers it on demand.
 function closePresentation() {
   destroyPresentation();
+  stopFlyoverMusic();      // already faded in the normal flow; belt and braces
   if (!overlayEl) return;
   const btn = overlayEl.querySelector('.potw-lesson-btn');
   if (btn) btn.style.display = 'block';
+  pokeChrome();            // bring the header back with the deck gone
 }
 
 // Toggle the lesson card over the orbiting map (opt-in, never automatic when a
@@ -1317,6 +1557,7 @@ function toggleLessonCard() {
 function closeOverlay() {
   clearTimers();
   destroyPresentation();
+  stopFlyoverMusic();
   try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
   if (videoEl) { try { videoEl.pause(); } catch (e) {} }
   destroyYtIntro();
@@ -1399,7 +1640,10 @@ function injectStyles() {
     margin:1rem 0 .5rem;text-shadow:0 0 44px rgba(245,158,11,.55);
     animation:potw-pulse 1.8s ease-in-out infinite;}
   .potw-song-sub{color:#9ca3af;letter-spacing:.25em;text-transform:uppercase;font-size:1rem;}
-  .potw-skip{position:absolute;top:18px;right:18px;z-index:50;min-height:44px;
+  /* Skip stays reachable for the last seconds of the video, once the reveal
+     card (and with it the overlay header) has appeared above it. */
+  .potw-overlay.head-on .potw-skip{top:80px;}
+  .potw-skip{position:absolute;top:18px;right:18px;z-index:64;min-height:44px;
     padding:10px 18px;border-radius:.6rem;background:rgba(0,0,0,.55);border:1px solid #374151;
     color:#e5e7eb;font-weight:600;cursor:pointer;transition:background .2s ease;}
   .potw-skip:hover{background:rgba(0,0,0,.8);}
@@ -1441,9 +1685,33 @@ function injectStyles() {
     color:#9ca3af;font-weight:600;cursor:pointer;transition:background .2s ease,color .2s ease,border-color .2s ease;}
   .potw-lesson-btn:hover{background:rgba(17,24,39,.95);color:#f9fafb;border-color:#f59e0b;}
 
-  .potw-end{position:absolute;top:18px;right:18px;z-index:55;display:none;min-height:44px;
-    padding:10px 18px;border-radius:.6rem;background:rgba(17,24,39,.85);border:1px solid #374151;
-    color:#e5e7eb;font-weight:600;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
+  /* ---- overlay header: 🏠 Main Screen + quick launch + End Voyage ---- */
+  .potw-head{position:absolute;top:0;left:0;right:0;z-index:63;display:none;align-items:center;gap:12px;
+    padding:10px 14px;min-height:64px;
+    background:linear-gradient(180deg,rgba(11,15,25,.94),rgba(11,15,25,.55) 78%,rgba(11,15,25,0));
+    border-bottom:1px solid rgba(55,65,81,.55);backdrop-filter:blur(8px);}
+  .potw-head.show{display:flex;}
+  .potw-home{flex-shrink:0;min-height:48px;padding:12px 20px;border-radius:.7rem;
+    background:linear-gradient(135deg,#f59e0b,#b45309);border:none;color:#0b0f19;font-weight:800;
+    font-size:1rem;cursor:pointer;box-shadow:0 6px 20px rgba(245,158,11,.35);
+    transition:transform .15s ease,box-shadow .2s ease;}
+  .potw-home:hover{box-shadow:0 10px 26px rgba(245,158,11,.5);}
+  .potw-home:active{transform:scale(.97);}
+  .potw-quick{flex:1;display:flex;align-items:center;gap:10px;overflow-x:auto;overflow-y:hidden;
+    scrollbar-width:thin;padding:2px;}
+  .potw-quick-btn{display:inline-flex;align-items:center;gap:8px;flex-shrink:0;max-width:22rem;
+    min-height:48px;padding:12px 16px;border-radius:.7rem;background:rgba(31,41,55,.9);
+    border:1px solid #374151;border-left:3px solid #3b82f6;color:#f9fafb;font-weight:700;
+    font-size:.95rem;text-decoration:none;cursor:pointer;white-space:nowrap;
+    transition:background .2s ease,border-color .2s ease;}
+  .potw-quick-btn:hover{background:#243044;border-color:#3b82f6;}
+  .potw-quick-btn:active{transform:scale(.98);}
+  .potw-quick-label{overflow:hidden;text-overflow:ellipsis;}
+  .potw-quick-out{color:#9ca3af;font-weight:800;}
+
+  .potw-end{flex-shrink:0;min-height:48px;padding:12px 18px;border-radius:.7rem;
+    background:rgba(17,24,39,.85);border:1px solid #374151;
+    color:#e5e7eb;font-weight:700;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
   .potw-end:hover{background:rgba(239,68,68,.25);border-color:#ef4444;}
 
   /* ---- Stage 4 lesson ---- */
@@ -1519,35 +1787,77 @@ function injectStyles() {
   .potw-pres-launch:active{transform:scale(.98);}
 
   /* ---- Stage 5 presentation viewer ---- */
-  .potw-pres{position:absolute;inset:0;z-index:58;background:#000;display:flex;align-items:center;justify-content:center;}
-  .potw-pres-stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  .potw-pres{position:absolute;inset:0;z-index:58;background:#000;display:flex;align-items:center;justify-content:center;
+    --head-h:64px;--bar-h:78px;}
+  /* the stage is inset by the header + control bar so chrome NEVER covers a slide */
+  .potw-pres-stage{position:absolute;top:var(--head-h);bottom:var(--bar-h);left:0;right:0;
+    display:flex;align-items:center;justify-content:center;
     overflow:hidden;background:#000;cursor:pointer;}
   .potw-pres-stage img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;}
   .potw-pres-stage canvas{max-width:100%;max-height:100%;display:block;box-shadow:0 0 40px rgba(0,0,0,.6);}
   .potw-pres-stage iframe{width:100%;height:100%;border:0;background:#000;}
-  .potw-pres-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:60;width:72px;height:72px;
-    min-width:64px;min-height:64px;border-radius:50%;border:1px solid #374151;background:rgba(17,24,39,.6);
-    color:#f9fafb;font-size:2.6rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
-    transition:background .2s ease,transform .12s ease;}
-  .potw-pres-arrow:hover{background:rgba(245,158,11,.35);}
-  .potw-pres-arrow:active{transform:translateY(-50%) scale(.94);}
-  .potw-pres-prev{left:20px;} .potw-pres-next{right:20px;}
-  .potw-pres-counter{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;
-    background:rgba(0,0,0,.55);border:1px solid #374151;border-radius:999px;padding:8px 18px;
-    color:#e5e7eb;font-weight:700;letter-spacing:.06em;font-size:1.05rem;}
+  /* ---- one slim control bar along the bottom (footer) ---- */
+  .potw-pres-bar{position:absolute;left:0;right:0;bottom:0;z-index:63;height:var(--bar-h);
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto) minmax(0,1fr);
+    align-items:center;gap:12px;padding:0 14px;
+    background:linear-gradient(0deg,rgba(11,15,25,.96),rgba(11,15,25,.7) 70%,rgba(11,15,25,0));
+    border-top:1px solid rgba(55,65,81,.55);backdrop-filter:blur(8px);}
+  .potw-pres-side{display:flex;align-items:center;gap:12px;min-width:0;}
+  .potw-pres-side.end{justify-content:flex-end;}
+  .potw-pres-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    min-width:0;max-width:100%;overflow:hidden;text-align:center;}
+  .potw-pres-arrow{width:64px;height:56px;min-width:56px;min-height:56px;border-radius:.75rem;
+    border:1px solid #374151;background:rgba(31,41,55,.9);
+    color:#f9fafb;font-size:2.2rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:background .2s ease,transform .12s ease,border-color .2s ease;}
+  .potw-pres-arrow:hover{background:rgba(245,158,11,.35);border-color:#f59e0b;}
+  .potw-pres-arrow:active{transform:scale(.94);}
+  .potw-pres-counter{color:#e5e7eb;font-weight:800;letter-spacing:.06em;font-size:1.1rem;}
+  .potw-pres-hint{display:flex;align-items:center;gap:8px;color:#9ca3af;font-size:.8rem;line-height:1.35;
+    max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .potw-pres-tip{color:#6b7280;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
+  .potw-hint-x{min-width:28px;min-height:28px;border-radius:50%;border:1px solid #374151;
+    background:transparent;color:#9ca3af;font-size:.75rem;line-height:1;cursor:pointer;flex-shrink:0;}
+  .potw-hint-x:hover{background:rgba(255,255,255,.08);color:#f9fafb;}
   /* idle fade: chrome disappears while presenting, returns on move/tap/key */
   .potw-chrome{transition:opacity .3s ease;}
-  .potw-pres.idle .potw-chrome{opacity:0;pointer-events:none;}
-  .potw-pres-grid{position:absolute;top:18px;left:18px;z-index:61;min-width:56px;min-height:56px;
-    border-radius:.75rem;background:rgba(17,24,39,.85);border:1px solid #374151;color:#e5e7eb;
-    font-size:1.5rem;line-height:1;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
+  .potw-overlay.idle .potw-chrome{opacity:0;pointer-events:none;}
+  .potw-pres-grid{min-width:56px;min-height:56px;
+    border-radius:.75rem;background:rgba(31,41,55,.9);border:1px solid #374151;color:#e5e7eb;
+    font-size:1.4rem;line-height:1;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
   .potw-pres-grid:hover{background:rgba(245,158,11,.3);border-color:#f59e0b;}
-  .potw-pres-progress{position:absolute;left:0;right:0;bottom:0;height:5px;z-index:60;
+  .potw-pres-progress{position:absolute;left:0;right:0;top:0;height:4px;
     background:rgba(255,255,255,.12);}
-  .potw-pres-bar{height:100%;width:0;background:linear-gradient(90deg,#f59e0b,#fbbf24);
+  .potw-pres-fill{height:100%;width:0;background:linear-gradient(90deg,#f59e0b,#fbbf24);
     transition:width .25s ease;}
+  /* Google runs its own deck in a cross-origin iframe — our slide controls
+     cannot reach it, so they are hidden rather than left there teasing. */
+  .potw-pres.gslides .potw-pres-prev,.potw-pres.gslides .potw-pres-next,
+  .potw-pres.gslides .potw-pres-grid,.potw-pres.gslides .potw-pres-counter,
+  .potw-pres.gslides .potw-pres-progress{display:none;}
+  /* the gslides bar carries more words, so it stacks: hint row, then controls */
+  .potw-pres.gslides{--bar-h:124px;}
+  .potw-pres.gslides .potw-pres-bar{grid-template-columns:1fr 1fr;grid-template-rows:auto auto;
+    grid-template-areas:"hint hint" "left right";align-content:center;gap:8px 12px;padding:10px 14px;}
+  .potw-pres.gslides .potw-pres-mid{grid-area:hint;max-width:100%;}
+  .potw-pres.gslides .potw-pres-side{grid-area:left;}
+  .potw-pres.gslides .potw-pres-side.end{grid-area:right;}
+  .potw-pres.gslides .potw-pres-hint{font-size:.88rem;color:#e5e7eb;flex-direction:column;gap:2px;
+    align-items:center;}
+  .potw-pres.gslides .potw-pres-focus,.potw-pres.gslides .potw-pres-open,
+  .potw-pres.gslides .potw-pres-close{max-width:26rem;}
+  .potw-pres-focus{min-height:56px;padding:12px 18px;border-radius:.75rem;cursor:pointer;min-width:0;
+    max-width:18rem;overflow:hidden;text-overflow:ellipsis;
+    background:linear-gradient(135deg,#f59e0b,#b45309);border:none;color:#0b0f19;font-weight:800;
+    white-space:nowrap;box-shadow:0 6px 20px rgba(245,158,11,.3);transition:transform .15s ease;}
+  .potw-pres-focus:active{transform:scale(.97);}
+  .potw-pres-open{display:inline-flex;align-items:center;min-height:56px;padding:12px 18px;min-width:0;
+    max-width:18rem;overflow:hidden;text-overflow:ellipsis;
+    border-radius:.75rem;background:rgba(31,41,55,.9);border:1px solid #374151;color:#e5e7eb;
+    font-weight:700;text-decoration:none;white-space:nowrap;transition:background .2s ease,border-color .2s ease;}
+  .potw-pres-open:hover{background:#243044;border-color:#3b82f6;}
   .potw-pres-overview{position:absolute;inset:0;z-index:62;display:none;overflow-y:auto;
-    background:rgba(11,15,25,.96);padding:24px;}
+    background:rgba(11,15,25,.96);padding:calc(var(--head-h) + 24px) 24px calc(var(--bar-h) + 24px);}
   .potw-pres-overview.show{display:block;}
   .potw-pres-thumbs{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}
   .potw-thumb{position:relative;padding:0;border:2px solid #374151;border-radius:.6rem;overflow:hidden;
@@ -1559,11 +1869,15 @@ function injectStyles() {
   .potw-thumb-box img,.potw-thumb-box canvas{max-width:100%;max-height:100%;object-fit:contain;display:block;}
   .potw-thumb-n{position:absolute;bottom:4px;right:6px;background:rgba(0,0,0,.7);color:#e5e7eb;
     font-size:.8rem;font-weight:700;border-radius:.3rem;padding:1px 6px;}
-  .potw-pres-close{position:absolute;top:18px;right:18px;z-index:61;min-height:48px;padding:12px 18px;
-    border-radius:.6rem;background:rgba(17,24,39,.85);border:1px solid #374151;color:#e5e7eb;font-weight:700;cursor:pointer;
+  .potw-pres-close{min-height:56px;padding:12px 18px;max-width:18rem;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;
+    border-radius:.75rem;background:rgba(31,41,55,.9);border:1px solid #374151;color:#e5e7eb;font-weight:700;cursor:pointer;
     transition:background .2s ease,border-color .2s ease;}
   .potw-pres-close:hover{background:rgba(239,68,68,.25);border-color:#ef4444;}
   .potw-pres-error{color:#f9fafb;text-align:center;padding:24px;max-width:32rem;line-height:1.5;}
+  .potw-pres-note{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:34rem;
+    background:rgba(11,15,25,.95);border:1px solid #374151;border-radius:1rem;
+    box-shadow:0 20px 60px rgba(0,0,0,.7);}
   .potw-pres-error .big{font-size:3rem;margin-bottom:.5rem;}
   .potw-pres-shimmer{position:absolute;inset:0;background:linear-gradient(100deg,#0b0f19 30%,#1f2937 50%,#0b0f19 70%);
     background-size:200% 100%;animation:potw-shimmer 1.4s linear infinite;}
@@ -1603,6 +1917,12 @@ function injectStyles() {
     100%{transform:translate(-50%,-50%) scale(1);opacity:1;}}
   @keyframes potw-float{0%{opacity:1;transform:translate(-50%,0);}
     100%{opacity:0;transform:translate(-50%,-42px);}}
+  /* narrow screens: keep the touch targets, drop the words */
+  @media (max-width:900px){
+    .potw-pres-hint{display:none;}
+    .potw-pres-close{max-width:9rem;}
+    .potw-quick-btn{max-width:11rem;}
+  }
   @media (prefers-reduced-motion:reduce){
     .potw-globe-emoji,.potw-song-globe,.potw-fb-globe,.potw-stars,.potw-song-title,.potw-fly-btn{animation:none;}
   }`;
@@ -1736,6 +2056,7 @@ export default {
     clearTimers();
     disposeGlobe();
     destroyPresentation();
+    stopFlyoverMusic();
     if (previewKeyHandler) {
       try { window.removeEventListener('keydown', previewKeyHandler); } catch (e) {}
       previewKeyHandler = null;

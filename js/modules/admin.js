@@ -16,8 +16,21 @@ const MAIN_TABS = [
   { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
   { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
 ];
+// ❓ Help sits immediately before Settings; Settings is always last.
+const HELP_TAB = { id: 'help', label: '❓ Help' };
 const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
-const TABS = [...MAIN_TABS, SETTINGS_TAB];
+const TABS = [...MAIN_TABS, HELP_TAB, SETTINGS_TAB];
+
+// Article ids in js/core/help.js. Kept in one place so a rename over there is a
+// one-line fix here. (These are TOPIC ids, not category ids — openHelp() takes
+// a topic; openHelpAt() takes a category.)
+const HELP_TOPICS = {
+  planner: 'admin-planner',
+  quests: 'quests-how',
+  shop: 'shop-effects',
+  potw: 'potw-schedule',
+  backups: 'data-backup',
+};
 
 // ---------------------------------------------------------------------------
 // Module-scoped lifecycle state (mount/unmount owns all of this)
@@ -45,6 +58,11 @@ let dangerOpen = false;               // danger-zone accordion state
 const shopUrls = new Set();           // object URLs we own for shop image previews
 let backupStatusTimer = null;         // interval that keeps the auto-backup "last saved" line live
 let shopGuideOpen = false;            // "How magic items work" accordion state
+let questGuideOpen = false;           // "How quests work" accordion state
+let questForm = null;                 // in-progress quest editor
+let houseForm = null;                 // in-progress house editor (Settings tab)
+let videoForm = null;                 // in-progress intro-video preset editor (POTW tab)
+let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 
 const AMBER = '#f59e0b';
@@ -93,6 +111,8 @@ function slugify(s) {
   return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'destination';
 }
 function coreLabel(core) { return core === 'all' ? 'All Cores' : `Core ${core}`; }
+function hexNorm(s) { const v = String(s || '').trim(); return v && !v.startsWith('#') ? `#${v}` : v; }
+function isHex(s) { return /^#[0-9a-f]{6}$/i.test(String(s || '')); }
 
 function el(id) { return document.getElementById(id); }
 function later(fn, ms) { const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('admin:', e); } }, ms); timers.add(id); return id; }
@@ -150,6 +170,7 @@ function renderBody({ force = false } = {}) {
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
   else if (activeTab === 'quests') body.innerHTML = renderQuests();
   else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
+  else if (activeTab === 'help') body.innerHTML = renderHelp();
   else if (activeTab === 'settings') body.innerHTML = renderSettings();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
 }
@@ -160,6 +181,9 @@ function setTab(tab) {
   closeModal();
   syncSegActive();
   renderBody();
+  // Selecting ❓ Help brings the handbook up immediately — the tab body behind
+  // it is just a table of contents for jumping to another article.
+  if (tab === 'help') openHelpTopic(null);   // null = open the handbook at its contents page
 }
 
 // ===========================================================================
@@ -544,24 +568,50 @@ function questDateStr(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// The store defaults a quest's give-up penalty to half its reward. Saved quests
+// from before that field existed get the same treatment on load, but mirror the
+// rule here so nothing in the UI ever shows "−undefined".
+function questPenalty(q) {
+  const p = Number(q?.penalty);
+  return Number.isFinite(p) ? Math.max(0, Math.round(p)) : Math.round(Number(q?.points || 0) / 2);
+}
+
+// One plain-English sentence describing a quest, shared by the catalog list and
+// the editor's live preview — so the teacher reads the same words in both.
+function questSentence(q) {
+  const pts = Math.max(0, Math.round(Number(q?.points) || 0));
+  const pen = questPenalty(q);
+  const repeat = q?.repeatable
+    ? 'After it is completed it goes back on the board, so another house can earn it too.'
+    : 'Once any house completes it, it leaves the board for good.';
+  const give = pen > 0
+    ? `If a house gives up, they lose ${pen} points and the quest returns to the board.`
+    : 'If a house gives up, there is no penalty and the quest returns to the board.';
+  return `Worth ${pts} points. ${repeat} ${give}`;
+}
+
 function renderQuests() {
   const store = ctxRef.store;
-  const catalog = store.getQuestCatalog().slice().sort((a, b) => b.points - a.points);
+  const catalog = store.getQuestCatalog();
   const completed = store.getCompletedQuests({ limit: 20 });
+  const doneIds = store.getCompletedQuests({ limit: 100000 }).map((c) => c.questId);
 
+  // ---- active quests, one card per core ----
   const activeCards = [1, 2, 3, 4].map((core) => {
     const house = store.HOUSES[core];
     const q = store.getActiveQuest(core);
     const body = q
       ? `<div class="admin-q-active-body">
            <div class="admin-q-active-title">${esc(q.title)}</div>
-           <div class="admin-q-active-meta">💎 ${q.points} pts · started ${esc(questDateStr(q.startedTs))}</div>
+           <div class="admin-q-active-desc">${esc(q.desc || '')}</div>
+           <div class="admin-q-active-meta">💎 ${q.points} pts · accepted ${esc(questDateStr(q.startedTs))} · ${q.repeatable ? '♻️ repeatable' : '★ one time only'}</div>
            <div class="admin-q-active-actions">
-             <button class="admin-btn admin-btn-primary" data-action="quest-complete" data-core="${core}">✅ Confirm Complete</button>
-             <button class="admin-btn admin-btn-danger" data-action="quest-clear" data-core="${core}">✖ Clear</button>
+             <button class="admin-btn admin-btn-primary" data-action="quest-complete" data-core="${core}">✅ Confirm Complete <span class="admin-q-btn-note">+${q.points}</span></button>
+             <button class="admin-btn admin-btn-danger" data-action="quest-fail" data-core="${core}">✖ Mark Given Up <span class="admin-q-btn-note">−${questPenalty(q)}</span></button>
            </div>
+           <button class="admin-linkbtn admin-q-quiet" data-action="quest-clear" data-core="${core}">Clear without penalty (accepted by mistake)</button>
          </div>`
-      : '<div class="admin-q-active-empty">—</div>';
+      : '<div class="admin-q-active-empty">No quest accepted<span>Houses pick one on the Quests screen.</span></div>';
     return `
       <div class="admin-q-active" style="--house:${house.accent}">
         <div class="admin-q-active-head" style="color:${house.accent}">${esc(house.name)} <span class="admin-faint">· Core ${core}</span></div>
@@ -569,24 +619,61 @@ function renderQuests() {
       </div>`;
   }).join('');
 
-  const catalogRows = catalog.map((q) => `
-    <div class="admin-q-row">
-      <div class="admin-q-pts">${q.points}<small>pts</small></div>
-      <div class="admin-q-main">
-        <div class="admin-q-title">${esc(q.title)}</div>
-        <div class="admin-q-desc">${esc(q.desc || '')}</div>
-      </div>
-      <div class="admin-q-row-actions">
-        <button class="admin-btn admin-btn-icon" data-action="quest-edit" data-id="${esc(q.id)}" aria-label="Edit">✏️</button>
-        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="quest-del" data-id="${esc(q.id)}" aria-label="Delete">🗑️</button>
-      </div>
-    </div>`).join('');
+  // ---- catalog, grouped by repeatable vs one-time ----
+  const questRow = (q) => {
+    const holder = store.questHolder(q.id);
+    const retired = !q.repeatable && doneIds.includes(q.id);
+    let status = '';
+    if (holder) {
+      const h = store.HOUSES[holder];
+      status = `<span class="admin-q-status held" style="--house:${h.accent}">In progress — ${esc(h.name)}</span>`;
+    } else if (retired) {
+      status = '<span class="admin-q-status retired">Retired — already completed</span>';
+    } else {
+      status = '<span class="admin-q-status open">On the board</span>';
+    }
+    return `
+      <div class="admin-q-row">
+        <div class="admin-q-pts">${q.points}<small>pts</small></div>
+        <div class="admin-q-main">
+          <div class="admin-q-title">${esc(q.title)}</div>
+          <div class="admin-q-desc">${esc(q.desc || '')}</div>
+          <div class="admin-shop-plain">${esc(questSentence(q))}</div>
+          <div class="admin-q-statusrow">${status}</div>
+        </div>
+        <div class="admin-q-row-actions">
+          <button class="admin-btn admin-btn-icon" data-action="quest-edit" data-id="${esc(q.id)}" aria-label="Edit">✏️</button>
+          <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="quest-del" data-id="${esc(q.id)}" aria-label="Delete">🗑️</button>
+        </div>
+      </div>`;
+  };
+
+  const groups = [
+    { key: 'repeat', title: '♻️ Repeatable quests', note: 'Come back to the board after a house finishes them.',
+      list: catalog.filter((q) => q.repeatable) },
+    { key: 'once', title: '★ One-time quests', note: 'Leave the board forever once completed.',
+      list: catalog.filter((q) => !q.repeatable) },
+  ];
+  const sections = groups.map((g) => {
+    const list = g.list.slice().sort((a, b) => (b.points - a.points) || String(a.title).localeCompare(String(b.title)));
+    if (!list.length) return '';
+    return `
+      <div class="admin-shop-group">
+        <div class="admin-shop-group-head">
+          <span class="admin-shop-group-title">${g.title} <span class="admin-faint">(${list.length})</span></span>
+          <span class="admin-faint">${esc(g.note)}</span>
+        </div>
+        <div class="admin-q-list">${list.map(questRow).join('')}</div>
+      </div>`;
+  }).join('');
 
   return `
     <div class="admin-quests">
+      ${questGuideHTML()}
+
       <div class="admin-card">
         <div class="admin-card-title">Active Quests</div>
-        <div class="admin-mini">One quest can be active per house core. Students pick quests on the Quest Board; you confirm completion here to award the points.</div>
+        <div class="admin-mini">One quest per house at a time. A house accepts a quest on the Quests screen; you confirm the result here — or on the big buttons on the Quests screen itself.</div>
         <div class="admin-q-active-grid">${activeCards}</div>
       </div>
 
@@ -595,9 +682,8 @@ function renderQuests() {
           <span class="admin-card-title" style="margin:0">Quest Catalog <span class="admin-faint">(${catalog.length})</span></span>
           <button class="admin-btn admin-btn-primary" data-action="quest-new">+ New Quest</button>
         </div>
-        <div class="admin-q-list">
-          ${catalogRows || '<div class="admin-empty admin-empty-sm">No quests yet. Add one to get started.</div>'}
-        </div>
+        <div class="admin-mini">These are the tasks houses can choose from. Anything you write here shows up on the Quest Board.</div>
+        ${sections || '<div class="admin-empty admin-empty-sm">No quests yet. Add one to get started.</div>'}
       </div>
 
       <div class="admin-card">
@@ -606,10 +692,10 @@ function renderQuests() {
           ${completed.length ? completed.map((c) => {
             const house = store.HOUSES[c.core];
             return `<div class="admin-q-done">
-              <span class="admin-evt-dot" style="background:${house.accent};border:2px solid ${house.accent}"></span>
+              <span class="admin-evt-dot" style="background:${house ? house.accent : '#6b7280'};border:2px solid ${house ? house.accent : '#6b7280'}"></span>
               <div class="admin-q-main">
                 <div class="admin-q-title">${esc(c.title)}</div>
-                <div class="admin-q-desc">${esc(house.name)} · +${c.points} pts · ${esc(questDateStr(c.ts))}</div>
+                <div class="admin-q-desc">${esc(house ? house.name : '')} · +${c.points} pts · ${esc(questDateStr(c.ts))}</div>
               </div>
             </div>`;
           }).join('') : '<div class="admin-empty admin-empty-sm">No quests completed yet.</div>'}
@@ -618,47 +704,174 @@ function renderQuests() {
     </div>`;
 }
 
+// Plain-language primer, in the same spirit as the Magic Shop guide.
+function questGuideHTML() {
+  return `
+    <div class="admin-card">
+      <details class="admin-details admin-guide" ${questGuideOpen ? 'open' : ''}>
+        <summary data-action="quest-guide-toggle">📖 How quests work</summary>
+        <div class="admin-guide-body">
+          <p class="admin-guide-p"><b>A house agrees to a task.</b> On the Quests screen they tap “Accept Quest”. The quest jumps to the top of the screen as their <b>active quest</b> and disappears from the board below, so nobody else can take it.</p>
+          <p class="admin-guide-p"><b>One quest at a time.</b> A house can't accept a second quest until the first one is finished or given up.</p>
+          <p class="admin-guide-p"><b>You decide when it's done.</b> When the class has actually met the conditions, press the green <b>✓ Mark Complete</b> — on the Quests screen or right here — and the points go to that house.</p>
+          <p class="admin-guide-p"><b>Giving up costs points.</b> If a house can't finish, press the red <b>✗ Give Up</b>. The penalty is deducted and the quest goes back on the board, where another house can steal it.</p>
+          <p class="admin-guide-p"><b>Repeatable vs. one-time.</b> A <b>♻️ repeatable</b> quest returns to the board after it's completed, so every house can earn it. A <b>★ one-time</b> quest retires forever the moment any house finishes it.</p>
+
+          <div class="admin-guide-callout">
+            🗝️ Tapped a button by mistake? <b>“Clear without penalty”</b> under each active quest quietly puts it back on the board — nobody gains or loses anything. To undo points that were already awarded, use the transaction list on the House Points screen.
+          </div>
+
+          <div class="admin-guide-tablewrap">
+            <div class="admin-guide-tabletitle">What each button does</div>
+            <table class="admin-matchup">
+              <thead><tr><th>Button</th><th>Points</th><th>The quest</th></tr></thead>
+              <tbody>
+                <tr><td class="admin-mu-row">✅ Confirm Complete</td><td class="admin-mu-block">+ full reward</td><td>Repeatable → back on the board. One-time → retired.</td></tr>
+                <tr><td class="admin-mu-row">✖ Mark Given Up</td><td><b>− penalty</b></td><td>Back on the board for another house.</td></tr>
+                <tr><td class="admin-mu-row">Clear without penalty</td><td>no change</td><td>Back on the board for another house.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.quests, 'More about quests in the handbook')}</div>
+    </div>`;
+}
+
+// ---- catalog editor --------------------------------------------------------
 function openQuestForm(id) {
   const store = ctxRef.store;
   const q = id ? store.getQuestCatalog().find((x) => x.id === id) : null;
+  questForm = {
+    id: q ? q.id : `q-${Date.now()}`,
+    isNew: !q,
+    title: q?.title || '',
+    desc: q?.desc || '',
+    points: q?.points ?? 20,
+    repeatable: !!q?.repeatable,
+    penalty: q ? questPenalty(q) : 10,
+    // While false, the penalty tracks half the reward automatically. The moment
+    // the teacher types their own number we stop moving it under them.
+    penaltyTouched: !!q,
+    saveError: null,
+  };
+  renderQuestModal();
+}
+
+function renderQuestModal() {
+  const f = questForm;
+  if (!f) return;
   const m = el('admin-modal-root');
+  const opts = [
+    { key: true, label: '♻️ Repeatable', explain: 'Any house can earn this again. It returns to the board after it is completed.' },
+    { key: false, label: '★ One time only', explain: 'It leaves the board once completed — the first house to finish it is the only one who ever gets it.' },
+  ].map((o) => {
+    const on = f.repeatable === o.key;
+    return `<label class="admin-eff-opt${on ? ' on' : ''}">
+      <input type="radio" name="admin-quest-repeat" value="${o.key ? '1' : '0'}" ${on ? 'checked' : ''} />
+      <span class="admin-eff-label">${o.label}</span>
+      <span class="admin-eff-explain">${esc(o.explain)}</span>
+    </label>`;
+  }).join('');
+
+  const half = Math.round((Number(f.points) || 0) / 2);
+  const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
+
   m.innerHTML = `
-    <div class="admin-modal-bg" data-action="modal-close"></div>
-    <div class="admin-modal">
+    <div class="admin-modal-bg" data-action="quest-close"></div>
+    <div class="admin-modal admin-modal-lg">
       <div class="admin-modal-head">
-        <div class="admin-modal-title">${q ? '✏️ Edit Quest' : '🗺️ New Quest'}</div>
-        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+        <div class="admin-modal-title">${f.isNew ? '🗺️ New Quest' : '✏️ Edit Quest'}</div>
+        <button class="admin-btn admin-btn-icon" data-action="quest-close" aria-label="Close">✕</button>
       </div>
-      <div class="admin-modal-body">
-        <label class="admin-flabel" for="admin-quest-title">Title</label>
-        <input id="admin-quest-title" class="admin-input" type="text" value="${esc(q?.title || '')}" placeholder="School Event Squad" />
-        <label class="admin-flabel" for="admin-quest-desc">What needs to be done</label>
-        <textarea id="admin-quest-desc" class="admin-input admin-textarea" rows="3" placeholder="Attend a school event together. Proof: photos showing at least half the class there.">${esc(q?.desc || '')}</textarea>
-        <label class="admin-flabel" for="admin-quest-points">Point value</label>
-        <input id="admin-quest-points" class="admin-input" type="number" min="1" max="9999" value="${esc(q?.points ?? 20)}" style="max-width:160px" />
+      <div class="admin-modal-body admin-modal-scroll">
+        <label class="admin-flabel" for="admin-quest-title">Title <span class="admin-faint">(shown big on the board)</span></label>
+        <input id="admin-quest-title" class="admin-input" type="text" value="${esc(f.title)}" placeholder="School Event Squad" />
+
+        <label class="admin-flabel" for="admin-quest-desc">What the house must actually do</label>
+        <textarea id="admin-quest-desc" class="admin-input admin-textarea" rows="3"
+          placeholder="Attend a school event together. Proof: photos showing at least half the class there.">${esc(f.desc)}</textarea>
+        <div class="admin-step-hint">Write it so the class knows exactly when it counts as done — including what proof you want.</div>
+
+        <label class="admin-flabel" for="admin-quest-points">Reward <span class="admin-faint">(points awarded on completion)</span></label>
+        <input id="admin-quest-points" class="admin-input" type="number" min="1" max="9999" value="${esc(f.points)}" style="max-width:160px" />
+        <div class="admin-step-hint">Most quests are worth 10–50 points. Bigger effort, bigger reward.</div>
+
+        <label class="admin-flabel">Can other houses earn this too?</label>
+        <div class="admin-eff-group">${opts}</div>
+
+        <label class="admin-flabel" for="admin-quest-penalty">Give-up penalty <span class="admin-faint">(points lost if the house quits)</span></label>
+        <input id="admin-quest-penalty" class="admin-input" type="number" min="0" max="9999" value="${esc(f.penalty)}" style="max-width:160px" />
+        <div class="admin-step-hint">Default is half the reward (${half} for a ${Number(f.points) || 0}-point quest). Set 0 for no penalty at all.
+          Failing should sting a little without erasing a week of work.</div>
+
+        <div class="admin-preview admin-shop-preview">
+          <span class="admin-preview-eyebrow">In plain English</span>
+          <span class="admin-shop-preview-text" id="admin-quest-preview">${esc(questSentence(f))}</span>
+        </div>
+        ${saveErr}
       </div>
       <div class="admin-modal-foot">
-        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
-        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="quest-save" ${q ? `data-id="${esc(q.id)}"` : ''}>Save quest</button>
+        <button class="admin-btn admin-btn-lg" data-action="quest-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="quest-save">Save quest</button>
       </div>
     </div>`;
-  const t = el('admin-quest-title'); if (t) t.focus();
+  const t = el('admin-quest-title'); if (t && f.isNew) t.focus();
 }
 
-function saveQuestFromForm(id) {
+function syncQuestFromDom() {
+  if (!questForm) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  questForm.title = g('admin-quest-title');
+  questForm.desc = g('admin-quest-desc');
+  questForm.points = g('admin-quest-points');
+  questForm.penalty = g('admin-quest-penalty');
+  const checked = rootEl.querySelector('input[name="admin-quest-repeat"]:checked');
+  if (checked) questForm.repeatable = checked.value === '1';
+  questForm.saveError = null;
+}
+
+// Live preview as the teacher types, without re-rendering (which would steal
+// focus). Also keeps the penalty pinned to half the reward until it's edited.
+function updateQuestPreview({ pointsChanged = false } = {}) {
+  if (!questForm || !el('admin-quest-preview')) return;
+  const points = el('admin-quest-points') ? el('admin-quest-points').value : questForm.points;
+  if (pointsChanged && !questForm.penaltyTouched && el('admin-quest-penalty')) {
+    el('admin-quest-penalty').value = Math.round((Number(points) || 0) / 2);
+  }
+  el('admin-quest-preview').textContent = questSentence({
+    points,
+    penalty: el('admin-quest-penalty') ? el('admin-quest-penalty').value : questForm.penalty,
+    repeatable: questForm.repeatable,
+  });
+}
+
+function saveQuestFromForm() {
+  syncQuestFromDom();
+  const f = questForm;
   const store = ctxRef.store;
-  const title = el('admin-quest-title').value.trim();
-  const desc = el('admin-quest-desc').value.trim();
-  const points = Number(el('admin-quest-points').value);
-  if (!title) { toast('A quest title is required.'); return; }
-  if (!(points >= 1)) { toast('Point value must be at least 1.'); return; }
-  const saved = store.saveQuest({ id: id || undefined, title, desc, points });
-  if (!saved) { toast('Could not save quest.'); return; }
+  const title = String(f.title || '').trim();
+  const points = Number(f.points);
+  if (!title) { f.saveError = 'This quest needs a title.'; renderQuestModal(); return; }
+  if (!(points >= 1)) { f.saveError = 'Give this quest a reward of at least 1 point.'; renderQuestModal(); return; }
+
+  const saved = store.saveQuest({
+    id: f.id,
+    title,
+    desc: String(f.desc || '').trim(),
+    points,
+    repeatable: f.repeatable,
+    penalty: Number(f.penalty),
+  });
+  if (!saved) { f.saveError = "Something in this quest wasn't accepted. Check the title and reward."; renderQuestModal(); return; }
+  const wasNew = f.isNew;
+  questForm = null;
   closeModal();
-  renderBody();
-  toast(id ? 'Quest updated.' : 'Quest added.');
+  renderBody({ force: true });
+  toast(wasNew ? 'Quest added.' : 'Quest updated.');
 }
 
+// ---- confirming a result ---------------------------------------------------
 function openQuestCompleteModal(core) {
   const store = ctxRef.store;
   const q = store.getActiveQuest(core);
@@ -674,7 +887,9 @@ function openQuestCompleteModal(core) {
       </div>
       <div class="admin-modal-body">
         <p class="admin-modal-lead">Mark <b>${esc(q.title)}</b> complete for <b style="color:${house.accent}">${esc(house.name)}</b> and award <b>+${q.points} points</b>?</p>
-        <div class="admin-mini">This logs a points transaction and archives the completion.</div>
+        <div class="admin-mini">${q.repeatable
+          ? 'This quest is <b>repeatable</b> — it goes back on the board so another house can earn it too.'
+          : 'This quest is <b>one time only</b> — it leaves the board for good.'}</div>
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
@@ -690,6 +905,46 @@ function confirmQuestComplete(core) {
   closeModal();
   renderBody();
   if (quest) { toast(`🎉 +${quest.points} to ${house.name} — “${quest.title}” complete!`); ctxRef.audio?.sfx?.('fanfare'); }
+}
+
+function openQuestFailModal(core) {
+  const store = ctxRef.store;
+  const q = store.getActiveQuest(core);
+  if (!q) { toast('No active quest for that core.'); return; }
+  const house = store.HOUSES[core];
+  const penalty = questPenalty(q);
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal admin-modal-danger">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">✖ Mark Given Up</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <p class="admin-modal-lead"><b style="color:${house.accent}">${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.</p>
+        <div class="admin-warn-line">⚠️ ${esc(house.name)} loses <b>${penalty} point${penalty === 1 ? '' : 's'}</b>${penalty === 0 ? ' (no penalty set for this quest)' : ''}, and the quest goes back on the board for another house to steal.</div>
+        <div class="admin-mini" style="margin-top:10px">Accepted by mistake instead? Close this and use <b>“Clear without penalty”</b>.</div>
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
+        <button class="admin-btn admin-btn-nuke admin-btn-lg" data-action="quest-fail-confirm" data-core="${core}">${penalty > 0 ? `Give up &amp; deduct ${penalty}` : 'Give up'}</button>
+      </div>
+    </div>`;
+}
+
+function confirmQuestFail(core) {
+  const store = ctxRef.store;
+  const house = store.HOUSES[core];
+  const res = store.failQuest(core);
+  closeModal();
+  renderBody();
+  if (res) {
+    toast(res.penalty > 0
+      ? `−${res.penalty} from ${house.name} — “${res.quest.title}” is back on the board.`
+      : `“${res.quest.title}” is back on the board.`);
+    ctxRef.audio?.sfx?.('thud');
+  }
 }
 
 // ===========================================================================
@@ -886,6 +1141,7 @@ function shopGuideHTML() {
           </div>
         </div>
       </details>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.shop, 'More about the Magic Shop in the handbook')}</div>
     </div>`;
 }
 
@@ -1112,6 +1368,171 @@ async function refreshShopThumbs() {
 }
 
 // ===========================================================================
+// TAB — SETTINGS: Houses (rename/recolour/reskin the four houses)
+// ===========================================================================
+// Reads store.HOUSES directly (the live objects) so the list always matches
+// whatever is on screen everywhere else — including edits made moments ago.
+function renderHousesCard() {
+  const store = ctxRef.store;
+  const rows = [1, 2, 3, 4].map((id) => {
+    const h = store.HOUSES[id];
+    if (!h) return '';
+    return `
+      <div class="admin-shop-row admin-house-row">
+        <span class="admin-house-crest">
+          <img src="${esc(h.image)}" alt="" class="admin-house-crest-img"
+            onerror="this.onerror=null;this.style.display='none';" />
+        </span>
+        <div class="admin-q-main">
+          <div class="admin-q-title" style="color:${esc(h.accent)}">${esc(h.name)} <span class="admin-faint">· Core ${h.core}</span></div>
+          <div class="admin-q-desc">${esc(h.motto)}</div>
+        </div>
+        <span class="admin-house-swatch" style="background:${esc(h.accent)}" title="${esc(h.accent)}"></span>
+        <div class="admin-q-row-actions">
+          <button class="admin-btn admin-btn-sm" data-action="house-edit" data-id="${h.id}">Edit</button>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="house-reset" data-id="${h.id}">Reset</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🏰 Houses</div>
+      <div class="admin-mini">Rename or recolour a house any time — everything in the app follows automatically.</div>
+      <div class="admin-q-list" style="margin-top:10px">${rows}</div>
+    </div>`;
+}
+
+function openHouseForm(id) {
+  const store = ctxRef.store;
+  const h = store.HOUSES[id];
+  if (!h) return;
+  houseForm = { id: h.id, name: h.name, motto: h.motto, accent: h.accent, image: h.image, heroImage: h.heroImage, saveError: null };
+  renderHouseModal();
+}
+
+function renderHouseModal() {
+  const f = houseForm;
+  const m = el('admin-modal-root');
+  const accent = isHex(hexNorm(f.accent)) ? hexNorm(f.accent) : '#ef4444';
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="house-close"></div>
+    <div class="admin-modal admin-modal-lg">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">🏰 Edit House</div>
+        <button class="admin-btn admin-btn-icon" data-action="house-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body admin-modal-scroll">
+
+        <div class="admin-house-preview">
+          <span class="admin-house-crest admin-house-crest-lg">
+            <img id="admin-house-preview-crest" src="${esc(f.image)}" alt=""
+              onerror="this.onerror=null;this.style.display='none';" />
+          </span>
+          <div class="admin-q-main">
+            <div class="admin-house-preview-name" id="admin-house-preview-name" style="color:${accent}">${esc(f.name) || 'House name'}</div>
+            <div class="admin-house-preview-motto" id="admin-house-preview-motto">${esc(f.motto) || 'Motto'}</div>
+          </div>
+          <span class="admin-house-swatch admin-house-swatch-lg" id="admin-house-preview-swatch" style="background:${accent}"></span>
+        </div>
+
+        <label class="admin-flabel" for="admin-house-name">Name</label>
+        <input id="admin-house-name" class="admin-input" type="text" value="${esc(f.name)}" placeholder="Camelot" />
+
+        <label class="admin-flabel" for="admin-house-motto">Motto</label>
+        <input id="admin-house-motto" class="admin-input" type="text" value="${esc(f.motto)}" placeholder="Honor Above All" />
+
+        <label class="admin-flabel">Accent colour</label>
+        <div class="admin-key-row">
+          <input id="admin-house-accent-color" type="color" value="${accent}" class="admin-color-swatch-input" />
+          <input id="admin-house-accent-hex" class="admin-input" type="text" value="${accent}" placeholder="#ef4444" style="max-width:140px" spellcheck="false" autocomplete="off" />
+        </div>
+
+        <label class="admin-flabel" for="admin-house-image" style="margin-top:14px">Crest image <span class="admin-faint">(the house shield, shown everywhere)</span></label>
+        <input id="admin-house-image" class="admin-input" type="text" value="${esc(f.image)}" placeholder="images/camelot-shield.png" spellcheck="false" autocomplete="off" />
+
+        <label class="admin-flabel" for="admin-house-hero">Banner image <span class="admin-faint">(wide header art)</span></label>
+        <input id="admin-house-hero" class="admin-input" type="text" value="${esc(f.heroImage)}" placeholder="images/header-camelot.jpg" spellcheck="false" autocomplete="off" />
+
+        <div class="admin-mini" style="margin-top:8px">Put new artwork in the <code>images/</code> folder. Keep the same filename to replace the picture in place, or type a new filename here to point at a different file.</div>
+        ${f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : ''}
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="house-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="house-save">Save house</button>
+      </div>
+    </div>`;
+  const n = el('admin-house-name'); if (n) n.focus();
+}
+
+// Live preview as the teacher types — no full re-render, so focus is never lost.
+function updateHousePreview() {
+  if (!houseForm) return;
+  const nameEl = el('admin-house-preview-name');
+  const nm = el('admin-house-name');
+  if (nameEl && nm) nameEl.textContent = nm.value || 'House name';
+  const mottoEl = el('admin-house-preview-motto');
+  const mo = el('admin-house-motto');
+  if (mottoEl && mo) mottoEl.textContent = mo.value || 'Motto';
+  const img = el('admin-house-image');
+  const crest = el('admin-house-preview-crest');
+  if (img && crest && img.value) { crest.style.display = ''; crest.src = img.value; }
+}
+
+function updateHouseAccentPreview(hex) {
+  const swatch = el('admin-house-preview-swatch');
+  if (swatch) swatch.style.background = hex;
+  const nameEl = el('admin-house-preview-name');
+  if (nameEl) nameEl.style.color = hex;
+}
+
+function syncHouseFromDom() {
+  if (!houseForm) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  houseForm.name = g('admin-house-name');
+  houseForm.motto = g('admin-house-motto');
+  houseForm.accent = g('admin-house-accent-hex') || g('admin-house-accent-color') || houseForm.accent;
+  houseForm.image = g('admin-house-image');
+  houseForm.heroImage = g('admin-house-hero');
+  houseForm.saveError = null;
+}
+
+function saveHouseForm() {
+  syncHouseFromDom();
+  const f = houseForm;
+  const store = ctxRef.store;
+  const name = f.name.trim();
+  const motto = f.motto.trim();
+  const accent = hexNorm(f.accent);
+  const image = f.image.trim();
+  const heroImage = f.heroImage.trim();
+  if (!name) { f.saveError = 'Give this house a name.'; renderHouseModal(); return; }
+  if (!motto) { f.saveError = 'Give this house a motto.'; renderHouseModal(); return; }
+  if (!isHex(accent)) { f.saveError = 'Accent colour must be a hex code, like #ef4444.'; renderHouseModal(); return; }
+  if (!image) { f.saveError = 'The crest image needs a filename, e.g. images/camelot-shield.png.'; renderHouseModal(); return; }
+  if (!heroImage) { f.saveError = 'The banner image needs a filename, e.g. images/header-camelot.jpg.'; renderHouseModal(); return; }
+  const updated = store.updateHouse(f.id, { name, motto, accent, image, heroImage });
+  if (!updated) { f.saveError = "Something here wasn't accepted — double check the fields above."; renderHouseModal(); return; }
+  houseForm = null;
+  closeModal();
+  renderBody({ force: true });
+  toast('House updated — it’s live everywhere right now.');
+}
+
+function openHouseResetConfirm(id) {
+  const store = ctxRef.store;
+  const h = store.HOUSES[id];
+  if (!h) return;
+  openConfirm(`Reset ${h.name} to its shipped defaults?`,
+    'Name, motto, accent colour and artwork all revert to how the app shipped. This cannot be undone (but you can edit it again afterward).',
+    () => {
+      const ok = store.resetHouse(id);
+      renderBody({ force: true });
+      toast(ok ? `${h.name} reset to its original look.` : `${h.name} was already at its shipped defaults.`);
+    }, { yesLabel: 'Reset house' });
+}
+
+// ===========================================================================
 // TAB — SETTINGS
 // ===========================================================================
 function renderSettings() {
@@ -1147,6 +1568,8 @@ function renderSettings() {
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="settings-save">Save term settings</button>
         <div class="admin-hint" style="margin-top:.75rem">The top-bar term label and the Morning Dashboard update the moment you save.</div>
       </div>
+
+      ${renderHousesCard()}
 
       <div class="admin-card">
         <div class="admin-card-title">Term Start / End Markers</div>
@@ -1201,6 +1624,7 @@ function renderSettings() {
 
       <div class="admin-card">
         <div class="admin-card-title">Backup &amp; Restore</div>
+        <div class="admin-help-row">${helpLink(HELP_TOPICS.backups, 'What backups do, and how to restore one')}</div>
 
         <div class="admin-auto-head">🔄 Automatic backup</div>
         ${autoBackupHTML()}
@@ -1475,8 +1899,119 @@ async function disconnectBackupFolder() {
 }
 
 // ===========================================================================
-// TAB 3 — PLACE OF THE WEEK MANAGER
+// TAB 3 — PLACE OF THE WEEK: intro video presets
 // ===========================================================================
+// The presets offered in every destination's "Which intro video?" dropdown
+// (step 4 below). Managed here, once, instead of per-destination.
+function renderVideoPresetsCard() {
+  const store = ctxRef.store;
+  const videos = store.getPotwVideoOptions();
+  const rows = videos.map((v) => `
+    <div class="admin-shop-row admin-video-row">
+      <span class="admin-shop-thumb admin-video-thumb">🎬</span>
+      <div class="admin-q-main">
+        <div class="admin-q-title">${esc(v.label)}</div>
+        <div class="admin-q-desc admin-video-url" title="${esc(v.url)}">${esc(v.url)}</div>
+      </div>
+      <div class="admin-q-row-actions">
+        <button class="admin-btn admin-btn-icon" data-action="video-edit" data-id="${esc(v.id)}" aria-label="Edit">✏️</button>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="video-del" data-id="${esc(v.id)}" aria-label="Delete"
+          ${videos.length <= 1 ? 'disabled title="Every destination needs at least one intro video to choose from — add another before deleting this one."' : ''}>🗑️</button>
+      </div>
+    </div>`).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎬 Intro Video Presets</div>
+      <div class="admin-mini">These are the choices offered in every destination's <b>“Which intro video?”</b> step below. Add as many as you like — each destination then picks its own.</div>
+      <div class="admin-q-list" style="margin-top:10px">${rows || '<div class="admin-empty admin-empty-sm">No videos yet.</div>'}</div>
+      <button class="admin-btn admin-btn-primary" style="margin-top:12px" data-action="video-new">+ Add a video</button>
+    </div>`;
+}
+
+function openVideoForm(id) {
+  const store = ctxRef.store;
+  const v = id ? store.getPotwVideoOptions().find((x) => x.id === id) : null;
+  videoForm = { id: v ? v.id : null, isNew: !v, label: v?.label || '', url: v?.url || '', saveError: null };
+  renderVideoModal();
+}
+
+function renderVideoModal() {
+  const f = videoForm;
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="video-close"></div>
+    <div class="admin-modal">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${f.isNew ? '🎬 Add a Video' : '🎬 Edit Video'}</div>
+        <button class="admin-btn admin-btn-icon" data-action="video-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <label class="admin-flabel" for="admin-video-label">Label <span class="admin-faint">(shown in the dropdown)</span></label>
+        <input id="admin-video-label" class="admin-input" type="text" value="${esc(f.label)}" placeholder="Rock" />
+
+        <label class="admin-flabel" for="admin-video-url" style="margin-top:12px">Video</label>
+        <input id="admin-video-url" class="admin-input" type="text" value="${esc(f.url)}" placeholder="https://www.youtube.com/watch?v=… or videos/intro.mp4" spellcheck="false" autocomplete="off" />
+        <div class="admin-mini" style="margin-top:6px">Paste a normal YouTube link (watch, share, or Shorts) and it's converted automatically — or type a site-relative path like <code>videos/intro.mp4</code>.</div>
+        ${f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : ''}
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="video-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="video-save">Save video</button>
+      </div>
+    </div>`;
+  const l = el('admin-video-label'); if (l) l.focus();
+}
+
+function syncVideoFromDom() {
+  if (!videoForm) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  videoForm.label = g('admin-video-label');
+  videoForm.url = g('admin-video-url');
+  videoForm.saveError = null;
+}
+
+function saveVideoForm() {
+  syncVideoFromDom();
+  const f = videoForm;
+  const store = ctxRef.store;
+  const label = f.label.trim();
+  const rawUrl = f.url.trim();
+  if (!label) { f.saveError = 'Give this video a label — it shows in the dropdown.'; renderVideoModal(); return; }
+  if (!rawUrl) { f.saveError = 'Paste a YouTube link, or type a video file path.'; renderVideoModal(); return; }
+  const looksYoutube = /youtube\.com|youtu\.be/i.test(rawUrl);
+  const url = normalizeVideoUrl(rawUrl);
+  if (looksYoutube && !/^https:\/\/www\.youtube\.com\/embed\//.test(url)) {
+    f.saveError = "Couldn't find a video ID in that YouTube link. Copy the full link from the browser's address bar (or the Share button) and try again.";
+    renderVideoModal();
+    return;
+  }
+  const saved = store.saveIntroVideo({ id: f.id, label, url });
+  if (!saved) { f.saveError = "Something here wasn't accepted — check the label and the video link."; renderVideoModal(); return; }
+  const wasNew = f.isNew;
+  videoForm = null;
+  closeModal();
+  renderBody({ force: true });
+  toast(wasNew ? 'Video added.' : 'Video updated.');
+}
+
+function deleteVideoPreset(id) {
+  const store = ctxRef.store;
+  const list = store.getPotwVideoOptions();
+  if (list.length <= 1) { toast("Can't delete the last video — every destination needs at least one intro option to choose from."); return; }
+  const v = list.find((x) => x.id === id);
+  const usedBy = Object.values(store.getPotwProfiles())
+    .filter((p) => !p.videoUrl && (p.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID) === id);
+  const warn = usedBy.length
+    ? ` ${usedBy.length} destination${usedBy.length === 1 ? '' : 's'} (${usedBy.map((p) => p.title).join(', ')}) currently use this one and will need a new video picked in their editor.`
+    : '';
+  openConfirm(`Delete video “${v ? v.label : ''}”?`, `This removes it from the dropdown.${warn}`, () => {
+    store.deleteIntroVideo(id);
+    renderBody();
+    toast('Video deleted.');
+  });
+}
+
 function renderPotw() {
   const store = ctxRef.store;
   const profiles = store.getPotwProfiles();
@@ -1492,9 +2027,13 @@ function renderPotw() {
         <div>
           <div class="admin-card-title" style="margin:0">Places of the Week</div>
           <div class="admin-mini" style="margin:4px 0 0">Set up a place for each week — the app switches to the new one automatically every Monday.</div>
+          <div class="admin-help-row">${helpLink(HELP_TOPICS.potw, 'How to set up a destination')}</div>
         </div>
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-new">+ Add a Place of the Week</button>
       </div>
+
+      ${renderVideoPresetsCard()}
+
       <div class="admin-potw-list">
         ${keys.length ? keys
           .slice()
@@ -1541,7 +2080,7 @@ function renderPotw() {
                 <input type="file" class="admin-file" data-presdrop="${esc(k)}" accept="application/pdf" hidden />
                 <span class="admin-drop-prompt">⬇ Drop the lesson PDF here, or click to browse</span>
               </div>
-              <div class="admin-mini" style="margin:8px 0 0">Export from PowerPoint or Google Slides as a PDF.</div>
+              <div class="admin-mini" style="margin:8px 0 0">Quick PDF upload — offline-safe, but flattens animations &amp; video. For transitions, animations and embedded video, use <b>Edit → Lesson Presentation → Google Slides</b> instead.</div>
             </div>
 
             <div class="admin-assets-label admin-secondary">📎 Extra resources <span class="admin-faint">(handouts, images)</span></div>
@@ -1876,8 +2415,13 @@ function openPotwEditor(key) {
       facts: (p.quickFacts || []).join('\n'),
       sources: (p.primarySources || []).map((s) => ({ emoji: s.emoji || '', name: s.name || '', desc: s.desc || '' })),
       quiz: (p.quiz || []).map((q) => ({ q: q.q || '', a: q.a || '' })),
-      pres: { type: p.presentation?.type || null, pdf: null, images: [], url: p.presentation?.type === 'gslides' ? (p.presentation.url || '') : '' },
+      // Prefer showing back what the teacher actually pasted (openUrl) so
+      // re-saving keeps deriving the same canonical embed url; older profiles
+      // saved before openUrl existed fall back to the stored embed url.
+      pres: { type: p.presentation?.type || null, pdf: null, images: [], url: p.presentation?.type === 'gslides' ? (p.presentation.openUrl || p.presentation.url || '') : '' },
       links: (p.links || []).map((l) => ({ title: l.title || '', url: l.url || '' })),
+      flyover: { file: null, existing: false, name: '', size: 0, url: '' },
+      flyoverUrl: p.flyoverUrl || '',
     };
   } else {
     potwForm = {
@@ -1891,10 +2435,13 @@ function openPotwEditor(key) {
       quiz: [{ q: '', a: '' }],
       pres: { type: null, pdf: null, images: [], url: '' },
       links: [],
+      flyover: { file: null, existing: false, name: '', size: 0, url: '' },
+      flyoverUrl: '',
     };
   }
   renderPotwModal();
   if (!potwForm.isNew && potwForm.pres.type && potwForm.pres.type !== 'gslides') hydratePresentation(key);
+  if (!potwForm.isNew) hydrateFlyover(key);
 }
 
 // Load existing presentation media (PDF info / image thumbnails) for an editor
@@ -1915,6 +2462,20 @@ async function hydratePresentation(key) {
     pres.images = items;
   }
   if (potwForm && el('admin-p-title')) renderPotwModal();
+}
+
+// Load an already-stored flyover audio blob (if any) for an editor that was
+// just opened, so "Remove" / the audio preview reflect what's really saved.
+async function hydrateFlyover(key) {
+  if (!potwForm) return;
+  const info = await media.info(`potw:${key}:flyover`);
+  if (!info || !potwForm) return;
+  let url = '';
+  try { url = await media.url(`potw:${key}:flyover`); } catch (e) {}
+  if (url) presUrls.add(url);
+  if (!potwForm) return; // editor closed mid-await
+  potwForm.flyover = { file: null, existing: true, name: info.name, size: info.size, url };
+  if (el('admin-p-title')) renderPotwModal();
 }
 
 function renderPotwModal() {
@@ -2030,11 +2591,14 @@ function renderPotwModal() {
           <div class="admin-step-hint">Plays before the flight.</div>
           <select id="admin-p-video" class="admin-input" style="max-width:240px">${vidOptions}</select>
           ${legacyNote}
+          <div class="admin-mini" style="margin-top:6px">Want a different option here? Add, edit, or remove presets in the <b>🎬 Intro Video Presets</b> list at the top of the Place of the Week screen.</div>
+
+          ${flyoverBlockHTML()}
         </div>
 
         <div class="admin-step">
           <div class="admin-step-title"><span class="admin-step-num">5</span> Your lesson presentation</div>
-          <div class="admin-step-hint">Plays full-screen the moment you land. Export from PowerPoint or Google Slides as a PDF.</div>
+          <div class="admin-step-hint">Plays full-screen the moment you land. Google Slides is recommended — transitions, animations and embedded video all play; PDF is the offline-safe fallback.</div>
           <div class="admin-pres-block">${presSectionHTML()}</div>
         </div>
 
@@ -2070,6 +2634,35 @@ function renderPotwModal() {
     </div>`;
 }
 
+// Optional ambient audio for the 3D flyover, per destination. A stored file
+// always wins over a URL; with neither, the flight is silent.
+function flyoverBlockHTML() {
+  const f = potwForm;
+  const fl = f.flyover || {};
+  const area = (fl.file || fl.existing)
+    ? `<div class="admin-drop-body admin-pres-file">
+         <div class="admin-drop-file">
+           <span class="admin-drop-name" title="${esc(fl.name)}">${esc(fl.name)}</span>
+           <span class="admin-drop-size">${humanSize(fl.size)} · ${fl.file ? 'pending save' : 'stored'}</span>
+         </div>
+         ${fl.url ? `<audio controls src="${esc(fl.url)}" style="width:100%;margin-top:8px;height:32px"></audio>` : ''}
+         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="flyover-del" style="margin-top:8px">Remove</button>
+       </div>`
+    : `<div class="admin-drop" data-flyover="1" data-action="media-browse" title="Drop or click to browse">
+         <input type="file" class="admin-file" data-flyover="1" accept="audio/*" hidden />
+         <span class="admin-drop-prompt">⬇ Drop an audio file here, or click to browse</span>
+       </div>`;
+
+  return `
+    <div class="admin-flyover-block">
+      <label class="admin-flabel" style="margin:0">🎵 Flyover music <span class="admin-faint">(optional)</span></label>
+      ${area}
+      <label class="admin-flabel" for="admin-p-flyover-url" style="margin-top:10px">Or a music URL</label>
+      <input id="admin-p-flyover-url" class="admin-input" type="text" value="${esc(f.flyoverUrl)}" placeholder="audio/flight.mp3 or https://…" spellcheck="false" autocomplete="off" />
+      <div class="admin-mini" style="margin-top:8px">Plays during the 27-second flight and fades out 3 seconds after the presentation opens. Aim for a ~30 second track. An uploaded file always wins over the URL; with neither set, the flight plays silently. Follows the app's sound on/off switch — mute it and this stays silent too.</div>
+    </div>`;
+}
+
 // Presentation editor — Google Slides featured first (Mr. D lives in Google
 // Workspace), then PDF, then Slide Images.
 function presSectionHTML() {
@@ -2079,9 +2672,10 @@ function presSectionHTML() {
   let body = '';
   if (pres.type === 'gslides') {
     body = `
-      <label class="admin-flabel" for="admin-pres-url">Embed URL</label>
-      <input id="admin-pres-url" class="admin-input" type="text" value="${esc(pres.url)}" placeholder="https://docs.google.com/presentation/d/…/embed?start=false" />
-      <div class="admin-mini admin-pres-hint">✅ <b>Easiest with Google Classroom.</b> In Google Slides: <b>File → Share → Publish to web → Embed → copy the URL and paste it here.</b></div>`;
+      <label class="admin-flabel" for="admin-pres-url">Your Google Slides link</label>
+      <input id="admin-pres-url" class="admin-input" type="text" value="${esc(pres.url)}" placeholder="https://docs.google.com/presentation/d/…/edit or /embed" />
+      <div class="admin-mini admin-pres-hint">✅ <b>Recommended.</b> Paste your Google Slides link (<b>File → Share → Publish to web → Embed</b>). Your transitions, animations and embedded videos all play, and your presenter remote works.</div>
+      <div class="admin-mini admin-pres-hint" style="opacity:.75">🔈 Note: audio files inserted directly into Slides may not play in a published embed — embedded YouTube video does.</div>`;
   } else if (pres.type === 'pdf') {
     const p = pres.pdf;
     body = `
@@ -2090,7 +2684,7 @@ function presSectionHTML() {
           <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="pres-pdf-del">Remove</button>
         </div>`
         : presDropHTML('pdf', '⬇ Drop a PDF here, or click to browse')}
-      <div class="admin-mini admin-pres-hint">In PowerPoint or Google Slides: <b>File → Download / Export as PDF</b>.</div>`;
+      <div class="admin-mini admin-pres-hint">📄 Offline-safe and fully controlled by this app (arrows, slide grid) — but it flattens animations and video. Export from PowerPoint or Google Slides: <b>File → Download / Export as PDF</b>.</div>`;
   } else if (pres.type === 'images') {
     const rows = pres.images.map((it, i) => `
       <div class="admin-pres-thumb">
@@ -2115,9 +2709,9 @@ function presSectionHTML() {
   const clear = pres.type ? '<button type="button" class="admin-btn admin-btn-sm" data-action="pres-clear" style="margin-top:10px">Clear presentation</button>' : '';
   return `
     <div class="admin-rows-head"><span class="admin-card-title admin-mini-title" style="margin:0">📽️ Lesson Presentation <span class="admin-faint">— shown full-screen after you land</span></span></div>
-    <div class="admin-mini" style="margin:0 0 10px">PDF is easiest: export from PowerPoint or Google Slides.</div>
+    <div class="admin-mini" style="margin:0 0 10px">Google Slides is recommended — transitions, animations and embedded video all play, and a presenter remote works. PDF is the offline-safe fallback.</div>
     <div class="admin-seg admin-pres-seg">
-      ${opt('gslides', '🔗 Google Slides <span class="admin-feat-chip">Easiest with Google Classroom</span>', true)}
+      ${opt('gslides', '🔗 Google Slides <span class="admin-feat-chip">Recommended</span>', true)}
       ${opt('pdf', '📄 PDF')}
       ${opt('images', '🖼️ Slide Images')}
     </div>
@@ -2176,6 +2770,54 @@ function revokeImageUrls(images) {
 }
 function revokePresUrls() { presUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); presUrls.clear(); }
 
+// Stage a dropped/selected flyover audio file in memory (committed to IndexedDB
+// on Save, same pattern as the PDF/image presentation staging above).
+function stageFlyoverFile(file) {
+  if (!potwForm || !file) return;
+  const isAudio = file.type ? /^audio\//.test(file.type) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name || '');
+  if (!isAudio) { toast('Please choose an audio file (mp3, wav, ogg, m4a…).'); return; }
+  syncPotwFromDom();
+  const prev = potwForm.flyover;
+  if (prev?.url && presUrls.has(prev.url)) { try { URL.revokeObjectURL(prev.url); } catch (e) {} presUrls.delete(prev.url); }
+  const url = URL.createObjectURL(file);
+  presUrls.add(url);
+  potwForm.flyover = { file, existing: false, name: file.name, size: file.size, url };
+  renderPotwModal();
+}
+
+function removeFlyoverFile() {
+  if (!potwForm) return;
+  syncPotwFromDom();
+  const prev = potwForm.flyover;
+  if (prev?.url && presUrls.has(prev.url)) { try { URL.revokeObjectURL(prev.url); } catch (e) {} presUrls.delete(prev.url); }
+  potwForm.flyover = { file: null, existing: false, name: '', size: 0, url: '' };
+  renderPotwModal();
+}
+
+// Reconcile IndexedDB with the chosen flyover audio. Mirrors commitPresentation:
+// a staged file is stored, an untouched existing blob is left alone, and an
+// explicit removal (or a brand-new destination with nothing staged) deletes it.
+async function commitFlyover(key) {
+  const fl = potwForm.flyover || {};
+  const mkey = `potw:${key}:flyover`;
+  if (fl.file) { await media.put(mkey, fl.file); return; }
+  if (fl.existing) return;
+  await media.delete(mkey);
+}
+
+// A resource link (or the flyover URL fallback) must be a real web link or a
+// site-relative path — never a bare scheme like javascript: or a protocol-
+// relative //host link, and never contain whitespace.
+function isValidResourceUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return true; // caller decides whether empty is acceptable
+  if (/\s/.test(s)) return false;
+  if (/^https?:\/\//i.test(s)) return true;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return false; // some other scheme (javascript:, mailto:, ftp:…)
+  if (/^\/\//.test(s)) return false;                // protocol-relative
+  return true; // treat as a site-relative path
+}
+
 function normalizeGslides(raw) {
   const u = (raw || '').trim();
   if (!u) return null;
@@ -2201,18 +2843,29 @@ function normalizeVideoUrl(raw) {
 // Docs & Links rows — edited in memory, committed on Save.
 function linksSectionHTML() {
   const f = potwForm;
-  const linkRows = (f.links || []).map((l, i) => `
+  const linkRows = (f.links || []).map((l, i) => {
+    const urlErr = l.url && !isValidResourceUrl(l.url);
+    return `
     <div class="admin-link-row">
-      <input class="admin-input admin-link-title" type="text" value="${esc(l.title)}" placeholder="Link title" aria-label="Link title" />
-      <input class="admin-input admin-link-url" type="text" value="${esc(l.url)}" placeholder="https://…" aria-label="Link URL" />
-      <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="potw-link-del" data-i="${i}" aria-label="Remove">✕</button>
-    </div>`).join('');
+      <input class="admin-input admin-link-title" type="text" value="${esc(l.title)}" placeholder="Link title (e.g. Kahoot)" aria-label="Link title" />
+      <div>
+        <input class="admin-input admin-link-url${urlErr ? ' admin-input-err' : ''}" type="text" value="${esc(l.url)}" placeholder="https://kahoot.it/… or videos/intro.mp4" aria-label="Link URL" />
+        ${urlErr ? '<div class="admin-warn-line admin-save-err" style="margin-top:4px">⚠️ Must start with http:// or https://, or be a site-relative path — no spaces.</div>' : ''}
+      </div>
+      <div class="admin-brow-ctrls">
+        <button type="button" class="admin-btn admin-btn-icon" data-action="potw-link-up" data-i="${i}" aria-label="Move up"${i === 0 ? ' disabled' : ''}>▲</button>
+        <button type="button" class="admin-btn admin-btn-icon" data-action="potw-link-down" data-i="${i}" aria-label="Move down"${i === f.links.length - 1 ? ' disabled' : ''}>▼</button>
+        <button type="button" class="admin-btn admin-btn-icon admin-btn-danger" data-action="potw-link-del" data-i="${i}" aria-label="Remove">✕</button>
+      </div>
+    </div>`;
+  }).join('');
   return `
     <div class="admin-rows-head" style="margin-top:14px">
-      <span class="admin-card-title admin-mini-title" style="margin:0">Docs &amp; Links</span>
+      <span class="admin-card-title admin-mini-title" style="margin:0">🔗 Quick links for this lesson <span class="admin-faint">(Kahoot, quizzes, articles)</span></span>
       <button class="admin-btn admin-btn-sm" data-action="potw-link-add">+ Add link</button>
     </div>
-    <div class="admin-link-rows">${linkRows || '<div class="admin-empty admin-empty-sm">No links yet — add reference docs, articles, or activities.</div>'}</div>`;
+    <div class="admin-mini" style="margin:0 0 8px">These appear as buttons while you're at the destination — tap to open in a new tab. The order here is the button order on screen.</div>
+    <div class="admin-link-rows">${linkRows || '<div class="admin-empty admin-empty-sm">No links yet — add a Kahoot, quiz, or article.</div>'}</div>`;
 }
 
 // Reconcile IndexedDB with the chosen presentation, returning the profile.presentation
@@ -2225,10 +2878,15 @@ async function commitPresentation(key) {
   const delAll = async () => { for (const k of presKeys) await media.delete(k); };
 
   if (pres.type === 'gslides') {
-    const url = normalizeGslides(pres.url);
+    const raw = (pres.url || '').trim();
+    const url = normalizeGslides(raw);
     if (!url) return null;
     await delAll();
-    return { type: 'gslides', url };
+    // Keep what the teacher actually pasted (share link, /pub link, or an
+    // already-/embed link) alongside the normalised embed url. The POTW
+    // viewer's "Open full screen in Google Slides" button prefers this over
+    // deriving one from the embed form — strictly more reliable.
+    return { type: 'gslides', url, openUrl: raw };
   }
   if (pres.type === 'pdf') {
     if (pres.pdf?.file) await media.put(`potw:${key}:slides.pdf`, pres.pdf.file);
@@ -2311,6 +2969,7 @@ function syncPotwFromDom() {
   potwForm.weekOf = g('admin-p-week');
   if (has('admin-p-maps')) potwForm.mapsLink = g('admin-p-maps');
   if (has('admin-p-video')) potwForm.introVideoId = g('admin-p-video');
+  if (has('admin-p-flyover-url')) potwForm.flyoverUrl = g('admin-p-flyover-url');
   potwForm.camera = {
     // lat/lng come from the parsed maps link unless the manual escape hatch is open
     lat: has('admin-c-lat') ? g('admin-c-lat') : potwForm.camera.lat,
@@ -2353,10 +3012,24 @@ async function savePotw() {
     if (!u) { toast('Enter a Google Slides embed URL.'); return; }
     if (!normalizeGslides(u)) { toast('That must be a docs.google.com presentation URL.'); return; }
   }
+  // Quick-link buttons: every row with a title or URL needs a real link.
+  const linksRaw = (f.links || []).map((l) => ({ title: l.title.trim(), url: l.url.trim() })).filter((l) => l.title || l.url);
+  const badLink = linksRaw.find((l) => !isValidResourceUrl(l.url));
+  if (badLink) {
+    toast(`“${badLink.title || badLink.url}” needs a link starting with http:// or https://, or a site-relative path like videos/intro.mp4.`);
+    return;
+  }
+  const flyoverUrl = (f.flyoverUrl || '').trim();
+  if (flyoverUrl && !isValidResourceUrl(flyoverUrl)) {
+    toast('The flyover music URL must start with http:// or https://, or be a site-relative path like audio/flight.mp3.');
+    return;
+  }
   const num = (v, d) => { const n = Number(v); return Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d; };
   const finalKey = slugify(f.isNew ? (f.key.trim() || title) : f.key);
   const weekOf = f.weekOf ? mondayOfDate(f.weekOf) : '';
   const presentation = await commitPresentation(finalKey);
+  if (!potwForm) return; // editor was closed mid-await
+  await commitFlyover(finalKey);
   if (!potwForm) return; // editor was closed mid-await
 
   // Coordinates: a freshly parsed maps link wins, else the manual/existing values.
@@ -2383,8 +3056,8 @@ async function savePotw() {
   // a preset; picking one clears it so the preset actually takes effect.
   const presetChanged = f.introVideoId && f.introVideoId !== f.legacyPresetAtOpen;
   if (f.legacyVideoUrl && !presetChanged) profile.videoUrl = f.legacyVideoUrl;
-  const links = (f.links || []).filter((l) => l.title || l.url).map((l) => ({ title: l.title, url: l.url }));
-  if (links.length) profile.links = links;
+  if (linksRaw.length) profile.links = linksRaw;
+  if (flyoverUrl) profile.flyoverUrl = flyoverUrl;
 
   const ok = ctxRef.store.savePotwProfile(finalKey, profile);
   if (!ok) { toast('Save failed — check the place name.'); return; }
@@ -2430,6 +3103,89 @@ function openConfirm(title, body, onYes, { danger = true, yesLabel = 'Delete' } 
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
         <button class="admin-btn admin-btn-lg ${danger ? 'admin-btn-nuke' : 'admin-btn-primary'}" data-action="confirm-yes">${esc(yesLabel)}</button>
+      </div>
+    </div>`;
+}
+
+// ===========================================================================
+// TAB — HELP (teacher's handbook, lives in js/core/help.js)
+// ===========================================================================
+// The wiki is imported LAZILY and defensively: it is a separate module owned by
+// another part of the app, so Admin must keep working — and must say something
+// friendly rather than throwing — if it isn't there yet.
+let helpApi = null;
+
+async function loadHelpApi() {
+  if (helpApi) return helpApi;
+  try {
+    const mod = await import('../core/help.js');
+    if (mod && typeof mod.openHelp === 'function') { helpApi = mod; return mod; }
+  } catch (e) { /* not shipped yet — handled by the caller */ }
+  return null;
+}
+
+// Small "❓ …" affordance placed wherever a teacher is most likely to get stuck.
+function helpLink(topic, label = 'How this works') {
+  return `<button type="button" class="admin-help-link" data-action="help-topic" data-topic="${esc(topic)}">❓ ${esc(label)}</button>`;
+}
+
+function openHelpTopic(topic, { category = false } = {}) {
+  helpState = 'loading';
+  if (activeTab === 'help') renderBody({ force: true });
+  loadHelpApi().then((mod) => {
+    if (!mod) {
+      helpState = 'unavailable';
+      if (activeTab === 'help') renderBody({ force: true });
+      else toast('The teacher’s handbook isn’t available yet.');
+      return;
+    }
+    try {
+      if (category && typeof mod.openHelpAt === 'function') mod.openHelpAt(topic);
+      else mod.openHelp(topic);
+      helpState = 'ok';
+    } catch (e) {
+      console.warn('admin: help failed to open', e);
+      helpState = 'unavailable';
+      if (activeTab !== 'help') toast('The teacher’s handbook could not open.');
+    }
+    if (activeTab === 'help') renderBody({ force: true });
+  });
+}
+
+function renderHelp() {
+  const rows = [
+    { topic: HELP_TOPICS.planner, icon: '📅', title: 'Planner & calendar', note: 'Lessons, homework, tests, vacations — and copying a day across a whole semester.' },
+    { topic: HELP_TOPICS.quests,  icon: '🗺️', title: 'Quests', note: 'How a house takes on a task, how you award the points, and what giving up costs.' },
+    { topic: HELP_TOPICS.shop,    icon: '🔮', title: 'The Magic Shop', note: 'What each item does, what shields stop, and how to invent balanced items.' },
+    { topic: HELP_TOPICS.potw,    icon: '🌍', title: 'Place of the Week', note: 'Setting up a destination, the intro video, and scheduling it for a week.' },
+    { topic: HELP_TOPICS.backups, icon: '💾', title: 'Backups & restoring', note: 'Where your data lives, and how to get it back if something goes wrong.' },
+  ];
+
+  let status = '';
+  if (helpState === 'loading') status = '<div class="admin-mini">Opening the handbook…</div>';
+  else if (helpState === 'unavailable') {
+    status = `<div class="admin-warn-line">The teacher’s handbook isn’t installed in this copy of the app yet.
+      Everything else keeps working — each screen also has its own “How this works” panel built in.</div>`;
+  } else if (helpState === 'ok') {
+    status = '<div class="admin-ok-line">The handbook is open over this screen. Close it to come back here.</div>';
+  }
+
+  return `
+    <div class="admin-quests">
+      <div class="admin-card">
+        <div class="admin-card-title">❓ Teacher's Handbook</div>
+        <div class="admin-mini">Plain-language answers for every part of the app. It opens on top of whatever you're doing, so you never lose your place.</div>
+        ${status}
+        <div class="admin-help-grid">
+          ${rows.map((r) => `
+            <button type="button" class="admin-help-card" data-action="help-topic" data-topic="${esc(r.topic)}">
+              <span class="admin-help-icon">${r.icon}</span>
+              <span class="admin-help-body">
+                <span class="admin-help-title">${esc(r.title)}</span>
+                <span class="admin-help-note">${esc(r.note)}</span>
+              </span>
+            </button>`).join('')}
+        </div>
       </div>
     </div>`;
 }
@@ -2482,20 +3238,33 @@ function onClick(e) {
     case 'dup-apply': applyDup(); break;
 
     // quests
+    case 'quest-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-quests .admin-guide'); if (d) questGuideOpen = d.open; }, 0); break;
     case 'quest-new': openQuestForm(null); break;
     case 'quest-edit': openQuestForm(btn.dataset.id); break;
-    case 'quest-save': saveQuestFromForm(btn.dataset.id || null); break;
+    case 'quest-save': saveQuestFromForm(); break;
+    case 'quest-close': questForm = null; closeModal(); break;
     case 'quest-del': {
       const id = btn.dataset.id;
       const q = store.getQuestCatalog().find((x) => x.id === id);
-      openConfirm(`Delete quest “${q ? q.title : ''}”?`, 'This removes it from the catalog and clears it from any core it is active on.', () => {
+      openConfirm(`Delete quest “${q ? q.title : ''}”?`, 'This removes it from the catalog and clears it from any core it is active on. Points already awarded for it are not touched.', () => {
         store.deleteQuest(id); renderBody(); toast('Quest deleted.');
       });
       break;
     }
-    case 'quest-clear': store.abandonQuest(Number(btn.dataset.core)); renderBody(); toast('Active quest cleared.'); break;
+    case 'quest-clear': {
+      const core = Number(btn.dataset.core);
+      const q = store.getActiveQuest(core);
+      const house = store.HOUSES[core];
+      if (!q) { toast('No active quest for that core.'); break; }
+      openConfirm('Clear without penalty?', `“${q.title}” goes back on the board and ${house.name} loses nothing. Use this when a quest was accepted by mistake.`, () => {
+        store.abandonQuest(core); renderBody(); toast('Quest cleared — no points changed.');
+      }, { danger: false, yesLabel: 'Clear it' });
+      break;
+    }
     case 'quest-complete': openQuestCompleteModal(Number(btn.dataset.core)); break;
     case 'quest-complete-confirm': confirmQuestComplete(Number(btn.dataset.core)); break;
+    case 'quest-fail': openQuestFailModal(Number(btn.dataset.core)); break;
+    case 'quest-fail-confirm': confirmQuestFail(Number(btn.dataset.core)); break;
 
     // shop
     case 'shop-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-guide'); if (d) shopGuideOpen = d.open; }, 0); break;
@@ -2577,6 +3346,19 @@ function onClick(e) {
     case 'reset-open': openResetModal(); break;
     case 'reset-confirm': if (!btn.disabled) doReset(); break;
 
+    // houses
+    case 'house-edit': openHouseForm(Number(btn.dataset.id)); break;
+    case 'house-reset': openHouseResetConfirm(Number(btn.dataset.id)); break;
+    case 'house-save': saveHouseForm(); break;
+    case 'house-close': houseForm = null; closeModal(); break;
+
+    // intro video presets
+    case 'video-new': openVideoForm(null); break;
+    case 'video-edit': openVideoForm(btn.dataset.id); break;
+    case 'video-save': saveVideoForm(); break;
+    case 'video-close': videoForm = null; closeModal(); break;
+    case 'video-del': if (!btn.disabled) deleteVideoPreset(btn.dataset.id); break;
+
     // potw
     case 'potw-new': openPotwEditor(null); break;
     case 'potw-edit': openPotwEditor(btn.dataset.key); break;
@@ -2632,6 +3414,11 @@ function onClick(e) {
     case 'potw-quiz-del': syncPotwFromDom(); potwForm.quiz.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-link-add': syncPotwFromDom(); potwForm.links.push({ title: '', url: '' }); renderPotwModal(); break;
     case 'potw-link-del': syncPotwFromDom(); potwForm.links.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
+    case 'potw-link-up': { syncPotwFromDom(); const i = Number(btn.dataset.i); const a = potwForm.links; if (i > 0) { [a[i - 1], a[i]] = [a[i], a[i - 1]]; } renderPotwModal(); break; }
+    case 'potw-link-down': { syncPotwFromDom(); const i = Number(btn.dataset.i); const a = potwForm.links; if (i < a.length - 1) { [a[i + 1], a[i]] = [a[i], a[i + 1]]; } renderPotwModal(); break; }
+
+    // flyover music
+    case 'flyover-del': removeFlyoverFile(); break;
     case 'potw-parse-maps': {
       syncPotwFromDom();
       const res = parseMapsLink(potwForm.mapsLink);
@@ -2657,6 +3444,9 @@ function onClick(e) {
     case 'pres-img-down': { syncPotwFromDom(); const i = Number(btn.dataset.i); const a = potwForm.pres.images; if (i < a.length - 1) { [a[i + 1], a[i]] = [a[i], a[i + 1]]; } renderPotwModal(); break; }
     case 'pres-img-del': { syncPotwFromDom(); const i = Number(btn.dataset.i); const it = potwForm.pres.images[i]; if (it) revokeImageUrls([it]); potwForm.pres.images.splice(i, 1); renderPotwModal(); break; }
     case 'pres-img-clear': syncPotwFromDom(); revokeImageUrls(potwForm.pres.images); potwForm.pres.images = []; potwForm.pres.type = null; renderPotwModal(); break;
+
+    // help
+    case 'help-topic': openHelpTopic(btn.dataset.topic || null); break;
 
     // generic modal
     case 'confirm-yes': { const cb = pendingConfirm; pendingConfirm = null; closeModal(); if (cb) cb(); break; }
@@ -2898,8 +3688,13 @@ function injectStyles() {
 
   /* link rows (potw editor) */
   .admin-link-rows{display:flex;flex-direction:column;gap:8px;}
-  .admin-link-row{display:grid;grid-template-columns:1fr 1.4fr 44px;gap:6px;align-items:center;}
+  .admin-link-row{display:grid;grid-template-columns:1fr 1.4fr auto;gap:6px;align-items:start;}
+  .admin-link-row .admin-brow-ctrls{margin-top:2px;}
   @media (max-width:600px){.admin-link-row{grid-template-columns:1fr;}}
+  .admin-input-err{border-color:#ef4444 !important;}
+
+  /* flyover music (POTW editor) */
+  .admin-flyover-block{margin-top:16px;padding-top:14px;border-top:1px solid var(--color-line);}
 
   /* quests tab */
   .admin-quests{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:18px;}
@@ -2908,9 +3703,20 @@ function injectStyles() {
   .admin-q-active{background:var(--color-page);border:1px solid var(--color-line);border-left:4px solid var(--house,var(--color-line));border-radius:.85rem;padding:14px;}
   .admin-q-active-head{font-weight:800;font-size:.95rem;margin-bottom:8px;}
   .admin-q-active-title{font-weight:700;color:var(--color-text);font-size:1rem;}
-  .admin-q-active-meta{color:var(--color-text-soft);font-size:.78rem;margin:4px 0 12px;}
+  .admin-q-active-desc{color:var(--color-text-soft);font-size:.8rem;line-height:1.45;margin-top:3px;}
+  .admin-q-active-meta{color:var(--color-text-soft);font-size:.78rem;margin:6px 0 12px;}
   .admin-q-active-actions{display:flex;gap:8px;flex-wrap:wrap;}
-  .admin-q-active-empty{color:var(--color-text-soft);font-size:1.6rem;font-weight:800;text-align:center;padding:14px 0;}
+  .admin-q-btn-note{font-weight:800;opacity:.75;font-size:.8em;}
+  .admin-q-quiet{display:block;margin-top:10px;font-size:.78rem;text-align:left;}
+  .admin-q-active-empty{color:var(--color-text-soft);font-size:.95rem;font-weight:700;text-align:center;padding:18px 0;}
+  .admin-q-active-empty span{display:block;font-weight:500;font-size:.78rem;font-style:italic;margin-top:4px;}
+  .admin-q-statusrow{margin-top:6px;}
+  .admin-q-status{display:inline-block;font-size:.7rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 9px;border-radius:.4rem;}
+  .admin-q-status.open{background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.45);color:#22c55e;}
+  .admin-q-status.held{background:color-mix(in srgb,var(--house) 20%,transparent);border:1px solid var(--house);color:var(--house);}
+  .admin-q-status.retired{background:var(--color-card2);border:1px solid var(--color-line);color:var(--color-text-soft);}
+  html[data-mode="light"] .admin-q-status.open{color:#15803d;}
   .admin-q-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
   .admin-q-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
   .admin-q-pts{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
@@ -3093,6 +3899,25 @@ function injectStyles() {
   .admin-auto-dot.ok{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.6);}
   .admin-auto-dot.warn{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.6);}
 
+  /* help tab + contextual "❓ How this works" links */
+  .admin-help-row{margin-top:10px;}
+  .admin-help-link{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 14px;
+    border-radius:999px;border:1px solid rgba(34,211,238,.45);background:rgba(34,211,238,.08);
+    color:#22d3ee;font-family:inherit;font-weight:700;font-size:.82rem;cursor:pointer;
+    transition:background .15s ease,border-color .15s ease;}
+  .admin-help-link:hover{background:rgba(34,211,238,.18);border-color:#22d3ee;}
+  html[data-mode="light"] .admin-help-link{color:#0e7490;border-color:rgba(14,116,144,.45);}
+  .admin-help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:14px;}
+  .admin-help-card{display:flex;align-items:flex-start;gap:12px;text-align:left;padding:14px 16px;
+    border:1px solid var(--color-line);border-radius:.85rem;background:var(--color-page);cursor:pointer;
+    font-family:inherit;transition:border-color .15s ease,background .15s ease,transform .1s ease;}
+  .admin-help-card:hover{border-color:#22d3ee;background:var(--color-card2);}
+  .admin-help-card:active{transform:scale(.985);}
+  .admin-help-icon{font-size:1.5rem;line-height:1;flex-shrink:0;}
+  .admin-help-body{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .admin-help-title{font-weight:800;font-size:.95rem;color:var(--color-text);}
+  .admin-help-note{font-size:.8rem;color:var(--color-text-soft);line-height:1.45;}
+
   /* toast */
   .admin-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;
     background:var(--color-card2);border:1px solid #f59e0b;color:var(--color-text);padding:12px 22px;border-radius:.75rem;
@@ -3116,6 +3941,24 @@ function injectStyles() {
   html[data-mode="light"] .admin-feat-chip,
   html[data-mode="light"] .admin-details summary{color:#0e7490;}
   html[data-mode="light"] .admin-arrival-badge.ok{color:#15803d;border-color:#15803d;}
+
+  /* houses editor (Settings tab) */
+  .admin-house-crest{flex-shrink:0;width:48px;height:48px;border-radius:.6rem;background:var(--color-card2);
+    border:1px solid var(--color-line);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .admin-house-crest-img{width:100%;height:100%;object-fit:contain;}
+  .admin-house-crest-lg{width:72px;height:72px;border-radius:.75rem;}
+  .admin-house-swatch{flex-shrink:0;width:32px;height:32px;border-radius:50%;border:2px solid var(--color-line);box-shadow:0 0 0 2px var(--color-page) inset;}
+  .admin-house-swatch-lg{width:44px;height:44px;}
+  .admin-house-preview{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px 16px;
+    background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
+  .admin-house-preview-name{font-family:Cinzel,serif;font-weight:800;font-size:1.1rem;}
+  .admin-house-preview-motto{font-size:.82rem;color:var(--color-text-soft);font-style:italic;}
+  .admin-color-swatch-input{width:56px;height:44px;padding:2px;flex-shrink:0;border-radius:.5rem;
+    border:1px solid var(--color-line);background:none;cursor:pointer;}
+
+  /* intro video presets (Place of the Week tab) */
+  .admin-video-thumb{font-size:1.4rem;}
+  .admin-video-url{font-family:monospace;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 
   @media (prefers-reduced-motion:reduce){
     .admin-panel,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
@@ -3142,7 +3985,8 @@ export default {
     cal.year = now.getFullYear();
     cal.month = now.getMonth();
     activeTab = 'planner';
-    panelView = null; form = null; potwForm = null; dangerOpen = false;
+    panelView = null; form = null; potwForm = null; questForm = null; houseForm = null; videoForm = null; dangerOpen = false;
+    helpState = null;
 
     renderShell();
 
@@ -3152,6 +3996,7 @@ export default {
     // input change: effect radios, import-file picker, media/shop/asset file inputs
     changeHandler = (e) => {
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
+      if (e.target.name === 'admin-quest-repeat') { syncQuestFromDom(); questForm.repeatable = e.target.value === '1'; renderQuestModal(); return; }
       if (e.target.id === 'admin-shop-mythic') { syncShopFromDom(); shopForm.mythicOnly = e.target.checked; renderShopModal(); return; }
       if (e.target.id === 'admin-import-file') { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ''; return; }
       const inp = e.target.closest('input.admin-file');
@@ -3162,6 +4007,7 @@ export default {
         else if (inp.dataset.presdrop) handlePresDrop(inp.dataset.presdrop, files[0]);
         else if (inp.dataset.assets) handleAssetFiles(inp.dataset.assets, files);
         else if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
+        else if (inp.dataset.flyover) stageFlyoverFile(files[0]);
         else handleMediaFile(inp.dataset.mkey, files[0]);
       }
       inp.value = ''; // allow re-picking the same file
@@ -3171,6 +4017,20 @@ export default {
     // live plain-English preview in the shop editor as cost/amount are typed
     inputHandler = (e) => {
       if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
+      else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });
+      else if (e.target.id === 'admin-quest-penalty') { if (questForm) questForm.penaltyTouched = true; updateQuestPreview(); }
+      else if (e.target.id === 'admin-house-name' || e.target.id === 'admin-house-motto' || e.target.id === 'admin-house-image') updateHousePreview();
+      else if (e.target.id === 'admin-house-accent-color') {
+        const hex = e.target.value;
+        if (el('admin-house-accent-hex')) el('admin-house-accent-hex').value = hex;
+        updateHouseAccentPreview(hex);
+      } else if (e.target.id === 'admin-house-accent-hex') {
+        const norm = hexNorm(e.target.value);
+        if (isHex(norm)) {
+          if (el('admin-house-accent-color')) el('admin-house-accent-color').value = norm;
+          updateHouseAccentPreview(norm);
+        }
+      }
     };
     rootEl.addEventListener('input', inputHandler);
 
@@ -3188,6 +4048,7 @@ export default {
       else if (z.dataset.presdrop) handlePresDrop(z.dataset.presdrop, files[0]);
       else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
       else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
+      else if (z.dataset.flyover) stageFlyoverFile(files[0]);
       else handleMediaFile(z.dataset.mkey, files[0]);
     };
     rootEl.addEventListener('dragover', dragOverHandler);
@@ -3224,6 +4085,6 @@ export default {
     // #module-root on navigate, but null our refs so nothing dangles.
     rootEl = null; ctxRef = null;
     clickHandler = changeHandler = dragOverHandler = dragLeaveHandler = dropHandler = inputHandler = null;
-    panelView = null; form = null; potwForm = null; shopForm = null;
+    panelView = null; form = null; potwForm = null; shopForm = null; questForm = null; houseForm = null; videoForm = null;
   },
 };

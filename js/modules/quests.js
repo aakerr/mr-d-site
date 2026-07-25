@@ -1,286 +1,766 @@
-// quests.js — Class Quests board (student-facing picking + status board).
-// Owned module. Follows ARCHITECTURE.md contract.
-// One quest active per core at a time. Completion is teacher-confirmed in Admin.
+// quests.js — Class Quests board (the screen the class looks at).
+//
+// The teacher's description of the loop, verbatim, is what this screen models:
+//   "a house would agree to a task, that task would be moved to the top of the
+//    task screen and no longer be available to choose below. The task is there
+//    until it's completed. When it is in the active window and the conditions
+//    are met, Mr. D can click a box and the task is complete. The points go to
+//    the house. If a house decides they can't complete the task, and Mr. D
+//    clicks an x on it, the points are deducted and another house can steal the
+//    task. There are some tasks that can be repeated and open to other houses.
+//    Some are one shots only."
+//
+// So: ONE hero card at the top (the accepted quest + the two teacher buttons),
+// the board of still-available quests underneath, and a ledger of finished
+// deeds at the bottom. All the mechanics live in the store — this file only
+// renders them and asks for confirmation before anything scores.
+//
+// Owns ONLY this file. Follows ARCHITECTURE.md contract.
+// Everything is sized with clamp(…vh…) so it reads from the back of the room
+// at 1280x720 and doesn't turn into a wall of text at 1920x1080.
 
-const STYLE_ID = 'quests-styles';
-const STYLE = `
-@keyframes quest-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes quest-pop {
-  0%   { transform: scale(1); }
-  30%  { transform: scale(1.035); }
-  55%  { transform: scale(0.99); }
-  100% { transform: scale(1); }
-}
-@keyframes quest-glow-pulse {
-  0%, 100% { box-shadow: 0 0 18px 2px var(--quest-glow, rgba(245,158,11,0.35)); }
-  50% { box-shadow: 0 0 34px 8px var(--quest-glow, rgba(245,158,11,0.5)); }
-}
-@keyframes quest-epic-shimmer {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
-}
-@keyframes quest-modal-in { from { opacity: 0; transform: scale(0.9) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-@keyframes quest-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+import { fitMastheadWhenReady } from '../core/masthead.js';
 
-.quest-in { animation: quest-fade-in 280ms ease both; }
-.quest-celebrate { animation: quest-pop 480ms cubic-bezier(.36,1.6,.4,1) both; }
-.quest-banner-glow { animation: quest-glow-pulse 3.2s ease-in-out infinite; }
-.quest-card { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, opacity 180ms ease, filter 180ms ease; }
-.quest-card:not(.quest-locked):hover { transform: translateY(-3px); }
-.quest-card.quest-locked { opacity: 0.45; filter: grayscale(0.4); }
-.quest-btn { transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease; min-height: 48px; }
-.quest-btn:active { transform: scale(0.95); }
-.quest-btn:hover { filter: brightness(1.1); }
-.quest-badge-epic {
-  background: linear-gradient(90deg, #7c3aed, #a855f7, #7c3aed);
-  background-size: 200% auto;
-  animation: quest-epic-shimmer 3s linear infinite;
-  box-shadow: 0 0 16px 2px rgba(168,85,247,0.55);
-}
-.quest-scroll::-webkit-scrollbar { width: 8px; }
-.quest-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 8px; }
-.quest-sort-btn { transition: background 150ms ease, border-color 150ms ease, color 150ms ease; min-height: 48px; }
-.quest-modal-backdrop { animation: quest-backdrop-in 150ms ease both; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px); }
-.quest-modal-card { animation: quest-modal-in 220ms cubic-bezier(.34,1.56,.64,1) both; }
-.quest-deed { transition: transform 150ms ease, background 150ms ease; }
-.quest-deed:hover { transform: translateY(-1px); }
-`;
+const STYLE_ID = 'quest-styles';
 
-function ensureStyle() {
-  if (document.getElementById(STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  s.textContent = STYLE;
-  document.head.appendChild(s);
+// ---- module-scoped lifecycle state (mount/unmount owns all of it) ----------
+let ctxRef = null;
+let rootEl = null;
+let unsub = null;
+let clickHandler = null;
+let keyHandler = null;
+let tickTimer = null;
+const timers = new Set();
+const fxNodes = new Set();
+
+// per-mount UI state
+let ui = null;   // { modal: null | {...}, sortAsc: bool, celebrateCore: number|null }
+
+function initUi() {
+  return { modal: null, sortAsc: false, celebrateCore: null };
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function later(fn, ms) {
+  const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('quests:', e); } }, ms);
+  timers.add(id);
+  return id;
+}
+function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
+function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function relTime(ts) {
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+// The store defaults a quest's give-up penalty to half its reward; older
+// saved quests may predate the field, so mirror that default here rather than
+// showing the teacher "−undefined".
+function penaltyOf(q) {
+  const p = Number(q?.penalty);
+  return Number.isFinite(p) ? Math.max(0, Math.round(p)) : Math.round(Number(q?.points || 0) / 2);
+}
+
+// "how long it's been active", phrased to slot into "accepted ___ ago".
+// Deliberately coarse — nobody at the back of the room needs seconds.
+function activeFor(ts) {
+  if (!ts) return 'a moment';
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'a moment';
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h < 24) return m ? `${h}h ${m}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? '1 day' : `${d} days`;
+}
+
+function shortWhen(ts) {
   if (!ts) return '';
-  const diff = Date.now() - ts;
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day === 1) return 'yesterday';
-  if (day < 7) return `${day}d ago`;
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'yesterday';
+  if (d < 7) return `${d}d ago`;
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function pointBandClass(points) {
-  if (points >= 35) return 'quest-badge-epic text-white';
-  if (points >= 20) return 'bg-amber-500/25 border border-amber-400/60 text-amber-300';
-  return 'bg-slate-500/25 border border-slate-400/50 text-slate-300';
+// =============================================================================
+// STYLES — injected once, under the quest- prefix, removed on unmount.
+// =============================================================================
+function injectStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = STYLE_ID;
+  s.textContent = `
+  /* ---- layout: header + hero pinned, board scrolls, deeds pinned ---- */
+  .quest-root{height:100%;display:flex;flex-direction:column;gap:clamp(8px,1.4vh,18px);
+    padding:clamp(8px,1.4vh,16px) clamp(12px,1.8vw,26px) clamp(10px,1.6vh,20px);
+    background:radial-gradient(ellipse at 50% -20%,rgba(245,158,11,.13),transparent 60%),var(--color-page,#0b0f19);
+    color:var(--color-text,#f9fafb);overflow:hidden;box-sizing:border-box;}
+
+  /* ---- masthead (mirrors the Magic Shop header) ---- */
+  /* The quest mark sits OUTSIDE the centred text block, so the title and
+     subtitle centre on each other rather than on "icon + title". */
+  /* TEXT centres on the screen; the scroll mark hangs left with a matching
+     spacer on the right so the centring is of the text, not "icon + text". */
+  .quest-head{flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;
+    gap:clamp(.5rem,1.4vw,1.1rem);}
+  .quest-headings{text-align:center;}
+  .mh-ink{display:inline-block;white-space:nowrap;}
+  .quest-head-icon,.quest-head-spacer{width:clamp(2.2rem,5.4vw,3.6rem);flex:0 0 auto;}
+  .quest-head-icon{height:auto;object-fit:contain;
+    filter:drop-shadow(0 4px 14px var(--accent-soft,rgba(245,158,11,.5)));}
+  .quest-head-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
+    font-size:clamp(1.4rem,3.4vw,2.4rem);line-height:1.1;color:var(--accent,#f59e0b);
+    text-shadow:0 0 26px var(--accent-soft,rgba(245,158,11,.4));}
+  /* Scaled so the tagline spans roughly the same width as the title above it. */
+  .quest-head-sub{color:#fcd34d;font-style:italic;font-weight:600;
+    font-size:clamp(1.05rem,2.7vw,1.7rem);margin-top:.05rem;line-height:1.05;}
+
+  /* Shields flank a points-only pill; the pill spans the width of the heading
+     text above it (set at render time from the heading block's measured width).
+     Crests are contain-fit transparent PNGs — never boxed or cropped. */
+  .quest-points-row{flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    gap:clamp(.6rem,1.6vw,1.4rem);margin:clamp(5px,1vh,12px) auto 0;}
+  .quest-crest{height:min(clamp(2.8rem,8vw,5.4rem),9vh);width:auto;object-fit:contain;flex-shrink:0;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.6));}
+  .quest-points{display:flex;align-items:baseline;justify-content:center;flex:0 0 auto;
+    background:var(--color-card,#111827);border:2px solid var(--qp-accent,#f59e0b);
+    border-radius:1.5rem;padding:clamp(.35rem,1.1vh,1rem) 1.5rem;
+    box-shadow:0 0 26px var(--qp-glow,rgba(245,158,11,.35));}
+  .quest-points .val{font-size:clamp(1.8rem,5vw,3rem);font-weight:800;color:#fde68a;
+    font-variant-numeric:tabular-nums;line-height:1;}
+  .quest-points .unit{font-size:clamp(.9rem,2.2vw,1.4rem);font-weight:700;color:#fde68a;
+    margin-left:.4rem;opacity:.85;}
+
+  /* ---- ACTIVE QUEST hero ---- */
+  .quest-hero{flex-shrink:0;position:relative;display:flex;gap:clamp(12px,2vw,28px);flex-wrap:wrap;
+    border:3px solid var(--h,#f59e0b);border-radius:1.5rem;padding:clamp(12px,2vh,24px) clamp(14px,2vw,28px);
+    background:linear-gradient(135deg,rgba(31,41,55,.96),rgba(17,24,39,.98));
+    box-shadow:0 0 34px var(--hs,rgba(245,158,11,.35)),0 18px 40px rgba(0,0,0,.45);
+    animation:quest-hero-glow 3.4s ease-in-out infinite;}
+  @keyframes quest-hero-glow{
+    0%,100%{box-shadow:0 0 26px var(--hs,rgba(245,158,11,.3)),0 18px 40px rgba(0,0,0,.45);}
+    50%{box-shadow:0 0 48px var(--hs,rgba(245,158,11,.5)),0 18px 40px rgba(0,0,0,.45);}
+  }
+  .quest-hero.quest-pop{animation:quest-pop-kf .6s cubic-bezier(.34,1.56,.64,1) both;}
+  @keyframes quest-pop-kf{0%{transform:scale(1);}35%{transform:scale(1.02);}100%{transform:scale(1);}}
+  .quest-hero-main{flex:1 1 min(560px,100%);min-width:0;display:flex;flex-direction:column;
+    gap:clamp(4px,.9vh,10px);}
+  .quest-hero-eyebrow{display:flex;align-items:center;gap:clamp(6px,1vw,12px);flex-wrap:wrap;
+    font-size:clamp(1rem,1.8vh,1.25rem);font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--h,#f59e0b);}
+  .quest-hero-crest{height:clamp(1.7rem,3.6vh,2.6rem);width:auto;object-fit:contain;flex-shrink:0;
+    filter:drop-shadow(0 4px 10px rgba(0,0,0,.6));}
+  .quest-hero-timer{color:var(--color-text-soft,#9ca3af);letter-spacing:.02em;text-transform:none;font-weight:700;}
+  .quest-hero-title{font-family:Cinzel,Georgia,serif;font-weight:800;line-height:1.06;
+    font-size:clamp(1.7rem,4.6vh,3.2rem);color:#f9fafb;margin:0;}
+  .quest-hero-desc{font-size:clamp(1.05rem,2.4vh,1.7rem);line-height:1.35;color:#e5e7eb;margin:0;
+    max-width:60ch;}
+
+  .quest-chip-row{display:flex;gap:clamp(6px,.8vw,12px);flex-wrap:wrap;margin-top:auto;padding-top:.4em;}
+  .quest-chip{display:inline-flex;align-items:center;gap:.4em;border-radius:999px;
+    font-size:clamp(1rem,1.7vh,1.15rem);font-weight:800;padding:.3em .85em;white-space:nowrap;}
+  .quest-chip-repeat{background:rgba(34,197,94,.16);border:1px solid rgba(34,197,94,.55);color:#4ade80;}
+  .quest-chip-once{background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.55);color:#c4b5fd;}
+  .quest-chip-penalty{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);color:#fca5a5;}
+
+  .quest-hero-side{flex:0 0 clamp(230px,22vw,320px);display:flex;flex-direction:column;
+    gap:clamp(6px,1vh,12px);justify-content:center;}
+  .quest-hero-points{text-align:center;font-family:Cinzel,Georgia,serif;font-weight:800;line-height:.95;
+    font-size:clamp(2.4rem,6.4vh,4.4rem);color:#fde68a;text-shadow:0 0 26px rgba(253,230,138,.45);}
+  .quest-hero-points small{display:block;font-family:inherit;font-size:clamp(.95rem,1.6vh,1.1rem);
+    letter-spacing:.16em;text-transform:uppercase;color:var(--color-text-soft,#9ca3af);margin-top:.15em;}
+  .quest-teacher-bar{display:flex;align-items:center;justify-content:center;gap:.4em;
+    font-size:clamp(.95rem,1.5vh,1.05rem);font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    color:#fcd34d;}
+
+  .quest-act{width:100%;min-height:clamp(52px,7.4vh,74px);border-radius:1rem;border:none;cursor:pointer;
+    font-weight:800;font-size:clamp(1.05rem,2.2vh,1.5rem);font-family:inherit;
+    display:flex;align-items:center;justify-content:center;gap:.5em;flex-wrap:wrap;
+    transition:transform .12s ease,filter .16s ease;touch-action:manipulation;}
+  .quest-act:hover{filter:brightness(1.1);}
+  .quest-act:active{transform:scale(.96);}
+  .quest-act small{font-size:.72em;font-weight:800;opacity:.85;}
+  .quest-act-done{background:linear-gradient(135deg,#22c55e,#15803d);color:#04220f;
+    box-shadow:0 10px 26px rgba(34,197,94,.4);}
+  .quest-act-fail{background:rgba(127,29,29,.55);border:2px solid #ef4444;color:#fecaca;}
+
+  /* empty hero — no quest accepted yet */
+  .quest-hero-empty{flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:clamp(10px,1.6vw,22px);
+    flex-wrap:wrap;text-align:center;border:3px dashed var(--h,#374151);border-radius:1.5rem;
+    padding:clamp(14px,2.6vh,30px) clamp(14px,2vw,28px);background:rgba(17,24,39,.7);}
+  .quest-hero-empty-icon{font-size:clamp(2rem,5vh,3.4rem);line-height:1;}
+  .quest-hero-empty-title{font-family:Cinzel,Georgia,serif;font-weight:800;
+    font-size:clamp(1.2rem,3vh,2rem);color:#f3f4f6;}
+  .quest-hero-empty-sub{font-size:clamp(1.05rem,2vh,1.35rem);color:var(--color-text-soft,#9ca3af);margin-top:.15em;}
+
+  /* ---- All Cores: four active quests side by side ---- */
+  .quest-all-grid{flex-shrink:0;display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(8px,1vw,16px);}
+  @media (max-width:900px){.quest-all-grid{grid-template-columns:repeat(2,1fr);}}
+  .quest-all-card{border:2px solid var(--h,#374151);border-left-width:8px;border-radius:1.1rem;
+    padding:clamp(8px,1.4vh,16px) clamp(10px,1vw,16px);background:rgba(17,24,39,.9);
+    display:flex;flex-direction:column;gap:.3em;min-height:clamp(110px,15vh,170px);}
+  .quest-all-house{display:flex;align-items:center;gap:.45em;font-weight:800;color:var(--h,#f59e0b);
+    font-size:clamp(1rem,2vh,1.35rem);}
+  .quest-all-crest{height:clamp(1.3rem,2.8vh,2rem);width:auto;object-fit:contain;flex-shrink:0;}
+  .quest-all-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,2vh,1.35rem);line-height:1.25;}
+  .quest-all-none{color:var(--color-text-soft,#9ca3af);font-style:italic;font-size:clamp(1rem,1.8vh,1.2rem);
+    margin:auto 0;}
+  .quest-all-foot{margin-top:auto;display:flex;align-items:baseline;justify-content:space-between;gap:.6em;
+    padding-top:.4em;}
+  .quest-all-pts{font-weight:800;color:#fde68a;font-size:clamp(1.1rem,2.4vh,1.6rem);}
+  .quest-all-time{color:var(--color-text-soft,#9ca3af);font-size:clamp(.95rem,1.6vh,1.05rem);}
+
+  /* ---- QUEST BOARD ---- */
+  .quest-board{flex:1;min-height:0;display:flex;flex-direction:column;gap:clamp(6px,1vh,12px);}
+  .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
+  .quest-board-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
+    font-size:clamp(1.1rem,2.6vh,1.8rem);color:#e5e7eb;}
+  .quest-board-count{color:var(--color-text-soft,#9ca3af);font-weight:700;font-size:clamp(1rem,1.8vh,1.2rem);}
+  .quest-sort{min-height:44px;padding:.4em 1em;border-radius:.8rem;border:1px solid var(--color-line,#374151);
+    background:var(--color-card2,#1f2937);color:#e5e7eb;font-weight:700;font-family:inherit;cursor:pointer;
+    font-size:clamp(1rem,1.7vh,1.1rem);}
+  .quest-sort:hover{background:var(--color-line,#374151);}
+  .quest-lockbar{flex-shrink:0;display:flex;align-items:center;gap:.5em;flex-wrap:wrap;
+    font-size:clamp(1rem,2vh,1.35rem);font-weight:800;color:#fcd34d;
+    background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);
+    border-radius:.9rem;padding:.5em .9em;}
+  .quest-lockbar.quest-lockbar-info{color:#93c5fd;background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.45);}
+
+  .quest-grid{flex:1;min-height:0;overflow-y:auto;display:grid;gap:clamp(8px,1.2vw,16px);
+    grid-template-columns:repeat(auto-fill,minmax(clamp(240px,20vw,330px),1fr));align-content:start;
+    padding-right:4px;padding-bottom:4px;}
+  .quest-card{display:flex;flex-direction:column;gap:clamp(4px,.7vh,10px);border-radius:1.1rem;
+    border:2px solid var(--color-line,#374151);background:linear-gradient(160deg,rgba(31,41,55,.92),rgba(17,24,39,.96));
+    padding:clamp(10px,1.5vh,18px) clamp(12px,1vw,18px);
+    transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
+  .quest-card:not(.quest-card-locked):hover{transform:translateY(-3px);border-color:var(--accent,#f59e0b);
+    box-shadow:0 12px 30px rgba(0,0,0,.45);}
+  .quest-card-locked{opacity:.5;filter:grayscale(.35);}
+  .quest-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.7em;}
+  .quest-card-title{font-weight:800;color:#f9fafb;line-height:1.2;font-size:clamp(1.1rem,2.3vh,1.55rem);}
+  .quest-card-pts{flex-shrink:0;text-align:center;font-weight:800;line-height:1;color:#fde68a;
+    font-size:clamp(1.35rem,3vh,2.1rem);}
+  .quest-card-pts small{display:block;font-size:clamp(.75rem,1.4vh,.95rem);letter-spacing:.12em;text-transform:uppercase;
+    color:var(--color-text-soft,#9ca3af);font-weight:800;margin-top:.25em;}
+  .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;}
+  .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(5px,.8vh,10px);padding-top:.4em;}
+  .quest-accept{width:100%;min-height:clamp(48px,6vh,60px);border-radius:.9rem;border:none;cursor:pointer;
+    font-weight:800;font-family:inherit;font-size:clamp(1rem,2vh,1.3rem);color:#0b0f19;
+    background:var(--h,#f59e0b);box-shadow:0 8px 20px var(--hs,rgba(245,158,11,.35));
+    display:flex;align-items:center;justify-content:center;gap:.4em;
+    transition:transform .12s ease,filter .16s ease;touch-action:manipulation;}
+  .quest-accept:hover{filter:brightness(1.1);}
+  .quest-accept:active{transform:scale(.96);}
+  .quest-card-note{font-size:clamp(1rem,1.7vh,1.1rem);font-weight:700;color:var(--color-text-soft,#9ca3af);
+    text-align:center;}
+  .quest-empty{grid-column:1/-1;text-align:center;font-style:italic;color:var(--color-text-soft,#9ca3af);
+    font-size:clamp(1rem,2vh,1.3rem);padding:clamp(16px,3vh,36px);border:1px dashed var(--color-line,#374151);
+    border-radius:1.1rem;}
+
+  /* ---- Hall of Deeds ---- */
+  .quest-deeds{flex-shrink:0;border:1px solid var(--color-line,#374151);border-radius:1.1rem;
+    background:rgba(17,24,39,.8);padding:clamp(7px,1.1vh,14px) clamp(10px,1vw,16px);
+    display:flex;align-items:center;gap:clamp(8px,1vw,16px);min-width:0;}
+  .quest-deeds-title{flex-shrink:0;font-family:Cinzel,Georgia,serif;font-weight:800;color:#e5e7eb;
+    font-size:clamp(1rem,1.9vh,1.25rem);letter-spacing:.04em;}
+  .quest-deeds-strip{flex:1;min-width:0;display:flex;gap:clamp(6px,.8vw,12px);overflow-x:auto;padding-bottom:2px;}
+  .quest-deed{flex-shrink:0;display:flex;align-items:center;gap:.6em;border-radius:.8rem;
+    border:1px solid var(--color-line,#374151);border-left:5px solid var(--h,#6b7280);
+    background:var(--color-card2,#1f2937);padding:.4em .8em;max-width:clamp(200px,22vw,300px);}
+  .quest-deed-main{min-width:0;}
+  .quest-deed-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,1.7vh,1.1rem);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .quest-deed-meta{color:var(--color-text-soft,#9ca3af);font-size:clamp(.95rem,1.5vh,1rem);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .quest-deed-pts{flex-shrink:0;font-weight:800;color:#4ade80;font-size:clamp(1.05rem,1.8vh,1.2rem);}
+  .quest-deeds-none{color:var(--color-text-soft,#9ca3af);font-style:italic;font-size:clamp(1rem,1.7vh,1.1rem);}
+
+  /* ---- confirm modal ---- */
+  .quest-modal-bg{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;padding:1.5rem;animation:quest-fade .18s ease both;}
+  @keyframes quest-fade{from{opacity:0;}to{opacity:1;}}
+  .quest-modal{width:min(620px,100%);max-height:92vh;overflow-y:auto;border-radius:1.4rem;
+    background:var(--color-card,#111827);border:3px solid var(--m,#f59e0b);padding:clamp(18px,3vh,32px);
+    box-shadow:0 30px 80px rgba(0,0,0,.7),0 0 50px var(--ms,rgba(245,158,11,.3));text-align:center;
+    animation:quest-modal-in .22s cubic-bezier(.34,1.56,.64,1) both;box-sizing:border-box;}
+  @keyframes quest-modal-in{from{opacity:0;transform:scale(.92) translateY(12px);}to{opacity:1;transform:none;}}
+  .quest-modal-icon{font-size:clamp(2.2rem,5vh,3.4rem);line-height:1;}
+  .quest-modal-title{font-family:Cinzel,Georgia,serif;font-weight:800;color:var(--m,#f59e0b);
+    font-size:clamp(1.3rem,3vh,2rem);margin:.3em 0 .35em;}
+  .quest-modal-body{color:#e5e7eb;font-size:clamp(1.05rem,2.1vh,1.4rem);line-height:1.5;margin-bottom:.8em;}
+  .quest-modal-body b{color:#fde68a;}
+  .quest-modal-warn{margin:0 0 1em;padding:.7em 1em;border-radius:.8rem;font-weight:700;
+    font-size:clamp(1rem,2vh,1.3rem);line-height:1.45;
+    background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.5);color:#fecaca;}
+  .quest-modal-info{margin:0 0 1em;padding:.7em 1em;border-radius:.8rem;
+    font-size:clamp(1rem,1.9vh,1.2rem);line-height:1.45;
+    background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);color:#cbd5e1;}
+  .quest-modal-acts{display:flex;gap:.8em;}
+  .quest-modal-btn{flex:1;min-height:clamp(52px,7vh,66px);border-radius:.95rem;border:none;cursor:pointer;
+    font-weight:800;font-family:inherit;font-size:clamp(1rem,2.1vh,1.35rem);
+    transition:transform .12s ease,filter .16s ease;touch-action:manipulation;}
+  .quest-modal-btn:hover{filter:brightness(1.1);}
+  .quest-modal-btn:active{transform:scale(.96);}
+  .quest-modal-cancel{background:var(--color-card2,#1f2937);border:1px solid var(--color-line,#374151);color:#e5e7eb;}
+  .quest-modal-go{background:var(--m,#f59e0b);color:#0b0f19;}
+  .quest-modal-go.danger{background:#ef4444;color:#fff;}
+
+  /* ---- celebration: points fly up from the hero ---- */
+  .quest-fly{position:fixed;z-index:75;pointer-events:none;font-family:Cinzel,Georgia,serif;font-weight:800;
+    color:#4ade80;text-shadow:0 4px 18px rgba(0,0,0,.8),0 0 24px rgba(74,222,128,.6);
+    font-size:clamp(1.6rem,4vh,3rem);animation:quest-fly-kf 1.15s cubic-bezier(.2,.7,.3,1) both;}
+  @keyframes quest-fly-kf{
+    0%{opacity:0;transform:translate(-50%,0) scale(.6);}
+    18%{opacity:1;transform:translate(-50%,-14px) scale(1.15);}
+    100%{opacity:0;transform:translate(calc(-50% + var(--dx,0px)),var(--dy,-220px)) scale(.9);}
+  }
+  .quest-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:78;
+    background:var(--color-card2,#1f2937);border:2px solid var(--accent,#f59e0b);color:#f9fafb;
+    padding:.7em 1.4em;border-radius:.9rem;font-weight:700;font-size:clamp(1rem,2vh,1.25rem);
+    box-shadow:0 14px 40px rgba(0,0,0,.6);animation:quest-toast-in .22s ease both;max-width:90vw;text-align:center;}
+  @keyframes quest-toast-in{from{opacity:0;transform:translate(-50%,14px);}to{opacity:1;transform:translate(-50%,0);}}
+
+  @media (prefers-reduced-motion:reduce){
+    .quest-hero,.quest-hero.quest-pop,.quest-modal,.quest-modal-bg,.quest-toast,.quest-fly{animation:none;}
+  }
+  `;
+  document.head.appendChild(s);
 }
 
-function pointBadge(points, size = 'md') {
-  const sizeCls = size === 'lg' ? 'text-2xl xl:text-3xl px-5 py-2' : 'text-sm px-3 py-1';
-  return `<span class="quest-in inline-flex items-center gap-1 rounded-full font-extrabold ${sizeCls} ${pointBandClass(points)}">
-    ${points >= 35 ? '✨' : ''}${points}<span class="text-[0.7em] font-bold opacity-80">pts</span>
-  </span>`;
+// =============================================================================
+// small shared bits
+// =============================================================================
+function crest(house, cls) {
+  return `<img src="${esc(house.image)}" alt="" class="${cls}" onerror="this.style.display='none'" />`;
 }
 
-// ---- module instance state ----
-function initInternalState() {
-  return {
-    sortAsc: true,
-    modal: null, // { kind: 'accept'|'abandon', questId?, core? }
-    celebrateCore: null,
-  };
+// The single most important thing a student needs to understand about a quest
+// besides what it's worth: can we do it again, or is it gone forever?
+function repeatChip(q) {
+  return q.repeatable
+    ? '<span class="quest-chip quest-chip-repeat">♻️ Repeatable</span>'
+    : '<span class="quest-chip quest-chip-once">★ One time only</span>';
 }
 
-function renderHeader(store) {
-  const house = store.getActiveHouse();
-  const color = house ? house.accent : 'var(--accent)';
+// =============================================================================
+// RENDER
+// =============================================================================
+// Match the points pill's width to the heading text above it (measured after
+// paint, since the heading is fluid-typed). Presentation only — never throws.
+function sizeQuestPill(root) {
+  try {
+    const headings = root.querySelector('.quest-headings');
+    const pill = root.querySelector('.quest-points');
+    if (!headings || !pill) return;
+    const w = Math.round(headings.getBoundingClientRect().width);
+    if (w > 0) pill.style.width = w + 'px';
+  } catch (e) { /* ignore */ }
+}
+
+function headerHtml(store, core) {
+  const house = core === 'all' ? null : store.HOUSES[core];
+  // The tagline is fixed rather than per-house: it is measured to size the
+  // points pill, so it must not change width when the core is switched.
   return `
-    <div class="quest-in flex items-end justify-between flex-wrap gap-2">
-      <div>
-        <h1 class="font-display font-extrabold text-2xl xl:text-3xl tracking-wide" style="color:${color};">
-          <img src="images/icon-quest.png" alt="" class="inline-block h-9 xl:h-11 w-auto object-contain align-[-0.35em] mr-1" onerror="this.style.display='none'"/> CLASS QUESTS
-        </h1>
-        <p class="text-gray-400 text-sm xl:text-base mt-0.5">One quest at a time. Glory for all.</p>
+    <div class="quest-head">
+      <img class="quest-head-icon" src="images/icon-quest.png" alt="" onerror="this.style.visibility='hidden'" />
+      <div class="quest-headings">
+        <div class="quest-head-title"><span class="mh-ink">THE CLASS QUEST BOARD</span></div>
+        <div class="quest-head-sub"><span class="mh-ink">Take up a quest. Earn the glory. Serve the school.</span></div>
       </div>
-    </div>`;
+      <span class="quest-head-spacer" aria-hidden="true"></span>
+    </div>
+    ${house ? `
+      <div class="quest-points-row" style="--qp-accent:${house.accent}; --qp-glow:${house.accentSoft}">
+        <img class="quest-crest" src="${esc(house.image)}" alt="${esc(house.name)} crest"
+          onerror="this.style.visibility='hidden'" />
+        <div class="quest-points" title="${esc(house.name)} points">
+          <span class="val">${store.getTotal(house.id, 'term')}</span><span class="unit">pts</span>
+        </div>
+        <img class="quest-crest" src="${esc(house.image)}" alt="" aria-hidden="true"
+          onerror="this.style.visibility='hidden'" />
+      </div>` : ''}`;
 }
 
-function renderActiveHero(core, store, s) {
+function heroHtml(store, core) {
   const house = store.HOUSES[core];
-  const quest = store.getActiveQuest(core);
-  const celebrate = s.celebrateCore === core ? 'quest-celebrate' : '';
+  const q = store.getActiveQuest(core);
 
-  if (!quest) {
+  if (!q) {
     return `
-      <div class="quest-in bg-card rounded-2xl border-2 border-dashed border-line p-6 xl:p-8 flex flex-col items-center justify-center text-center gap-2 min-h-[180px]">
-        <div class="text-4xl">🧭</div>
-        <div class="text-gray-300 font-semibold">No quest active for ${escapeHtml(house.name)}</div>
-        <div class="text-gray-500 text-sm">Accept one from the Quest Board below.</div>
-      </div>`;
+      <section class="quest-hero-empty" style="--h:${house.accent}">
+        <div class="quest-hero-empty-icon">🧭</div>
+        <div>
+          <div class="quest-hero-empty-title">${esc(house.name)} has no quest yet</div>
+          <div class="quest-hero-empty-sub">Pick one from the board below — it moves up here once accepted.</div>
+        </div>
+      </section>`;
   }
 
+  const penalty = penaltyOf(q);
+  const pop = ui.celebrateCore === core ? ' quest-pop' : '';
   return `
-    <div class="quest-in quest-banner-glow ${celebrate} relative shrink-0 rounded-2xl bg-gradient-to-br from-card to-card2 border-2 p-6 xl:p-8 flex flex-col gap-4"
-         style="border-color:${house.accent}; --quest-glow:${house.accentSoft};" data-core="${core}">
-      <div class="flex items-start justify-between gap-4 flex-wrap">
-        <div class="flex-1 min-w-[220px]">
-          <div class="text-xs font-bold uppercase tracking-widest mb-1" style="color:${house.accent}">${escapeHtml(house.name)} · Active Quest</div>
-          <h2 class="font-display font-extrabold text-2xl xl:text-4xl text-gray-50">${escapeHtml(quest.title)}</h2>
-          <p class="text-gray-300 mt-2 text-sm xl:text-base max-w-2xl">${escapeHtml(quest.desc)}</p>
+    <section class="quest-hero${pop}" style="--h:${house.accent};--hs:${house.accentSoft}">
+      <div class="quest-hero-main">
+        <div class="quest-hero-eyebrow">
+          ${crest(house, 'quest-hero-crest')}
+          <span>${esc(house.name)} · Quest in progress</span>
+          <span class="quest-hero-timer">⏱ accepted ${esc(activeFor(q.startedTs))} ago</span>
         </div>
-        ${pointBadge(quest.points, 'lg')}
-      </div>
-      <div class="flex items-center justify-between flex-wrap gap-3 pt-2 border-t border-line/60">
-        <div class="text-gray-400 text-sm">Started ${relTime(quest.startedTs)}</div>
-        <div class="flex items-center gap-3 flex-wrap">
-          <span class="text-gray-400 text-xs xl:text-sm italic">Mr. D confirms completion in the admin panel 🗝️</span>
-          <button data-abandon="${core}" class="quest-btn h-11 px-4 rounded-xl text-xs xl:text-sm font-bold bg-card2 border border-line text-gray-400 hover:text-red-300 hover:border-red-400/50">
-            Abandon Quest
-          </button>
+        <h2 class="quest-hero-title">${esc(q.title)}</h2>
+        <p class="quest-hero-desc">${esc(q.desc || 'No description — ask Mr. D what this one takes.')}</p>
+        <div class="quest-chip-row">
+          ${repeatChip(q)}
+          <span class="quest-chip quest-chip-penalty">✗ Giving up costs ${penalty} pts</span>
         </div>
       </div>
-    </div>`;
+      <div class="quest-hero-side">
+        <div class="quest-hero-points">${q.points}<small>points</small></div>
+        <div class="quest-teacher-bar">🗝️ Teacher only</div>
+        <button type="button" class="quest-act quest-act-done" data-q="complete" data-core="${core}">
+          ✓ Mark Complete
+        </button>
+        <button type="button" class="quest-act quest-act-fail" data-q="fail" data-core="${core}">
+          ✗ Give Up <small>−${penalty} pts</small>
+        </button>
+      </div>
+    </section>`;
 }
 
-function renderActiveOverview(store) {
-  const houses = Object.values(store.HOUSES);
+// 'All Cores' — a scoreboard of who is working on what right now.
+function allCoresHtml(store) {
   return `
-    <div class="quest-in grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 xl:gap-4">
-      ${houses.map((h) => {
-        const q = store.getActiveQuest(h.core);
+    <div class="quest-all-grid">
+      ${[1, 2, 3, 4].map((core) => {
+        const h = store.HOUSES[core];
+        const q = store.getActiveQuest(core);
         return `
-        <div class="rounded-2xl border-2 bg-card p-4 flex flex-col gap-2 min-h-[130px]" style="border-color:${h.accent};">
-          <div class="font-bold text-sm" style="color:${h.accent}">${escapeHtml(h.name)}</div>
-          ${q ? `
-            <div class="font-semibold text-gray-100 text-sm leading-snug">${escapeHtml(q.title)}</div>
-            <div class="flex items-center justify-between mt-auto">
-              ${pointBadge(q.points)}
-              <span class="text-gray-500 text-xs">${relTime(q.startedTs)}</span>
-            </div>` : `
-            <div class="text-gray-500 italic text-sm mt-auto">No quest active</div>`}
-        </div>`;
+          <div class="quest-all-card" style="--h:${h.accent}">
+            <div class="quest-all-house">${crest(h, 'quest-all-crest')}${esc(h.name)}</div>
+            ${q ? `
+              <div class="quest-all-title">${esc(q.title)}</div>
+              <div class="quest-all-foot">
+                <span class="quest-all-pts">${q.points} pts</span>
+                <span class="quest-all-time">${esc(shortWhen(q.startedTs))}</span>
+              </div>`
+            : '<div class="quest-all-none">No quest accepted</div>'}
+          </div>`;
       }).join('')}
     </div>`;
 }
 
-function renderBoard(state, store, s) {
-  const catalog = [...store.getQuestCatalog()].sort((a, b) => s.sortAsc ? a.points - b.points : b.points - a.points);
-  const core = state.activeCore;
+function boardHtml(store, core) {
   const isAll = core === 'all';
-  const activeQuest = isAll ? null : store.getActiveQuest(core);
-  const locked = !isAll && !!activeQuest;
+  const house = isAll ? null : store.HOUSES[core];
+  const active = isAll ? null : store.getActiveQuest(core);
+  const locked = !!active;
+
+  const quests = store.getAvailableQuests()
+    .slice()
+    .sort((a, b) => (ui.sortAsc ? a.points - b.points : b.points - a.points) || String(a.title).localeCompare(String(b.title)));
+
+  let bar = '';
+  if (isAll) {
+    bar = `<div class="quest-lockbar quest-lockbar-info">👆 Pick a house core in the top bar to accept a quest.</div>`;
+  } else if (locked) {
+    bar = `<div class="quest-lockbar">🔒 ${esc(house.name)} must finish or give up “${esc(active.title)}” before taking another quest.</div>`;
+  }
+
+  const cards = quests.length ? quests.map((q) => {
+    const canAccept = !isAll && !locked;
+    return `
+      <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${house ? house.accent : '#f59e0b'};--hs:${house ? house.accentSoft : 'rgba(245,158,11,.35)'}">
+        <div class="quest-card-top">
+          <div class="quest-card-title">${esc(q.title)}</div>
+          <div class="quest-card-pts">${q.points}<small>pts</small></div>
+        </div>
+        <div class="quest-card-desc">${esc(q.desc || '')}</div>
+        <div class="quest-card-foot">
+          <div class="quest-chip-row">${repeatChip(q)}</div>
+          ${canAccept
+            ? `<button type="button" class="quest-accept" data-q="accept" data-id="${esc(q.id)}">⚔️ Accept Quest</button>`
+            : `<div class="quest-card-note">${isAll ? 'Pick a core to accept' : '🔒 Finish your current quest first'}</div>`}
+        </div>
+      </div>`;
+  }).join('') : `<div class="quest-empty">Every quest is taken or retired. Mr. D can add more in Admin → Quests.</div>`;
 
   return `
-    <div class="quest-in flex flex-col gap-3">
-      <div class="flex items-center justify-between flex-wrap gap-2">
-        <div class="text-gray-400 text-sm font-semibold uppercase tracking-wide">Quest Board</div>
-        <button data-sort-toggle="1" class="quest-sort-btn h-11 px-4 rounded-xl text-sm font-bold bg-card2 border border-line text-gray-200">
-          Points ${s.sortAsc ? '▲' : '▼'}
-        </button>
+    <section class="quest-board">
+      <div class="quest-board-head">
+        <span class="quest-board-title">📜 Quests to Choose From</span>
+        <span class="quest-board-count">${quests.length} available</span>
+        <div class="quest-head-spacer"></div>
+        <button type="button" class="quest-sort" data-q="sort">Points ${ui.sortAsc ? '▲ low first' : '▼ high first'}</button>
       </div>
-      ${isAll ? `<div class="text-gray-500 italic text-sm">Pick a core to accept a quest.</div>` : ''}
-      ${locked ? `<div class="text-amber-300/90 text-sm font-semibold flex items-center gap-1.5">🔒 Complete your current quest first</div>` : ''}
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 xl:gap-4">
-        ${catalog.map((q) => `
-          <div class="quest-card ${locked ? 'quest-locked' : ''} bg-card rounded-2xl border border-line p-4 flex flex-col gap-2.5">
-            <div class="flex items-start justify-between gap-2">
-              <div class="font-bold text-gray-100 leading-snug">${escapeHtml(q.title)}</div>
-              ${pointBadge(q.points)}
-            </div>
-            <div class="text-gray-400 text-xs xl:text-sm flex-1">${escapeHtml(q.desc)}</div>
-            ${isAll
-              ? `<div class="text-gray-500 text-xs italic mt-1">Pick a core to accept a quest.</div>`
-              : locked
-                ? `<div class="text-amber-400/80 text-xs font-semibold mt-1">🔒 Locked</div>`
-                : `<button data-accept="${q.id}" class="quest-btn mt-1 h-12 rounded-xl font-bold text-sm text-gray-900" style="background:${store.HOUSES[core].accent};">⚔️ Accept Quest</button>`}
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
+      ${bar}
+      <div class="quest-grid">${cards}</div>
+    </section>`;
 }
 
-function renderCompletedStrip(store) {
-  const items = store.getCompletedQuests({ limit: 8 });
+function deedsHtml(store) {
+  const items = store.getCompletedQuests({ limit: 10 });
   return `
-    <div class="quest-in bg-card rounded-2xl border border-line p-4 xl:p-5">
-      <div class="text-gray-400 text-sm font-semibold uppercase tracking-wide mb-3">📜 Hall of Deeds</div>
+    <div class="quest-deeds">
+      <div class="quest-deeds-title">🏆 Hall of Deeds</div>
       ${items.length ? `
-        <div class="flex gap-3 overflow-x-auto quest-scroll pb-1">
+        <div class="quest-deeds-strip">
           ${items.map((c) => {
             const h = store.HOUSES[c.core];
             return `
-            <div class="quest-deed shrink-0 flex items-center gap-2.5 bg-card2 border border-line rounded-xl px-3 py-2 min-w-[220px]">
-              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${h ? h.accent : '#666'}"></span>
-              <div class="min-w-0 flex-1">
-                <div class="text-gray-100 text-xs font-semibold truncate">${escapeHtml(c.title)}</div>
-                <div class="text-gray-500 text-[0.7rem]">${h ? escapeHtml(h.name) : ''} · ${relTime(c.ts)}</div>
-              </div>
-              <span class="text-emerald-400 font-extrabold text-sm shrink-0">+${c.points}</span>
-            </div>`;
+              <div class="quest-deed" style="--h:${h ? h.accent : '#6b7280'}">
+                <div class="quest-deed-main">
+                  <div class="quest-deed-title">${esc(c.title)}</div>
+                  <div class="quest-deed-meta">${esc(h ? h.name : '')} · ${esc(shortWhen(c.ts))}</div>
+                </div>
+                <div class="quest-deed-pts">+${c.points}</div>
+              </div>`;
           }).join('')}
-        </div>` : `<div class="text-gray-500 italic text-sm">No quests completed yet this term.</div>`}
+        </div>`
+      : '<div class="quest-deeds-none">No quests completed yet — the first one goes here.</div>'}
     </div>`;
 }
 
-function renderModal(state, store, s) {
-  if (!s.modal) return '';
-  const { kind } = s.modal;
+// ---- confirm modals ---------------------------------------------------------
+// Every scoring action gets one. On a touch smartboard a stray sleeve can hit a
+// button, and an accidental award or penalty is exactly the kind of thing the
+// teacher would have to come asking about.
+function modalHtml(store) {
+  const m = ui.modal;
+  if (!m) return '';
+  const house = store.HOUSES[m.core];
+  if (!house) return '';
+
+  let icon = '❓';
   let title = '';
   let body = '';
-  let confirmLabel = 'Confirm';
-  let confirmClass = 'bg-emerald-600 text-white';
+  let extra = '';
+  let go = 'Confirm';
+  let danger = false;
+  let color = house.accent;
+  let colorSoft = house.accentSoft;
 
-  if (kind === 'accept') {
-    const quest = store.getQuestCatalog().find((q) => q.id === s.modal.questId);
-    const house = store.HOUSES[state.activeCore];
-    if (!quest || !house) return '';
+  if (m.kind === 'accept') {
+    const q = store.getQuestCatalog().find((x) => x.id === m.questId);
+    if (!q) return '';
+    icon = '⚔️';
     title = 'Accept this quest?';
-    body = `House <span class="font-bold" style="color:${house.accent}">${escapeHtml(house.name)}</span> accepts:
-      <span class="font-bold text-gray-50">${escapeHtml(quest.title)}</span> — worth
-      <span class="font-extrabold text-amber-300">${quest.points} points</span>?`;
-    confirmLabel = '⚔️ Accept';
-  } else if (kind === 'abandon') {
-    const house = store.HOUSES[s.modal.core];
-    const quest = store.getActiveQuest(s.modal.core);
-    title = 'Abandon quest?';
-    body = `House <span class="font-bold" style="color:${house ? house.accent : ''}">${escapeHtml(house ? house.name : '')}</span> will give up
-      <span class="font-bold text-gray-50">${escapeHtml(quest ? quest.title : 'this quest')}</span>.
-      Progress is forfeited — no penalty, but no points either.`;
-    confirmLabel = 'Abandon';
-    confirmClass = 'bg-red-700 text-white';
+    body = `<b>${esc(house.name)}</b> takes on <b>${esc(q.title)}</b> for <b>${q.points} points</b>.`;
+    extra = `<div class="quest-modal-info">It leaves the board while you hold it. Giving up later costs
+      <b>${penaltyOf(q)} points</b> and hands the quest back to the other houses.</div>`;
+    go = '⚔️ Accept';
+  } else if (m.kind === 'complete') {
+    const q = store.getActiveQuest(m.core);
+    if (!q) return '';
+    icon = '🎉';
+    title = 'Award the points?';
+    body = `<b>${esc(house.name)}</b> completed <b>${esc(q.title)}</b>.`;
+    extra = `<div class="quest-modal-info">This adds <b>+${q.points} points</b> to ${esc(house.name)} and files the
+      quest in the Hall of Deeds. ${q.repeatable
+        ? 'It is <b>repeatable</b>, so it returns to the board for any house.'
+        : 'It is a <b>one-time</b> quest, so it leaves the board for good.'}</div>`;
+    go = `✓ Complete — award +${q.points}`;
+    color = '#22c55e';
+    colorSoft = 'rgba(34,197,94,.35)';
+  } else if (m.kind === 'fail') {
+    const q = store.getActiveQuest(m.core);
+    if (!q) return '';
+    const penalty = penaltyOf(q);
+    icon = '✗';
+    title = 'Give up this quest?';
+    body = `<b>${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.`;
+    extra = `<div class="quest-modal-warn">⚠️ ${esc(house.name)} loses <b>${penalty} points</b>${penalty === 0 ? ' (no penalty set)' : ''},
+      and the quest goes back on the board for another house to steal.</div>
+      <div class="quest-modal-info">Accepted by mistake instead? Use “Clear without penalty” in
+      Admin → Quests.</div>`;
+    go = penalty > 0 ? `✗ Give up — deduct ${penalty}` : '✗ Give up';
+    danger = true;
+    color = '#ef4444';
+    colorSoft = 'rgba(239,68,68,.35)';
   }
 
   return `
-    <div id="quest-modal-backdrop" class="fixed inset-0 z-50 flex items-center justify-center p-4 quest-modal-backdrop">
-      <div class="quest-modal-card w-full max-w-md bg-card border border-line rounded-2xl p-6 flex flex-col gap-4" data-modal-card="1">
-        <div class="font-display font-bold text-xl text-gray-50">${title}</div>
-        <div class="text-gray-300 text-sm xl:text-base leading-relaxed">${body}</div>
-        <div class="flex items-center justify-end gap-3 pt-2">
-          <button data-modal-cancel="1" class="quest-btn h-12 px-5 rounded-xl font-bold bg-card2 border border-line text-gray-300">Cancel</button>
-          <button data-modal-confirm="1" class="quest-btn h-12 px-5 rounded-xl font-bold ${confirmClass}">${confirmLabel}</button>
+    <div class="quest-modal-bg" data-q="modal-bg">
+      <div class="quest-modal" style="--m:${color};--ms:${colorSoft}">
+        <div class="quest-modal-icon">${icon}</div>
+        <div class="quest-modal-title">${title}</div>
+        <div class="quest-modal-body">${body}</div>
+        ${extra}
+        <div class="quest-modal-acts">
+          <button type="button" class="quest-modal-btn quest-modal-cancel" data-q="modal-cancel">Cancel</button>
+          <button type="button" class="quest-modal-btn quest-modal-go${danger ? ' danger' : ''}" data-q="modal-ok">${go}</button>
         </div>
       </div>
     </div>`;
 }
 
-function render(root, ctx, s) {
-  const store = ctx.store;
-  const state = store.getState();
-  const core = state.activeCore;
-  root.innerHTML = `
-    <div class="h-full w-full p-4 xl:p-6 flex flex-col gap-4 xl:gap-5 overflow-y-auto quest-scroll">
-      ${renderHeader(store)}
-      ${core === 'all' ? renderActiveOverview(store) : renderActiveHero(core, store, s)}
-      ${renderBoard(state, store, s)}
-      ${renderCompletedStrip(store)}
+function render() {
+  if (!rootEl || !ctxRef) return;
+  const store = ctxRef.store;
+  const core = store.getState().activeCore;
+  rootEl.innerHTML = `
+    <div class="quest-root">
+      ${headerHtml(store, core)}
+      ${core === 'all' ? allCoresHtml(store) : heroHtml(store, core)}
+      ${boardHtml(store, core)}
+      ${deedsHtml(store)}
     </div>
-    ${renderModal(state, store, s)}
-  `;
+    ${modalHtml(store)}`;
+  fitMastheadWhenReady({
+    icon: rootEl.querySelector('.quest-head-icon'),
+    titleInk: rootEl.querySelector('.quest-head-title .mh-ink'),
+    subInk: rootEl.querySelector('.quest-head-sub .mh-ink'),
+    headings: rootEl.querySelector('.quest-headings'),
+    pill: rootEl.querySelector('.quest-points'),
+  });
 }
 
+// =============================================================================
+// feedback: toast + points flying to the house
+// =============================================================================
+function toast(text) {
+  const host = document.getElementById('overlay-root') || document.body;
+  const t = document.createElement('div');
+  t.className = 'quest-toast';
+  t.textContent = text;
+  host.appendChild(t);
+  fxNodes.add(t);
+  later(() => { t.remove(); fxNodes.delete(t); }, 2400);
+}
+
+// Points visibly leave the quest card and rise toward the top bar, where the
+// house total lives — so the class sees where the reward went.
+function flyPoints(fromRect, points) {
+  if (!fromRect) return;
+  const host = document.getElementById('overlay-root') || document.body;
+  const count = prefersReducedMotion() ? 1 : 5;
+  for (let i = 0; i < count; i += 1) {
+    later(() => {
+      const el = document.createElement('div');
+      el.className = 'quest-fly';
+      el.textContent = `+${points}`;
+      el.style.left = `${fromRect.left + fromRect.width / 2}px`;
+      el.style.top = `${fromRect.top + fromRect.height / 2}px`;
+      el.style.setProperty('--dx', `${(Math.random() - 0.5) * 140}px`);
+      el.style.setProperty('--dy', `${-(fromRect.top + fromRect.height / 2) + 40}px`);
+      host.appendChild(el);
+      fxNodes.add(el);
+      later(() => { el.remove(); fxNodes.delete(el); }, 1300);
+    }, i * 110);
+  }
+}
+
+// =============================================================================
+// actions
+// =============================================================================
+function confirmModal() {
+  const store = ctxRef.store;
+  const m = ui.modal;
+  if (!m) return;
+  ui.modal = null;
+
+  if (m.kind === 'accept') {
+    const ok = store.startQuest(m.core, m.questId);
+    if (!ok) { render(); toast('That quest is no longer available.'); return; }
+    ctxRef.audio?.sfx?.('sword');
+    ui.celebrateCore = m.core;
+    later(() => { ui.celebrateCore = null; render(); }, 700);
+    render();   // startQuest already emitted, but re-render for the celebrate class
+    return;
+  }
+
+  if (m.kind === 'complete') {
+    const heroPts = rootEl.querySelector('.quest-hero-points');
+    const rect = heroPts ? heroPts.getBoundingClientRect() : null;
+    const house = store.HOUSES[m.core];
+    const quest = store.completeQuest(m.core);   // emits → re-render via subscribe
+    render();
+    if (quest) {
+      ctxRef.audio?.sfx?.('fanfare');
+      flyPoints(rect, quest.points);
+      toast(`🎉 +${quest.points} to ${house.name} — “${quest.title}” complete!`);
+    }
+    return;
+  }
+
+  if (m.kind === 'fail') {
+    const house = store.HOUSES[m.core];
+    const res = store.failQuest(m.core);
+    render();
+    if (res) {
+      ctxRef.audio?.sfx?.('thud');
+      toast(res.penalty > 0
+        ? `${house.name} gave up “${res.quest.title}” — ${res.penalty} points deducted. It's back on the board.`
+        : `${house.name} gave up “${res.quest.title}”. It's back on the board.`);
+    }
+    return;
+  }
+
+  render();
+}
+
+function onClick(e) {
+  const btn = e.target.closest('[data-q]');
+  if (!btn) return;
+  const store = ctxRef.store;
+  const action = btn.dataset.q;
+
+  switch (action) {
+    case 'sort':
+      ui.sortAsc = !ui.sortAsc;
+      render();
+      break;
+
+    case 'accept': {
+      const core = store.getState().activeCore;
+      if (core === 'all') { toast('Pick a house core in the top bar first.'); return; }
+      ui.modal = { kind: 'accept', core, questId: btn.dataset.id };
+      render();
+      break;
+    }
+
+    case 'complete':
+      ui.modal = { kind: 'complete', core: Number(btn.dataset.core) };
+      render();
+      break;
+
+    case 'fail':
+      ui.modal = { kind: 'fail', core: Number(btn.dataset.core) };
+      render();
+      break;
+
+    case 'modal-ok':
+      confirmModal();
+      break;
+
+    case 'modal-cancel':
+      ui.modal = null;
+      render();
+      break;
+
+    case 'modal-bg':
+      // Only a click on the backdrop itself dismisses — not one that bubbled
+      // up from inside the card.
+      if (e.target === btn) { ui.modal = null; render(); }
+      break;
+
+    default:
+      break;
+  }
+}
+
+// =============================================================================
+// Module contract
+// =============================================================================
 export default {
   id: 'quests',
   title: 'Quests',
@@ -289,78 +769,35 @@ export default {
   showTile: true,
 
   mount(el, ctx) {
-    ensureStyle();
-    const store = ctx.store;
-    const s = initInternalState();
+    ctxRef = ctx;
+    rootEl = el;
+    ui = initUi();
+    injectStyles();
+    render();
 
-    const doRender = () => render(el, ctx, s);
-    doRender();
+    clickHandler = onClick;
+    rootEl.addEventListener('click', clickHandler);
 
-    const clickHandler = (e) => {
-      // Modal interactions take priority.
-      if (s.modal) {
-        if (e.target.closest('[data-modal-confirm]')) {
-          if (s.modal.kind === 'accept') {
-            const state = store.getState();
-            const core = state.activeCore;
-            const questId = s.modal.questId;
-            const ok = store.startQuest(core, questId);
-            if (ok) {
-              ctx.audio.sfx('fanfare');
-              s.celebrateCore = core;
-              setTimeout(() => { s.celebrateCore = null; }, 500);
-            }
-          } else if (s.modal.kind === 'abandon') {
-            store.abandonQuest(s.modal.core);
-          }
-          s.modal = null;
-          doRender();
-          return;
-        }
-        if (e.target.closest('[data-modal-cancel]')) {
-          s.modal = null;
-          doRender();
-          return;
-        }
-        if (e.target.id === 'quest-modal-backdrop') {
-          s.modal = null;
-          doRender();
-          return;
-        }
-        // Clicked inside the card but not on an actionable element — ignore.
-        if (e.target.closest('[data-modal-card]')) return;
-      }
-
-      const sortBtn = e.target.closest('[data-sort-toggle]');
-      if (sortBtn) { s.sortAsc = !s.sortAsc; doRender(); return; }
-
-      const acceptBtn = e.target.closest('[data-accept]');
-      if (acceptBtn) {
-        s.modal = { kind: 'accept', questId: acceptBtn.getAttribute('data-accept') };
-        doRender();
-        return;
-      }
-
-      const abandonBtn = e.target.closest('[data-abandon]');
-      if (abandonBtn) {
-        s.modal = { kind: 'abandon', core: Number(abandonBtn.getAttribute('data-abandon')) };
-        doRender();
-        return;
-      }
+    keyHandler = (ev) => {
+      if (ev.key === 'Escape' && ui && ui.modal) { ui.modal = null; render(); }
     };
-    el.addEventListener('click', clickHandler);
+    document.addEventListener('keydown', keyHandler);
 
-    const unsub = store.subscribe(doRender);
+    // Keeps "accepted 12 min ago" honest without any other churn.
+    tickTimer = setInterval(() => { if (!ui || !ui.modal) render(); }, 60000);
 
-    this._el = el;
-    this._clickHandler = clickHandler;
-    this._unsub = unsub;
+    unsub = ctx.store.subscribe(() => render());
   },
 
   unmount() {
-    if (this._unsub) { this._unsub(); this._unsub = null; }
-    if (this._el && this._clickHandler) this._el.removeEventListener('click', this._clickHandler);
-    this._el = null;
-    this._clickHandler = null;
+    clearTimers();
+    clearFx();
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
+    if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
+    if (keyHandler) document.removeEventListener('keydown', keyHandler);
+    const st = document.getElementById(STYLE_ID);
+    if (st) st.remove();
+    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; ui = null;
   },
 };

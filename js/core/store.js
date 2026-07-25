@@ -11,6 +11,11 @@ const HOUSES = {
   4: { id: 4, core: 4, name: 'Rivendell', motto: 'Wisdom of the Ages',   color: 'green', accent: '#22c55e', accentSoft: 'rgba(34,197,94,0.35)',  image: 'images/rivendell-shield.png', heroImage: 'images/header-rivendell.jpg' },
 };
 
+// Pristine copies of the shipped house definitions, so a teacher edit can
+// always be reverted even after HOUSES has been mutated in place.
+const HOUSE_DEFAULTS = JSON.parse(JSON.stringify(HOUSES));
+function defaultHouses() { return JSON.parse(JSON.stringify(HOUSE_DEFAULTS)); }
+
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
@@ -46,6 +51,13 @@ function defaultState() {
       termWeeks: CONFIG.TERM.totalWeeks,
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
+      soundEnabled: true,       // master switch for sound effects/voice
+      // Teacher edits to the four houses (name/motto/accent/artwork). Applied
+      // over the built-in defaults at load so nothing is hardcoded for them.
+      houses: {},
+      // Intro videos offered in the POTW dropdown. Seeded from CONFIG so the
+      // teacher can add their own without anyone editing source.
+      introVideos: null,
     },
     quests: {
       // One quest active per core at a time; completion is teacher-confirmed.
@@ -176,6 +188,18 @@ function defaultState() {
   };
 }
 
+// Mutating in place (rather than replacing HOUSES) keeps every existing
+// reference across the modules valid when the teacher renames a house.
+function applyHouseOverrides(overrides = {}) {
+  for (const [id, patch] of Object.entries(overrides || {})) {
+    const house = HOUSES[id];
+    if (!house || !patch) continue;
+    for (const key of ['name', 'motto', 'accent', 'accentSoft', 'image', 'heroImage']) {
+      if (patch[key]) house[key] = patch[key];
+    }
+  }
+}
+
 let state = load();
 const listeners = new Set();
 
@@ -250,6 +274,12 @@ function load() {
         if (!(Number(exp) > Date.now())) delete merged.shields[id];
       }
       merged.potwBounties = merged.potwBounties && typeof merged.potwBounties === 'object' ? merged.potwBounties : {};
+      if (!Array.isArray(merged.settings.introVideos) || !merged.settings.introVideos.length) {
+        merged.settings.introVideos = (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
+      }
+      // Teacher's house edits are applied IN PLACE onto the shared HOUSES
+      // objects, so every module holding a reference sees the new values.
+      applyHouseOverrides(merged.settings.houses);
       merged.defenses = merged.defenses && typeof merged.defenses === 'object' ? merged.defenses : {};
       for (const [id, d] of Object.entries(merged.defenses)) {
         if (!d || !(Number(d.reduce) > Date.now())) delete merged.defenses[id];
@@ -452,6 +482,64 @@ export const store = {
     return item;
   },
 
+  // ----- houses (teacher-editable: names, mottos, colours, artwork) -----
+
+  updateHouse(id, patch = {}) {
+    if (!HOUSES[id] || !patch) return null;
+    const clean = {};
+    for (const key of ['name', 'motto', 'accent', 'image', 'heroImage']) {
+      if (typeof patch[key] === 'string' && patch[key].trim()) clean[key] = patch[key].trim();
+    }
+    if (clean.accent) {
+      // keep the soft glow colour in step with the accent
+      const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(clean.accent);
+      if (m) clean.accentSoft = `rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},0.35)`;
+    }
+    state.settings.houses = { ...(state.settings.houses || {}), [id]: { ...(state.settings.houses?.[id] || {}), ...clean } };
+    applyHouseOverrides(state.settings.houses);
+    emit();
+    return HOUSES[id];
+  },
+
+  resetHouse(id) {
+    if (!state.settings.houses?.[id]) return false;
+    delete state.settings.houses[id];
+    // rebuild from the pristine defaults, then re-apply any remaining overrides
+    const def = defaultHouses()[id];
+    if (def) Object.assign(HOUSES[id], def);
+    applyHouseOverrides(state.settings.houses);
+    emit();
+    return true;
+  },
+
+  // ----- transaction correction (the only way to undo a mis-award) -----
+
+  removeTransaction(id) {
+    const i = state.transactions.findIndex((t) => t.id === id);
+    if (i < 0) return false;
+    state.transactions.splice(i, 1);
+    emit();
+    return true;
+  },
+
+  // ----- intro video presets (teacher-editable) -----
+
+  saveIntroVideo({ id, label, url }) {
+    if (!label || !url) return null;
+    const list = state.settings.introVideos || [];
+    const entry = { id: id || label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label, url };
+    const i = list.findIndex((v) => v.id === entry.id);
+    if (i >= 0) list[i] = entry; else list.push(entry);
+    state.settings.introVideos = list;
+    emit();
+    return entry;
+  },
+
+  deleteIntroVideo(id) {
+    state.settings.introVideos = (state.settings.introVideos || []).filter((v) => v.id !== id);
+    emit();
+  },
+
   // ----- settings (teacher admin) -----
 
   getSettings() {
@@ -639,7 +727,8 @@ export const store = {
 
   // Intro-video presets the teacher chooses from (Admin dropdown).
   getPotwVideoOptions() {
-    return CONFIG.POTW_INTRO_VIDEOS || [];
+    const list = state.settings?.introVideos;
+    return Array.isArray(list) && list.length ? list : (CONFIG.POTW_INTRO_VIDEOS || []);
   },
 
   // Which destination launches today? A profile scheduled for the week that

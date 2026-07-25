@@ -1,4 +1,8 @@
 // Audio helpers — file playback, synthesized SFX (no assets needed), speech.
+// Honours the teacher's sound switch (Admin/Help → sound toggle).
+import { store } from './store.js';
+
+const soundOn = () => { try { return store.getSettings().soundEnabled !== false; } catch (e) { return true; } };
 let actx = null;
 const playing = new Set();
 
@@ -90,3 +94,9 @@ export const audio = {
     try { speechSynthesis.cancel(); } catch (e) {}
   },
 };
+
+// Gate everything on the teacher's sound setting. NOTE: play() is volume-zeroed
+// rather than suppressed — callers (e.g. the POTW intro) rely on the returned
+// element's 'ended' event to advance, so returning undefined would strand them.
+['sfx', 'say'].forEach((k) => { const f = audio[k]; audio[k] = (...a) => (soundOn() ? f(...a) : undefined); });
+{ const f = audio.play; audio.play = (src, o = {}) => f(src, soundOn() ? o : { ...o, volume: 0 }); }

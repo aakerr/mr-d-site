@@ -12,6 +12,10 @@
 // earlier bottom-right floating action button, which the teacher reported
 // as overlapping module content.
 
+import { openHelp } from './help.js';
+import { maybeRunFirstRun } from './firstrun.js';
+import { health } from './health.js';
+
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
 
@@ -42,6 +46,43 @@ function housesByCore(store) {
   return [1, 2, 3, 4].map((c) => store.HOUSES[c]).filter(Boolean);
 }
 
+// ---------------------------------------------------------------------------
+// Sound gate
+//
+// `settings.soundEnabled` is the master switch, flipped by the speaker button
+// in the top bar. js/core/audio.js is lead-owned, so rather than edit it we
+// wrap the shared `audio` singleton here — every module receives the same
+// object via ctx, so wrapping it once covers the whole app.
+//
+// LEAD: once audio.js honours the setting itself, this wrapper becomes
+// redundant (it is idempotent and double-guarding is harmless, but you can
+// delete it). See the handover note for the exact audio.js patch.
+//
+// play() is MUTED rather than suppressed on purpose: potw.js waits on the
+// returned element's 'ended' event to advance the voyage, so returning nothing
+// would strand the Place of the Week cinematic on its intro screen forever.
+function applySoundGate(audio, store) {
+  if (!audio || audio.__mrdSoundGated) return;
+  audio.__mrdSoundGated = true;
+
+  const soundOn = () => {
+    try { return store.getSettings().soundEnabled !== false; } catch (e) { return true; }
+  };
+
+  ['sfx', 'say'].forEach((name) => {
+    const fn = audio[name];
+    if (typeof fn !== 'function') return;
+    audio[name] = function gated(...args) { return soundOn() ? fn.apply(audio, args) : undefined; };
+  });
+
+  const play = audio.play;
+  if (typeof play === 'function') {
+    audio.play = function gatedPlay(src, opts = {}) {
+      return play.call(audio, src, soundOn() ? opts : { ...opts, volume: 0 });
+    };
+  }
+}
+
 // Guard against double-initialization (e.g. if boot code ever calls this
 // twice) — re-wiring listeners on top of listeners would double-fire clicks.
 let initialized = false;
@@ -59,6 +100,9 @@ export function initShell(ctx) {
     return;
   }
   initialized = true;
+
+  // Make the speaker toggle actually silence things today (see applySoundGate).
+  try { applySoundGate(audio, store); } catch (e) { console.warn('shell: sound gate failed', e); }
 
   // ---------------- shared: live accent CSS vars ----------------
   function applyAccentVars() {
@@ -156,6 +200,9 @@ export function initShell(ctx) {
     let termInfo = { week: 1, totalWeeks: 9, label: '' };
     try { termInfo = store.getTermInfo(); } catch (e) { /* keep default */ }
 
+    let soundOn = true;
+    try { soundOn = store.getSettings().soundEnabled !== false; } catch (e) { /* default to audible */ }
+
     const homeActive = !!(currentModuleId && currentModuleId !== 'dashboard');
 
     const menuHtml = coreMenuOpen ? `
@@ -212,6 +259,14 @@ export function initShell(ctx) {
             </div>
           </div>
 
+          <button type="button" data-sound-btn class="shell-icon-btn flex items-center justify-center rounded-xl" title="${soundOn ? 'Sound on — tap to mute' : 'Sound off — tap to unmute'}" aria-label="${soundOn ? 'Sound on. Tap to turn sound off.' : 'Sound off. Tap to turn sound on.'}" aria-pressed="${soundOn}">
+            <span class="text-base leading-none">${soundOn ? '🔊' : '🔇'}</span>
+          </button>
+
+          <button type="button" data-help-btn class="shell-icon-btn flex items-center justify-center rounded-xl" title="Help &amp; How-To" aria-label="Help and how-to">
+            <span class="shell-help-glyph leading-none">?</span>
+          </button>
+
           <button type="button" data-admin-btn class="admin-glyph-btn flex items-center justify-center rounded-xl" title="Teacher's Admin" aria-label="Teacher's Admin">
             <span class="text-base leading-none">🗝️</span>
           </button>
@@ -241,6 +296,22 @@ export function initShell(ctx) {
     if (e.target.closest('[data-brand]')) { registry.home(); return; }
     if (e.target.closest('[data-admin-btn]')) { registry.navigate('admin'); return; }
 
+    if (e.target.closest('[data-help-btn]')) {
+      try { openHelp(); } catch (err) { console.warn('shell: help failed to open', err); }
+      return;
+    }
+
+    if (e.target.closest('[data-sound-btn]')) {
+      // Writing the setting re-renders the bar through store.subscribe, so the
+      // glyph flips itself; the audio gate above reads the same setting live.
+      try {
+        const on = store.getSettings().soundEnabled !== false;
+        store.updateSettings({ soundEnabled: !on });
+        if (!on && audio && typeof audio.sfx === 'function') audio.sfx('coin'); // audible proof it came back
+      } catch (err) { console.warn('shell: sound toggle failed', err); }
+      return;
+    }
+
     if (e.target.closest('[data-points-trigger]')) {
       if (fabOpen && !fabClosing) closeFab(); else openFab();
       return;
@@ -257,6 +328,11 @@ export function initShell(ctx) {
       const val = option.dataset.coreOption;
       coreMenuOpen = false;
       store.setActiveCore(val === 'all' ? 'all' : Number(val)); // triggers reactive re-render
+      // "All Cores" IS the Council of Four screen — there is no single house to
+      // show, so send them there. Picking a single core again must not strand
+      // the teacher on a screen that no longer matches the selector.
+      if (val === 'all') registry.navigate('council');
+      else if (currentModuleId === 'council') registry.home();
       return;
     }
   });
@@ -462,4 +538,12 @@ export function initShell(ctx) {
   renderTopbar();
   renderFab();
   setFabAdminHidden(currentModuleId === 'admin');
+
+  // Remember when auto-backup last actually wrote a file, so the System check
+  // can honestly say "your last backup was 9 days ago" across reloads.
+  try { health.initBackupWatch(); } catch (e) { console.warn('shell: backup watch failed', e); }
+
+  // First-run wizard — shows once, on a browser that has never been set up,
+  // and never blocks the app (every step has "Skip for now").
+  try { maybeRunFirstRun(); } catch (e) { console.warn('shell: first-run wizard skipped', e); }
 }

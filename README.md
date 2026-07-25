@@ -44,7 +44,7 @@ Open **http://localhost:8000**. The app loads immediately and works fully offlin
 - **Tailwind CSS** (styling) — bundled locally in `vendor/`, so the board still looks right with no internet
 - **Google Maps 3D** (Place of the Week 3D explorer)
 - **YouTube embeds** (intro videos)
-- **PDF.js** (presentation decks)
+- **PDF.js** (presentation decks) — bundled locally in `vendor/`, works offline
 - **Dice/Globe** have offline fallbacks (simple animations instead of 3D)
 
 ---
@@ -133,7 +133,7 @@ The core of classroom management.
   - **Tag** (optional): Category (challenge, manual, etc.)
 - **Transaction Log**: Every point change is logged with timestamp, reason, and tag
   - View the log in the Houses module (newest first)
-  - Points can never be deleted; only an equal-and-opposite entry can fix a mistake
+  - Mis-awarded points can be undone: tap the ✕ on that row of the Transaction Log (House Points screen) and confirm
 - **Scoring Scopes**:
   - **Term Total**: All points from the start of the term (used for Magic Shop purchases, rankings)
   - **Week Total**: Points this week only (useful for weekly competitions or resets)
@@ -348,7 +348,7 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
 
 ### How to Fix a Mistake
 - There is no "undo" or "delete transaction" feature
-- **Procedure**: Add an equal-and-opposite manual entry
+- **Procedure**: Tap the ✕ beside the entry in the Transaction Log on the House Points screen and confirm. (Undo removes the points only — a completed quest stays completed, a purchased shield stays active.) An equal-and-opposite manual entry also works
   - Example: If you accidentally awarded 10 points, add a −10 entry with reason "Correction: removed erroneous award"
   - Both entries remain in the log, but the net effect is correct
 
@@ -362,7 +362,7 @@ See `data/schema.json` for the complete JSON Schema documenting the persisted st
 - **Tailwind CSS** (styling): bundled locally in `vendor/tailwind.js` — no internet needed
 - **Google Maps 3D**: Used in Place of the Week; falls back to a flat image if unavailable
 - **YouTube Embeds**: Intro videos; falls back to a bundled audio file if unavailable
-- **PDF.js**: Presentation decks; no fallback (skip if no internet)
+- **PDF.js**: Presentation decks — bundled in `vendor/pdf.min.mjs`, so decks render with no internet
 - **Dice 3D**: WebGL simulation; falls back to simple number + spin animation
 - **Globe (3D)**: Stage 0 POTW globe; falls back to emoji 🌍
 - **Web Audio**: SFX synthesizer (sword clashes, fanfare); works offline
@@ -487,7 +487,7 @@ A collaborative classroom experience designed to make learning engaging, fun, an
 - Web Audio API for dynamic sound
 - Three.js for 3D dice and globes
 - WebGL for interactive graphics
-- PDF.js for presentation decks
+- PDF.js for presentation decks (vendored locally)
 - ES6 modules for clean architecture
 
 Enjoy! 🏰⚔️

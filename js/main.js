@@ -14,6 +14,7 @@ import battle from './modules/battle.js';
 import shop from './modules/shop.js';
 import admin from './modules/admin.js';
 import quests from './modules/quests.js';
+import council from './modules/council.js';
 
 // Load Google Maps 3D library (async; POTW awaits customElements.whenDefined).
 // The teacher can supply their own key in Admin -> Settings; it overrides the bundled one.
@@ -26,7 +27,7 @@ document.head.appendChild(maps);
 const ctx = { store, registry, audio };
 registry.init(ctx);
 
-[dashboard, houses, potw, dice, battle, shop, admin, quests].forEach((m) => registry.register(m));
+[dashboard, houses, potw, dice, battle, shop, admin, quests, council].forEach((m) => registry.register(m));
 
 initShell(ctx);
 registry.home();

@@ -1,16 +1,31 @@
-// battle.js — "Battle Day!" cinematic mode.
+// battle.js — "Battle Day!" duel screen.
 // Landing (armed ignition button) -> full-screen cinematic overlay (#overlay-root)
-// -> Combat Mode (house battle cards, quick strikes, link to Magic Shop).
+// -> DUEL: challenger house (crest + points + its offensive magic items) on the
+// left, chosen opponent (crest + points + active defenses) on the right, and the
+// strike resolving centre screen between the two shields.
+// Every attack resolves through store.applyAttack — the one combat rule.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 
 const STYLE_ID = 'battle-styles';
+
+// Offensive item kinds a house can use from this screen.
+const OFFENSIVE_KINDS = new Set(['attack', 'steal', 'pierce']);
+
+// Sequence timings (ms). Every individual animation stays ≤900ms.
+const TRAVEL_MS = 280;   // projectile flight
+const IMPACT_MS = 620;   // flash / shake / damage-number lifetime
+const COUNT_MS = 450;    // point-total roll
+const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
 
 // ---- module-scoped lifecycle state -----------------------------------------
 let ctxRef = null;
 let rootEl = null;            // mount target inside #module-root
 let overlayEl = null;         // cinematic overlay inside #overlay-root
 let unsub = null;             // store subscription
-let view = 'landing';         // 'landing' | 'combat'
+let view = 'landing';         // 'landing' | 'duel'
+let targetId = null;          // chosen opponent (defender)
+let chooserOpen = false;      // "change attacker" picker showing
+let resolving = false;        // suspends subscribe re-renders mid-strike
 const timers = new Set();
 const fxNodes = new Set();    // transient combat-effect DOM nodes, force-cleaned on unmount
 
@@ -40,6 +55,13 @@ function spawnFx(parent, className, ttl, text) {
   return el;
 }
 
+// Same, but takes markup (multi-line outcome captions).
+function spawnFxHtml(parent, className, ttl, html) {
+  const el = spawnFx(parent, className, ttl);
+  if (el) el.innerHTML = html;
+  return el;
+}
+
 // Same, but never touches the parent's inline position — used for the
 // shared #overlay-root (lead-owned) since its fx children are all
 // position:fixed and don't need a positioned ancestor.
@@ -64,12 +86,28 @@ function fmtRemain(ms) {
   const totalMins = Math.max(1, Math.round(ms / 60000));
   const hrs = Math.floor(totalMins / 60);
   const mins = totalMins % 60;
-  return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  return hrs > 0 ? `${hrs}h ${mins}m left` : `${mins}m left`;
 }
 
 function houseImg(house, cls) {
-  return `<img src="${house.image}" alt="${esc(house.name)} artwork" class="${cls}"
+  return `<img src="${esc(house.image)}" alt="${esc(house.name)} crest" class="${cls}"
     onerror="this.onerror=null;this.style.display='none';" />`;
+}
+
+// The attacking house is whatever core the top bar is on — one obvious source
+// of truth, and picking an attacker here moves the top bar with it.
+function challengerHouse() {
+  return ctxRef ? ctxRef.store.getActiveHouse() : null;
+}
+
+// Items this house could actually use offensively. Anything malformed (a
+// teacher edit gone wrong in Admin) is skipped rather than rendered broken.
+function offensiveItems(store) {
+  return store.getShopItems()
+    .filter((it) => it && !it.mythicOnly && it.name && Number(it.cost) > 0
+      && it.effect && OFFENSIVE_KINDS.has(it.effect.kind) && Number(it.effect.amount) > 0)
+    .slice()
+    .sort((a, b) => a.cost - b.cost);
 }
 
 // =============================================================================
@@ -101,7 +139,7 @@ function injectStyles() {
   }
   .battle-landing-sub{color:#6b7280;font-size:clamp(.9rem,1.6vw,1.1rem);max-width:32rem;}
 
-  /* ---- cinematic overlay ---- */
+  /* ---- cinematic overlay (kept verbatim — the entry everyone loves) ---- */
   .battle-cinematic{position:fixed;inset:0;z-index:60;overflow:hidden;
     background:radial-gradient(ellipse at 50% 50%,rgba(127,29,29,.35),#000 78%);
     display:flex;align-items:center;justify-content:center;}
@@ -143,7 +181,7 @@ function injectStyles() {
     100%{opacity:1;transform:scale(1) rotate(0);}
   }
 
-  /* screen shake applied to #module-root during impact */
+  /* screen shake applied to #module-root during the cinematic slam */
   .battle-shake{animation:battle-shake-kf .5s cubic-bezier(.36,.07,.19,.97) both;}
   @keyframes battle-shake-kf{
     0%,100%{transform:translate(0,0);}
@@ -158,9 +196,12 @@ function injectStyles() {
     90%{transform:translate(-2px,1px);}
   }
 
-  /* ---- combat mode ---- */
-  .battle-combat{position:relative;height:100%;overflow-y:auto;overflow-x:hidden;
-    padding:1.25rem clamp(1rem,3vw,2rem) 2rem;
+  /* ---- duel screen ---- */
+  /* Fills the viewport: only the item list scrolls, so the strike buttons are
+     never below the fold on a smartboard. Narrow screens fall back to a plain
+     scrolling column (see the media query at the end of this block). */
+  .duel-root{position:relative;height:100%;display:flex;flex-direction:column;
+    overflow:hidden;padding:.85rem clamp(.75rem,2.2vw,1.75rem) 1rem;
     background:radial-gradient(ellipse at 50% -10%,rgba(153,27,27,.4),#0b0f19 55%),
       radial-gradient(ellipse at 100% 100%,rgba(127,29,29,.25),transparent 60%),#0b0f19;}
   .battle-embers{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;}
@@ -172,143 +213,17 @@ function injectStyles() {
     10%{opacity:.9;}
     100%{transform:translateY(-620px) translateX(var(--ember-drift,20px));opacity:0;}
   }
-  .battle-header{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;
-    text-align:center;gap:.35rem;margin-bottom:1.25rem;}
-  .battle-header-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
-    font-size:clamp(1.4rem,3.4vw,2.4rem);color:#fca5a5;letter-spacing:.06em;
-    text-shadow:0 0 26px rgba(239,68,68,.55);}
-  .battle-header-sub{color:#f87171;letter-spacing:.2em;text-transform:uppercase;
-    font-size:clamp(.75rem,1.3vw,.95rem);font-weight:700;}
 
-  .battle-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(2,1fr);
-    gap:1rem;max-width:1100px;margin:0 auto;}
-  @media (max-width:760px){.battle-grid{grid-template-columns:1fr;}}
-  .battle-card{position:relative;border-radius:1.25rem;border:2px solid var(--bc-accent,#374151);
-    background:linear-gradient(160deg,rgba(17,24,39,.92),rgba(11,15,25,.96));
-    padding:1rem;display:flex;flex-direction:column;gap:.65rem;
-    box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .18s ease,box-shadow .18s ease;}
-  .battle-card:hover{transform:translateY(-2px);}
-  .battle-card-top{display:flex;align-items:center;gap:.75rem;}
-  .battle-card-thumb{width:56px;height:56px;border-radius:.85rem;overflow:hidden;flex-shrink:0;
-    border:2px solid var(--bc-accent,#374151);background:#1f2937;}
-  .battle-card-thumb img{width:100%;height:100%;object-fit:cover;}
-  .battle-card-name{font-weight:800;font-size:1.15rem;color:var(--bc-accent,#f9fafb);}
-  .battle-badges{margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;}
-  .battle-shield-badge{font-size:.75rem;font-weight:700;padding:.3rem .55rem;
-    border-radius:999px;background:rgba(59,130,246,.2);border:1px solid rgba(96,165,250,.6);
-    color:#93c5fd;white-space:nowrap;}
-  .battle-reduce-badge{font-size:.75rem;font-weight:700;padding:.3rem .55rem;border-radius:999px;
-    background:rgba(180,83,9,.2);border:1px solid rgba(251,191,36,.6);color:#fde68a;
-    white-space:nowrap;transition:transform .2s ease;}
-  .battle-reduce-flare{animation:battle-reduce-flare-kf .7s ease;}
-  @keyframes battle-reduce-flare-kf{
-    0%{transform:scale(1);box-shadow:0 0 0 0 rgba(251,191,36,0);}
-    30%{transform:scale(1.25);box-shadow:0 0 16px 4px rgba(251,191,36,.7);}
-    100%{transform:scale(1);box-shadow:0 0 0 0 rgba(251,191,36,0);}
-  }
-  .battle-card-totals{display:flex;gap:.75rem;}
-  .battle-total-chip{flex:1;background:#111827;border:1px solid #374151;border-radius:.75rem;
-    padding:.5rem .6rem;text-align:center;}
-  .battle-total-chip .lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;}
-  .battle-total-chip .val{font-size:1.35rem;font-weight:800;color:#f9fafb;}
-  .battle-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:auto;}
-  .battle-strike-btn{min-height:52px;border-radius:.85rem;font-weight:800;font-size:.95rem;
-    cursor:pointer;border:none;transition:transform .12s ease,filter .12s ease;touch-action:manipulation;}
-  .battle-strike-btn:active{transform:scale(.94);}
-  .battle-strike-victory{background:linear-gradient(135deg,#16a34a,#15803d);color:#f0fdf4;}
-  .battle-strike-defeat{background:linear-gradient(135deg,#991b1b,#7f1d1d);color:#fee2e2;}
-  .battle-strike-btn:hover{filter:brightness(1.12);}
-  /* ---- combat effects: attack / victory / block (all ≤900ms, pointer-events:none) ---- */
-  .battle-fx-flash{position:absolute;inset:0;border-radius:1.25rem;background:rgba(239,68,68,.55);
-    opacity:0;pointer-events:none;z-index:6;animation:battle-fx-flash-kf .5s ease both;}
-  .battle-fx-flash-blue{background:rgba(96,165,250,.5);}
-  .battle-fx-flash-amber{background:rgba(217,119,6,.5);}
-  @keyframes battle-fx-flash-kf{0%{opacity:0;}15%{opacity:1;}100%{opacity:0;}}
-
-  .battle-fx-slash{position:absolute;inset:0;pointer-events:none;z-index:7;overflow:hidden;border-radius:1.25rem;}
-  .battle-fx-slash-mark{position:absolute;top:50%;left:50%;width:150%;height:6px;
-    background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent);
-    transform:translate(-50%,-50%) rotate(-35deg) scaleX(0);opacity:0;
-    animation:battle-fx-slash-kf .45s ease both;}
-  .battle-fx-slash-mark.s2{top:60%;animation-delay:.08s;}
-  @keyframes battle-fx-slash-kf{
-    0%{opacity:0;transform:translate(-50%,-50%) rotate(-35deg) scaleX(0);}
-    35%{opacity:1;transform:translate(-50%,-50%) rotate(-35deg) scaleX(1);}
-    100%{opacity:0;transform:translate(-50%,-50%) rotate(-35deg) scaleX(1);}
-  }
-
-  .battle-fx-hit{animation:battle-fx-hit-kf .45s cubic-bezier(.36,.07,.19,.97) both;}
-  @keyframes battle-fx-hit-kf{
-    0%,100%{transform:translate(0,0);}
-    20%{transform:translate(-6px,-2px);}
-    40%{transform:translate(5px,2px);}
-    60%{transform:translate(-4px,2px);}
-    80%{transform:translate(3px,-1px);}
-  }
-
-  .battle-fx-dmg-num{position:absolute;top:10%;left:50%;font-weight:800;font-size:1.7rem;color:#f87171;
-    text-shadow:0 2px 10px rgba(0,0,0,.8);pointer-events:none;z-index:8;
-    animation:battle-fx-dmg-arc .85s ease-out both;}
-  @keyframes battle-fx-dmg-arc{
-    0%{opacity:0;transform:translate(-50%,0) scale(.7) rotate(0deg);}
-    15%{opacity:1;transform:translate(-50%,-6px) scale(1.25) rotate(-6deg);}
-    60%{opacity:1;transform:translate(calc(-50% + 34px),-46px) scale(1) rotate(6deg);}
-    100%{opacity:0;transform:translate(calc(-50% + 54px),-78px) scale(.9) rotate(10deg);}
-  }
-
-  .battle-fx-burst{position:absolute;top:50%;left:50%;width:20px;height:20px;border-radius:50%;
-    transform:translate(-50%,-50%);pointer-events:none;z-index:6;
-    background:radial-gradient(circle,rgba(253,224,71,.9),rgba(245,158,11,.4) 55%,transparent 75%);
-    animation:battle-fx-burst-kf .6s ease-out both;}
-  @keyframes battle-fx-burst-kf{
-    0%{opacity:.9;width:20px;height:20px;}
-    100%{opacity:0;width:220px;height:220px;}
-  }
-
-  .battle-fx-rise-num{position:absolute;top:30%;left:50%;font-weight:800;font-size:1.7rem;color:#fde68a;
-    text-shadow:0 2px 10px rgba(0,0,0,.7);pointer-events:none;z-index:8;
-    animation:battle-fx-rise-kf .9s ease-out both;}
-  @keyframes battle-fx-rise-kf{
-    0%{opacity:0;transform:translate(-50%,0) scale(.75);}
-    20%{opacity:1;transform:translate(-50%,-10px) scale(1.2);}
-    100%{opacity:0;transform:translate(-50%,-70px) scale(1);}
-  }
-
-  .battle-fx-shield-ring{position:absolute;top:50%;left:50%;width:40px;height:40px;
-    border:4px solid rgba(147,197,253,.9);border-radius:50%;
-    transform:translate(-50%,-50%) scale(.3);opacity:0;pointer-events:none;z-index:7;
-    box-shadow:0 0 24px rgba(96,165,250,.6);
-    animation:battle-fx-ring-kf .7s cubic-bezier(.2,.8,.3,1) both;}
-  @keyframes battle-fx-ring-kf{
-    0%{opacity:.9;transform:translate(-50%,-50%) scale(.3);}
-    70%{opacity:.5;}
-    100%{opacity:0;transform:translate(-50%,-50%) scale(2.6);}
-  }
-
-  .battle-fx-blocked-label{position:absolute;left:50%;bottom:8%;transform:translate(-50%,0);
-    background:rgba(15,23,42,.9);border:1px solid rgba(147,197,253,.7);color:#bfdbfe;
-    font-weight:800;font-size:.78rem;padding:.4rem .7rem;border-radius:.6rem;white-space:nowrap;
-    pointer-events:none;z-index:9;text-align:center;max-width:92%;
-    animation:battle-fx-label-kf .9s ease both;}
-  @keyframes battle-fx-label-kf{
-    0%{opacity:0;transform:translate(-50%,8px) scale(.85);}
-    15%{opacity:1;transform:translate(-50%,0) scale(1);}
-    80%{opacity:1;}
-    100%{opacity:0;transform:translate(-50%,-6px) scale(.97);}
-  }
-
-  .battle-fx-vignette{position:fixed;inset:0;z-index:65;pointer-events:none;
-    animation:battle-fx-vignette-kf .7s ease both;}
-  @keyframes battle-fx-vignette-kf{
-    0%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
-    35%{box-shadow:inset 0 0 100px 22px rgba(239,68,68,.45);}
-    100%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
-  }
-
-  .battle-action-row{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:1rem;
-    justify-content:center;margin:1.75rem auto 0;max-width:1100px;}
-  .battle-shop-btn,.battle-end-btn{min-height:56px;padding:0 1.75rem;border-radius:1rem;
-    font-weight:800;font-size:1.05rem;cursor:pointer;border:2px solid transparent;
+  .duel-topbar{position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+    gap:1rem;flex-wrap:wrap;max-width:1560px;margin:0 auto .85rem;}
+  .duel-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-size:clamp(1.2rem,2.6vw,1.9rem);color:#fca5a5;letter-spacing:.05em;
+    text-shadow:0 0 26px rgba(239,68,68,.55);line-height:1.1;}
+  .duel-sub{color:#f87171;letter-spacing:.2em;text-transform:uppercase;
+    font-size:clamp(.65rem,1.1vw,.8rem);font-weight:700;}
+  .duel-topbar-actions{display:flex;gap:.6rem;flex-wrap:wrap;}
+  .battle-shop-btn,.battle-end-btn{min-height:52px;padding:0 1.2rem;border-radius:.9rem;
+    font-weight:800;font-size:1rem;cursor:pointer;border:2px solid transparent;
     transition:transform .15s ease,filter .15s ease;touch-action:manipulation;}
   .battle-shop-btn:active,.battle-end-btn:active{transform:scale(.96);}
   .battle-shop-btn{background:linear-gradient(135deg,#a855f7,#7e22ce);color:#faf5ff;
@@ -316,10 +231,271 @@ function injectStyles() {
   .battle-end-btn{background:transparent;border-color:#4b5563;color:#e5e7eb;}
   .battle-end-btn:hover{border-color:#ef4444;color:#fca5a5;}
 
+  /* three columns: challenger | arena | defender */
+  .duel-stage{position:relative;z-index:1;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(190px,clamp(190px,19vw,300px)) minmax(0,1fr);
+    gap:clamp(.6rem,1.4vw,1.25rem);max-width:1560px;width:100%;margin:0 auto;align-items:stretch;
+    flex:1 1 auto;min-height:0;}
+
+  .duel-side{position:relative;height:100%;min-height:0;overflow-y:auto;
+    border-radius:1.25rem;border:2px solid var(--side-accent,#374151);
+    background:linear-gradient(160deg,rgba(17,24,39,.94),rgba(11,15,25,.97));
+    padding:clamp(.5rem,1vw,.9rem);display:flex;flex-direction:column;align-items:center;
+    gap:.38rem;box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 30px -12px var(--side-accent,#374151);}
+  .duel-role{flex:0 0 auto;font-size:.68rem;font-weight:800;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--side-accent,#9ca3af);opacity:.9;}
+  .duel-points-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:#9ca3af;text-align:center;}
+  .duel-points-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
+    font-variant-numeric:tabular-nums;line-height:1;
+    font-size:clamp(1.7rem,3.6vw,2.8rem);text-shadow:0 0 26px rgba(253,230,138,.35);}
+  /* Sized off viewport HEIGHT and allowed to shrink — it is the element that
+     gives way first so the strike list never falls below the fold. */
+  .duel-crest{position:relative;flex:0 1 auto;height:clamp(90px,20vh,240px);min-height:88px;
+    aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
+  .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
+    filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}
+  .duel-name{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;text-align:center;line-height:1.1;
+    font-size:clamp(1.05rem,2vw,1.5rem);color:var(--side-accent,#f9fafb);}
+  .duel-section-lbl{flex:0 0 auto;width:100%;text-align:center;font-size:.7rem;font-weight:800;letter-spacing:.16em;
+    text-transform:uppercase;color:#9ca3af;border-top:1px solid #374151;padding-top:.5rem;margin-top:.15rem;}
+  .duel-swap-btn{flex:0 0 auto;min-height:36px;padding:0 .8rem;border-radius:.7rem;background:transparent;
+    border:1px solid #4b5563;color:#9ca3af;font-weight:700;font-size:.75rem;cursor:pointer;
+    touch-action:manipulation;}
+  .duel-swap-btn:hover{border-color:var(--side-accent,#9ca3af);color:#e5e7eb;}
+
+  /* offensive item list */
+  .duel-items{width:100%;flex:1 1 auto;min-height:92px;display:grid;align-content:start;
+    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;
+    overflow-y:auto;padding-right:.15rem;}
+  .duel-item-cell{display:flex;flex-direction:column;min-width:0;}
+  .duel-item{width:100%;min-height:52px;display:flex;align-items:center;gap:.5rem;text-align:left;
+    border-radius:.85rem;border:2px solid #4b5563;background:#111827;color:#f9fafb;
+    padding:.4rem .55rem;cursor:pointer;touch-action:manipulation;
+    transition:transform .12s ease,border-color .15s ease,filter .15s ease;}
+  .duel-item:hover:not(:disabled){border-color:#ef4444;filter:brightness(1.12);}
+  .duel-item:active:not(:disabled){transform:scale(.97);}
+  .duel-item:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.4);}
+  .duel-item-emoji{font-size:1.6rem;line-height:1;flex-shrink:0;width:2rem;text-align:center;}
+  .duel-item-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem;}
+  .duel-item-name{font-weight:800;font-size:.9rem;line-height:1.15;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .duel-item-meta{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;}
+  .duel-item-dmg{font-size:.78rem;font-weight:800;color:#fca5a5;}
+  .duel-item-kind{font-size:.65rem;font-weight:700;letter-spacing:.04em;color:#c4b5fd;
+    background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.35);
+    border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
+  .duel-item-cost{flex-shrink:0;font-weight:800;font-size:.8rem;color:#1e1b3a;background:#fde68a;
+    border-radius:999px;padding:.2rem .5rem;white-space:nowrap;}
+  .duel-item-reason{font-size:.7rem;font-weight:700;color:#9ca3af;margin:-.25rem 0 .15rem .1rem;}
+  .duel-item-note{font-size:.7rem;font-weight:700;margin:-.25rem 0 .15rem .1rem;}
+  .duel-note-block{color:#93c5fd;}
+  .duel-note-half{color:#fde68a;}
+  .duel-note-pierce{color:#c4b5fd;}
+  .duel-empty{width:100%;text-align:center;color:#9ca3af;font-style:italic;font-size:.85rem;
+    padding:1rem .5rem;border:1px dashed #4b5563;border-radius:.85rem;}
+
+  /* defender: active defenses */
+  .duel-def{flex:0 0 auto;width:100%;display:flex;flex-direction:column;gap:.4rem;}
+  .duel-def-row{display:flex;align-items:center;gap:.5rem;border-radius:.8rem;
+    padding:.55rem .7rem;font-weight:700;font-size:.88rem;line-height:1.25;}
+  .duel-def-row b{font-weight:800;}
+  .duel-def-shield{background:rgba(59,130,246,.16);border:1px solid rgba(96,165,250,.6);color:#bfdbfe;}
+  .duel-def-reduce{background:rgba(180,83,9,.2);border:1px solid rgba(251,191,36,.6);color:#fde68a;
+    transition:transform .2s ease;}
+  .duel-def-none{background:rgba(127,29,29,.18);border:1px dashed rgba(239,68,68,.5);color:#fca5a5;
+    justify-content:center;}
+  .duel-reduce-flare{animation:duel-reduce-flare-kf .7s ease;}
+  @keyframes duel-reduce-flare-kf{
+    0%{transform:scale(1);box-shadow:0 0 0 0 rgba(251,191,36,0);}
+    30%{transform:scale(1.08);box-shadow:0 0 20px 5px rgba(251,191,36,.7);}
+    100%{transform:scale(1);box-shadow:0 0 0 0 rgba(251,191,36,0);}
+  }
+
+  /* opponent picker (right column before a target is chosen) */
+  .duel-pick-prompt{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fca5a5;
+    font-size:clamp(1rem,1.8vw,1.3rem);text-align:center;line-height:1.2;}
+  .duel-pick-hint{font-size:.78rem;color:#9ca3af;text-align:center;margin-top:-.2rem;}
+  .duel-pick{width:100%;display:flex;flex-direction:column;gap:.55rem;margin-top:.3rem;}
+  .duel-pick-btn{display:flex;align-items:center;gap:.75rem;min-height:78px;width:100%;
+    border-radius:1rem;border:2px solid var(--pick-accent,#374151);background:#111827;
+    padding:.55rem .8rem;cursor:pointer;text-align:left;touch-action:manipulation;
+    transition:transform .12s ease,box-shadow .15s ease,filter .15s ease;}
+  .duel-pick-btn:hover{filter:brightness(1.14);box-shadow:0 0 0 3px var(--pick-soft,rgba(55,65,81,.5));}
+  .duel-pick-btn:active{transform:scale(.97);}
+  .duel-pick-crest{width:54px;height:54px;object-fit:contain;flex-shrink:0;}
+  .duel-pick-info{flex:1;min-width:0;}
+  .duel-pick-name{font-weight:800;font-size:1.05rem;color:var(--pick-accent,#f9fafb);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .duel-pick-def{font-size:.72rem;font-weight:700;color:#93c5fd;}
+  .duel-pick-def-none{color:#6b7280;}
+  .duel-pick-pts{flex-shrink:0;text-align:right;}
+  .duel-pick-pts .v{font-weight:800;font-size:1.3rem;color:#fde68a;font-variant-numeric:tabular-nums;}
+  .duel-pick-pts .l{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;}
+
+  /* centre arena — where the strike resolves */
+  .duel-arena{position:relative;height:100%;min-height:clamp(150px,22vh,260px);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:.5rem;text-align:center;
+    padding:.5rem;}
+  .duel-vs{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#7f1d1d;
+    font-size:clamp(2.4rem,5.5vw,4rem);line-height:1;
+    text-shadow:0 0 30px rgba(239,68,68,.45);}
+  .duel-arena-hint{color:#9ca3af;font-size:.82rem;max-width:15rem;line-height:1.35;}
+
+  /* projectile: fixed-position so it flies between the two crests wherever they sit */
+  .duel-proj{position:fixed;z-index:70;pointer-events:none;font-size:2.1rem;line-height:1;
+    width:44px;height:44px;margin:-22px 0 0 -22px;display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 0 12px rgba(253,224,71,.8));
+    animation:duel-proj-kf var(--travel,280ms) cubic-bezier(.35,0,.75,1) both;}
+  @keyframes duel-proj-kf{
+    0%{opacity:0;transform:translate(0,0) scale(.5) rotate(-20deg);}
+    18%{opacity:1;transform:translate(calc(var(--dx)*.18),calc(var(--dy)*.18)) scale(1) rotate(0deg);}
+    100%{opacity:1;transform:translate(var(--dx),var(--dy)) scale(1.15) rotate(18deg);}
+  }
+  .duel-proj-ghost{opacity:.6;filter:drop-shadow(0 0 14px rgba(196,181,253,.9)) blur(.4px);}
+  .duel-proj-stopped{animation:duel-proj-stop-kf .22s ease both;}
+  @keyframes duel-proj-stop-kf{
+    0%{opacity:1;transform:translate(var(--dx),var(--dy)) scale(1.15);}
+    100%{opacity:0;transform:translate(calc(var(--dx) - 26px),calc(var(--dy) - 14px)) scale(.6) rotate(-40deg);}
+  }
+
+  /* impact fx on a crest */
+  .duel-fx-flash{position:absolute;inset:-8%;border-radius:50%;opacity:0;pointer-events:none;z-index:6;
+    animation:duel-fx-flash-kf .5s ease both;}
+  .duel-fx-flash-red{background:radial-gradient(circle,rgba(255,255,255,.9),rgba(239,68,68,.65) 55%,transparent 75%);}
+  .duel-fx-flash-blue{background:radial-gradient(circle,rgba(255,255,255,.95),rgba(96,165,250,.6) 55%,transparent 75%);}
+  .duel-fx-flash-amber{background:radial-gradient(circle,rgba(255,255,255,.85),rgba(217,119,6,.6) 55%,transparent 75%);}
+  @keyframes duel-fx-flash-kf{0%{opacity:0;}15%{opacity:1;}100%{opacity:0;}}
+
+  .duel-crest-shake{animation:duel-crest-shake-kf .45s cubic-bezier(.36,.07,.19,.97) both;}
+  @keyframes duel-crest-shake-kf{
+    0%,100%{transform:translate(0,0) rotate(0);}
+    15%{transform:translate(-9px,-3px) rotate(-3deg);}
+    30%{transform:translate(8px,3px) rotate(3deg);}
+    45%{transform:translate(-7px,3px) rotate(-2deg);}
+    60%{transform:translate(6px,-2px) rotate(2deg);}
+    80%{transform:translate(-3px,1px) rotate(-1deg);}
+  }
+
+  .duel-fx-dmg{position:absolute;top:2%;left:50%;font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-size:clamp(1.9rem,3.4vw,3rem);color:#f87171;white-space:nowrap;pointer-events:none;z-index:9;
+    text-shadow:0 3px 14px rgba(0,0,0,.9),0 0 26px rgba(239,68,68,.7);
+    animation:duel-fx-dmg-kf .62s ease-out both;}
+  @keyframes duel-fx-dmg-kf{
+    0%{opacity:0;transform:translate(-50%,0) scale(.7);}
+    22%{opacity:1;transform:translate(-50%,-10px) scale(1.25);}
+    100%{opacity:0;transform:translate(-50%,-72px) scale(1);}
+  }
+
+  .duel-fx-ring{position:absolute;top:50%;left:50%;width:60%;height:60%;
+    border:5px solid rgba(147,197,253,.95);border-radius:50%;
+    transform:translate(-50%,-50%) scale(.35);opacity:0;pointer-events:none;z-index:7;
+    box-shadow:0 0 34px rgba(96,165,250,.8),inset 0 0 26px rgba(96,165,250,.5);
+    animation:duel-fx-ring-kf .62s cubic-bezier(.2,.8,.3,1) both;}
+  @keyframes duel-fx-ring-kf{
+    0%{opacity:.95;transform:translate(-50%,-50%) scale(.35);}
+    70%{opacity:.55;}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(2.1);}
+  }
+
+  /* pierce: the defender's shield ghost visibly fails as the strike passes through */
+  .duel-fx-ghost{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    font-size:clamp(2.4rem,5vw,4rem);pointer-events:none;z-index:7;opacity:0;
+    animation:duel-fx-ghost-kf .6s ease both;}
+  @keyframes duel-fx-ghost-kf{
+    0%{opacity:0;transform:translate(-50%,-50%) scale(.8);filter:none;}
+    30%{opacity:.9;transform:translate(-50%,-50%) scale(1.1);filter:none;}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1.5);filter:grayscale(1) blur(3px);}
+  }
+
+  /* outcome caption between the two shields */
+  .duel-outcome{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:max-content;max-width:min(30rem,86vw);border-radius:1rem;padding:.8rem 1.1rem;
+    background:rgba(11,15,25,.94);pointer-events:none;z-index:12;text-align:center;
+    box-shadow:0 16px 50px rgba(0,0,0,.7);animation:duel-outcome-kf .25s cubic-bezier(.34,1.56,.64,1) both;}
+  @keyframes duel-outcome-kf{
+    0%{opacity:0;transform:translate(-50%,-50%) scale(.8);}
+    100%{opacity:1;transform:translate(-50%,-50%) scale(1);}
+  }
+  .duel-outcome .oc-head{font-family:'Cinzel',Georgia,serif;font-weight:800;line-height:1.1;
+    font-size:clamp(1.15rem,2.4vw,1.75rem);}
+  .duel-outcome .oc-body{font-size:.85rem;font-weight:700;color:#e5e7eb;margin-top:.3rem;line-height:1.3;}
+  .duel-outcome .oc-math{font-family:'Cinzel',Georgia,serif;font-weight:800;margin-top:.25rem;
+    font-size:clamp(1.05rem,2vw,1.45rem);color:#fde68a;}
+  .duel-outcome-hit{border:2px solid #ef4444;}
+  .duel-outcome-hit .oc-head{color:#fca5a5;text-shadow:0 0 22px rgba(239,68,68,.6);}
+  .duel-outcome-blocked{border:2px solid #60a5fa;}
+  .duel-outcome-blocked .oc-head{color:#bfdbfe;text-shadow:0 0 22px rgba(96,165,250,.6);}
+  .duel-outcome-reduced{border:2px solid #f59e0b;}
+  .duel-outcome-reduced .oc-head{color:#fde68a;text-shadow:0 0 22px rgba(245,158,11,.6);}
+  .duel-outcome-pierced{border:2px solid #a78bfa;}
+  .duel-outcome-pierced .oc-head{color:#ddd6fe;text-shadow:0 0 22px rgba(167,139,250,.6);}
+
+  .battle-fx-vignette{position:fixed;inset:0;z-index:65;pointer-events:none;
+    animation:battle-fx-vignette-kf .7s ease both;}
+  @keyframes battle-fx-vignette-kf{
+    0%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
+    35%{box-shadow:inset 0 0 110px 26px rgba(239,68,68,.5);}
+    100%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
+  }
+
+  /* teacher scoring row — deliberately quieter than the duel above it */
+  .duel-teacher{position:relative;z-index:1;flex:0 0 auto;width:100%;max-width:1560px;margin:.8rem auto 0;
+    border:1px dashed #4b5563;border-radius:1rem;padding:.7rem .9rem;background:rgba(17,24,39,.55);}
+  .duel-teacher-title{font-size:.68rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+    color:#9ca3af;text-align:center;margin-bottom:.55rem;}
+  .duel-teacher-title span{display:block;letter-spacing:.02em;text-transform:none;font-weight:600;
+    font-size:.72rem;color:#6b7280;margin-top:.15rem;}
+  .duel-teacher-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem;}
+  @media (max-width:760px){.duel-teacher-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .duel-tchip{position:relative;display:flex;align-items:center;gap:.5rem;border-radius:.85rem;
+    border:1px solid var(--tc-accent,#374151);background:#111827;padding:.4rem .5rem;min-width:0;}
+  .duel-tchip-crest{width:30px;height:30px;object-fit:contain;flex-shrink:0;}
+  .duel-tchip-info{flex:1;min-width:0;}
+  .duel-tchip-name{font-weight:800;font-size:.8rem;color:var(--tc-accent,#f9fafb);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .duel-tchip-pts{font-size:.7rem;color:#fde68a;font-weight:700;font-variant-numeric:tabular-nums;}
+  .duel-tchip-btns{display:flex;gap:.3rem;flex-shrink:0;}
+  .duel-tbtn{min-width:48px;min-height:48px;border-radius:.7rem;border:none;font-weight:800;
+    font-size:.82rem;cursor:pointer;touch-action:manipulation;transition:transform .12s ease,filter .12s ease;}
+  .duel-tbtn:active{transform:scale(.93);}
+  .duel-tbtn:hover{filter:brightness(1.14);}
+  .duel-tbtn-up{background:linear-gradient(135deg,#16a34a,#15803d);color:#f0fdf4;}
+  .duel-tbtn-down{background:linear-gradient(135deg,#991b1b,#7f1d1d);color:#fee2e2;}
+  .duel-fx-chip{position:absolute;top:-4px;left:50%;font-weight:800;font-size:.95rem;white-space:nowrap;
+    pointer-events:none;z-index:12;text-shadow:0 2px 8px rgba(0,0,0,.85);
+    animation:duel-fx-chip-kf .85s ease-out both;}
+  .duel-fx-chip-bad{color:#f87171;}
+  .duel-fx-chip-good{color:#4ade80;}
+  .duel-fx-chip-blue{color:#bfdbfe;}
+  @keyframes duel-fx-chip-kf{
+    0%{opacity:0;transform:translate(-50%,0) scale(.75);}
+    20%{opacity:1;transform:translate(-50%,-8px) scale(1.15);}
+    100%{opacity:0;transform:translate(-50%,-40px) scale(1);}
+  }
+
+  /* toast (unaffordable / no target) */
+  .duel-toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:72;
+    background:#7f1d1d;border:2px solid #ef4444;color:#fee2e2;font-weight:800;
+    padding:.75rem 1.3rem;border-radius:.85rem;box-shadow:0 12px 30px rgba(0,0,0,.6);pointer-events:none;
+    animation:duel-toast-kf .25s ease both;}
+  @keyframes duel-toast-kf{0%{opacity:0;transform:translate(-50%,10px);}100%{opacity:1;transform:translate(-50%,0);}}
+
+  /* Narrow / portrait: stack the three columns and let the page scroll. */
+  @media (max-width:1080px){
+    .duel-root{overflow-y:auto;display:block;}
+    .duel-stage{grid-template-columns:1fr;}
+    .duel-side{height:auto;overflow:visible;}
+    .duel-items{max-height:clamp(170px,30vh,380px);}
+    .duel-arena{height:auto;}
+  }
+
   @media (prefers-reduced-motion:reduce){
     .battle-ignite-btn,.battle-sword-a,.battle-sword-b,.battle-vignette,.battle-flash,
     .battle-stamp span,.battle-shake,.battle-ember,
-    .battle-fx-dmg-num,.battle-fx-rise-num,.battle-fx-blocked-label,.battle-reduce-flare{animation:none;}
+    .duel-proj,.duel-proj-stopped,.duel-fx-flash,.duel-crest-shake,.duel-fx-ring,.duel-fx-ghost,
+    .duel-fx-dmg,.duel-fx-chip,.duel-outcome,.duel-toast,.duel-reduce-flare,
+    .battle-fx-vignette{animation:none;}
   }
   `;
   document.head.appendChild(style);
@@ -331,18 +507,21 @@ function injectStyles() {
 function renderLanding() {
   if (!rootEl) return;
   view = 'landing';
+  targetId = null;
+  chooserOpen = false;
   rootEl.innerHTML = `
     <div class="battle-landing">
       <div class="battle-landing-eyebrow">Friday Showdown</div>
       <div class="battle-landing-title">The houses stand ready&hellip;</div>
       <button type="button" class="battle-ignite-btn font-display">⚔️ BATTLE DAY!</button>
-      <p class="battle-landing-sub">Tap to ignite Combat Mode — double points, quick strikes, and the Magic Shop are all live.</p>
+      <p class="battle-landing-sub">Tap to ignite Combat Mode — one house picks an opponent, spends its magic items, and strikes.</p>
     </div>`;
-  rootEl.querySelector('.battle-ignite-btn').addEventListener('click', triggerCinematic);
+  const btn = rootEl.querySelector('.battle-ignite-btn');
+  if (btn) btn.addEventListener('click', triggerCinematic);
 }
 
 // =============================================================================
-// CINEMATIC ENTRY (overlay in #overlay-root)
+// CINEMATIC ENTRY (overlay in #overlay-root) — unchanged, then lands on the duel
 // =============================================================================
 function triggerCinematic() {
   const host = document.getElementById('overlay-root');
@@ -376,14 +555,11 @@ function triggerCinematic() {
 
   later(() => {
     if (overlayEl) { overlayEl.remove(); overlayEl = null; }
-    renderCombat();
+    renderDuel();
   }, 2500);
 }
 
-// =============================================================================
-// COMBAT MODE VIEW
-// =============================================================================
-function emberField(count = 16) {
+function emberField(count = 14) {
   let html = '';
   for (let i = 0; i < count; i++) {
     const left = Math.round(Math.random() * 100);
@@ -398,161 +574,548 @@ function emberField(count = 16) {
 }
 
 // =============================================================================
-// COMBAT EFFECTS — attack landing, victory award, shield block
-// (pure CSS/DOM, ≤900ms, pointer-events:none, respects prefers-reduced-motion,
-// tracked in fxNodes for guaranteed cleanup on unmount)
+// DUEL VIEW — markup
 // =============================================================================
+
+// Points block that sits ABOVE each crest (the teacher's layout).
+function pointsBlockHtml(store, house, side) {
+  return `
+    <div class="duel-points-lbl">Points</div>
+    <div class="duel-points-val" data-points="${side}">${store.getTotal(house.id, 'term')}</div>`;
+}
+
+function crestHtml(house, side) {
+  return `<div class="duel-crest" data-crest="${side}">${houseImg(house, '')}</div>`;
+}
+
+function kindTag(kind) {
+  return { attack: 'Attack', steal: 'Steal', pierce: 'Pierce' }[kind] || kind;
+}
+
+// One offensive option, with cost, damage, and a plain-English reason when it
+// can't be used right now.
+function itemRowHtml(store, item, treasury, target) {
+  const kind = item.effect.kind;
+  const amount = item.effect.amount;
+  const short = treasury - item.cost;
+  const affordable = short >= 0;
+  const disabled = !affordable || !target;
+  const dmgText = kind === 'steal' ? `Steal ${amount} pts` : `−${amount} pts`;
+
+  let reason = '';
+  if (!affordable) reason = `<div class="duel-item-reason">🔒 Needs ${Math.abs(short)} more points</div>`;
+  else if (!target) reason = `<div class="duel-item-reason">🎯 Choose an opponent first</div>`;
+
+  let note = '';
+  if (affordable && target) {
+    if (kind === 'pierce' && (store.isShielded(target.id) || store.hasReduction(target.id))) {
+      note = `<div class="duel-item-note duel-note-pierce">🫥 Ignores their defenses — full damage</div>`;
+    } else if (store.isShielded(target.id)) {
+      note = `<div class="duel-item-note duel-note-block">🛡️ Their shield will block this</div>`;
+    } else if (store.hasReduction(target.id)) {
+      note = `<div class="duel-item-note duel-note-half">🕵️ Halved by their relic → ${Math.max(1, Math.round(amount / 2))} pts</div>`;
+    }
+  }
+
+  return `
+    <div class="duel-item-cell">
+    <button type="button" class="duel-item" data-strike-item="${esc(item.id)}" ${disabled ? 'disabled' : ''}
+      title="${esc(item.desc || item.name)}">
+      <span class="duel-item-emoji">${esc(item.emoji || '⚔️')}</span>
+      <span class="duel-item-body">
+        <span class="duel-item-name">${esc(item.name)}</span>
+        <span class="duel-item-meta">
+          <span class="duel-item-dmg">${dmgText}</span>
+          <span class="duel-item-kind">${kindTag(kind)}</span>
+        </span>
+      </span>
+      <span class="duel-item-cost">${item.cost} pts</span>
+    </button>
+    ${reason}${note}
+    </div>`;
+}
+
+function challengerSideHtml(store, challenger, target) {
+  const treasury = store.getTotal(challenger.id, 'term');
+  const items = offensiveItems(store);
+  const list = items.length
+    ? items.map((it) => itemRowHtml(store, it, treasury, target)).join('')
+    : `<div class="duel-empty">No offensive items in the Magic Shop yet — add some in Admin.</div>`;
+
+  return `
+    <section class="duel-side" style="--side-accent:${esc(challenger.accent)}">
+      <div class="duel-role">⚔️ Challenger — attacking</div>
+      ${pointsBlockHtml(store, challenger, 'challenger')}
+      ${crestHtml(challenger, 'challenger')}
+      <div class="duel-name">${esc(challenger.name)}</div>
+      <button type="button" class="duel-swap-btn" data-open-chooser>⇄ Change attacker</button>
+      <div class="duel-section-lbl">Magic items — pick your strike</div>
+      <div class="duel-items">${list}</div>
+    </section>`;
+}
+
+function defenseListHtml(store, house) {
+  const rows = [];
+  if (store.isShielded(house.id)) {
+    rows.push(`<div class="duel-def-row duel-def-shield">🛡️ <b>Shield up</b> — blocks attacks · ${esc(fmtRemain(store.shieldRemainingMs(house.id)) || '')}</div>`);
+  }
+  if (store.hasReduction(house.id)) {
+    rows.push(`<div class="duel-def-row duel-def-reduce" data-reduce-badge>🕵️ <b>Damage halved</b> — relic active · ${esc(fmtRemain(store.reductionRemainingMs(house.id)) || '')}</div>`);
+  }
+  if (!rows.length) rows.push(`<div class="duel-def-row duel-def-none">💥 Undefended — a strike lands in full</div>`);
+  return `<div class="duel-def">${rows.join('')}</div>`;
+}
+
+function defenderSideHtml(store, target) {
+  return `
+    <section class="duel-side" style="--side-accent:${esc(target.accent)}">
+      <div class="duel-role">🛡️ Defender — under attack</div>
+      ${pointsBlockHtml(store, target, 'defender')}
+      ${crestHtml(target, 'defender')}
+      <div class="duel-name">${esc(target.name)}</div>
+      <button type="button" class="duel-swap-btn" data-clear-target>⇄ Change opponent</button>
+      <div class="duel-section-lbl">Their active defenses</div>
+      ${defenseListHtml(store, target)}
+    </section>`;
+}
+
+// Big touch targets for choosing who to attack (or who attacks).
+function housePickHtml(store, houses, attr, { showDefenses = true } = {}) {
+  return `<div class="duel-pick">${houses.map((h) => {
+    const shielded = store.isShielded(h.id);
+    const reduced = store.hasReduction(h.id);
+    const def = shielded ? '🛡️ Shielded' : reduced ? '🕵️ Damage halved' : 'Undefended';
+    return `
+      <button type="button" class="duel-pick-btn" ${attr}="${h.id}"
+        style="--pick-accent:${esc(h.accent)};--pick-soft:${esc(h.accentSoft || 'rgba(55,65,81,.5)')}">
+        ${houseImg(h, 'duel-pick-crest')}
+        <span class="duel-pick-info">
+          <span class="duel-pick-name">${esc(h.name)}</span>
+          ${showDefenses ? `<span class="duel-pick-def ${shielded || reduced ? '' : 'duel-pick-def-none'}">${def}</span>` : ''}
+        </span>
+        <span class="duel-pick-pts"><span class="v">${store.getTotal(h.id, 'term')}</span><br><span class="l">pts</span></span>
+      </button>`;
+  }).join('')}</div>`;
+}
+
+function targetPickerHtml(store, challenger) {
+  const others = Object.values(store.HOUSES).filter((h) => h.id !== challenger.id);
+  return `
+    <section class="duel-side" style="--side-accent:#4b5563">
+      <div class="duel-role">🎯 Choose an opponent</div>
+      <div class="duel-pick-prompt">Who does ${esc(challenger.name)} attack?</div>
+      <div class="duel-pick-hint">Tap a house to see their points and defenses.</div>
+      ${housePickHtml(store, others, 'data-pick-target')}
+    </section>`;
+}
+
+function chooserHtml(store) {
+  return `
+    <section class="duel-side" style="--side-accent:#4b5563">
+      <div class="duel-role">⚔️ Who is attacking?</div>
+      <div class="duel-pick-prompt">Choose the challenging house</div>
+      <div class="duel-pick-hint">This also switches the top bar to that house.</div>
+      ${housePickHtml(store, Object.values(store.HOUSES), 'data-pick-challenger', { showDefenses: false })}
+    </section>`;
+}
+
+function arenaHtml(challenger, target) {
+  const hint = !challenger ? 'Pick the attacking house to begin.'
+    : !target ? 'Now choose who they attack →'
+    : 'Pick a magic item on the left to strike.';
+  return `
+    <div class="duel-arena" data-arena>
+      <div class="duel-vs font-display">VS</div>
+      <div class="duel-arena-hint">${esc(hint)}</div>
+    </div>`;
+}
+
+function teacherRowHtml(store) {
+  const houses = Object.values(store.HOUSES);
+  return `
+    <div class="duel-teacher">
+      <div class="duel-teacher-title">👩‍🏫 Teacher scoring — not a house attack
+        <span>Award or deduct directly. Deductions still respect shields and relics.</span>
+      </div>
+      <div class="duel-teacher-grid">
+        ${houses.map((h) => `
+          <div class="duel-tchip" data-tchip="${h.id}" style="--tc-accent:${esc(h.accent)}">
+            ${houseImg(h, 'duel-tchip-crest')}
+            <div class="duel-tchip-info">
+              <div class="duel-tchip-name">${esc(h.name)}</div>
+              <div class="duel-tchip-pts">${store.getTotal(h.id, 'term')} pts</div>
+            </div>
+            <div class="duel-tchip-btns">
+              <button type="button" class="duel-tbtn duel-tbtn-up" data-teacher="10" data-house="${h.id}" title="Victory +10">+10</button>
+              <button type="button" class="duel-tbtn duel-tbtn-down" data-teacher="-10" data-house="${h.id}" title="Defeat −10">−10</button>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderDuel() {
+  if (!rootEl || resolving) return;
+  view = 'duel';
+  const store = ctxRef.store;
+  const challenger = challengerHouse();
+
+  // A target that is no longer valid (house became the challenger) is dropped.
+  if (challenger && targetId === challenger.id) targetId = null;
+  const target = targetId != null ? store.HOUSES[targetId] : null;
+
+  const showChooser = !challenger || chooserOpen;
+  const leftHtml = showChooser ? chooserHtml(store) : challengerSideHtml(store, challenger, target);
+  const rightHtml = showChooser ? `<section class="duel-side" style="--side-accent:#374151">
+      <div class="duel-role">🛡️ Defender</div>
+      <div class="duel-pick-hint">Waiting for a challenger&hellip;</div>
+    </section>`
+    : (target ? defenderSideHtml(store, target) : targetPickerHtml(store, challenger));
+
+  rootEl.innerHTML = `
+    <div class="duel-root">
+      <div class="battle-embers">${emberField()}</div>
+      <div class="duel-topbar">
+        <div>
+          <div class="duel-sub">Friday Combat Protocol</div>
+          <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR STRIKE</div>
+        </div>
+        <div class="duel-topbar-actions">
+          <button type="button" class="battle-shop-btn">🔮 Open Magic Shop</button>
+          <button type="button" class="battle-end-btn">🏳️ End Battle</button>
+        </div>
+      </div>
+      <div class="duel-stage">
+        ${leftHtml}
+        ${arenaHtml(showChooser ? null : challenger, showChooser ? null : target)}
+        ${rightHtml}
+      </div>
+      ${teacherRowHtml(store)}
+    </div>`;
+
+  wireDuel();
+}
+
+// =============================================================================
+// DUEL VIEW — wiring
+// =============================================================================
+function wireDuel() {
+  if (!rootEl) return;
+  const store = ctxRef.store;
+
+  const shopBtn = rootEl.querySelector('.battle-shop-btn');
+  if (shopBtn) shopBtn.addEventListener('click', () => ctxRef.registry.navigate('shop'));
+  const endBtn = rootEl.querySelector('.battle-end-btn');
+  if (endBtn) endBtn.addEventListener('click', endBattle);
+
+  const openChooser = rootEl.querySelector('[data-open-chooser]');
+  if (openChooser) openChooser.addEventListener('click', () => { chooserOpen = true; renderDuel(); });
+
+  rootEl.querySelectorAll('[data-pick-challenger]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = Number(btn.getAttribute('data-pick-challenger'));
+      chooserOpen = false;
+      if (targetId === id) targetId = null;
+      ctxRef.audio.sfx('coin');
+      // setActiveCore emits -> subscribe -> renderDuel(); no manual redraw needed.
+      store.setActiveCore(id);
+    });
+  });
+
+  rootEl.querySelectorAll('[data-pick-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      targetId = Number(btn.getAttribute('data-pick-target'));
+      ctxRef.audio.sfx('sword');
+      renderDuel();
+    });
+  });
+
+  const clearTarget = rootEl.querySelector('[data-clear-target]');
+  if (clearTarget) clearTarget.addEventListener('click', () => { targetId = null; renderDuel(); });
+
+  rootEl.querySelectorAll('[data-strike-item]').forEach((btn) => {
+    btn.addEventListener('click', () => strike(btn.getAttribute('data-strike-item')));
+  });
+
+  rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
+    });
+  });
+}
+
+function toast(text) {
+  if (!rootEl) return;
+  const existing = rootEl.querySelector('.duel-toast');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.className = 'duel-toast';
+  el.textContent = text;
+  rootEl.appendChild(el);
+  fxNodes.add(el);
+  later(() => { el.remove(); fxNodes.delete(el); }, 2200);
+}
+
+// Rolls a points readout from `from` to `to` so the class watches the score
+// move rather than seeing it snap. Ticks via later() so an unmount sweeps it up.
+function animatePoints(side, from, to, durationMs) {
+  const readEl = () => (rootEl ? rootEl.querySelector(`[data-points="${side}"]`) : null);
+  const el = readEl();
+  if (!el) return;
+  if (from === to || prefersReducedMotion()) { el.textContent = String(to); return; }
+  const steps = 14;
+  const stepMs = Math.max(16, Math.round(durationMs / steps));
+  let i = 0;
+  const tick = () => {
+    const node = readEl();
+    if (!node) return;                 // re-rendered or unmounted — final value already drawn
+    i += 1;
+    const t = Math.min(1, i / steps);
+    const eased = 1 - (1 - t) * (1 - t);
+    node.textContent = String(Math.round(from + (to - from) * eased));
+    if (t < 1) later(tick, stepMs);
+  };
+  el.textContent = String(from);
+  tick();
+}
+
+// =============================================================================
+// COMBAT EFFECTS — pure CSS/DOM, pointer-events:none via the fx classes,
+// every animation ≤900ms, tracked in fxNodes for guaranteed cleanup.
+// =============================================================================
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+// Flies the item's emoji from the challenger crest to the defender crest.
+// `stopAt` < 1 stops it short (a blocked strike dies against the shield).
+function spawnProjectile(fromEl, toEl, { emoji = '⚔️', ghost = false, stopAt = 1, travel = TRAVEL_MS } = {}) {
+  if (!rootEl || !fromEl || !toEl) return null;
+  const a = centerOf(fromEl);
+  const b = centerOf(toEl);
+  const el = document.createElement('div');
+  el.className = `duel-proj${ghost ? ' duel-proj-ghost' : ''}`;
+  el.textContent = emoji;
+  el.style.left = `${a.x}px`;
+  el.style.top = `${a.y}px`;
+  el.style.setProperty('--dx', `${(b.x - a.x) * stopAt}px`);
+  el.style.setProperty('--dy', `${(b.y - a.y) * stopAt}px`);
+  el.style.setProperty('--travel', `${travel}ms`);
+  rootEl.appendChild(el);
+  fxNodes.add(el);
+  later(() => { el.remove(); fxNodes.delete(el); }, travel + 300);
+  return el;
+}
+
 function screenVignettePulse() {
-  if (prefersReducedMotion()) return; // decorative-only — skip entirely under reduced motion
+  if (prefersReducedMotion()) return; // decorative-only — skip under reduced motion
   const host = document.getElementById('overlay-root');
   if (!host) return;
   spawnFxPlain(host, 'battle-fx-vignette', 700);
 }
 
-function attackLandingEffect(card, amount) {
-  ctxRef.audio.sfx('thud');
-  screenVignettePulse();
-  if (!card) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(card, 'battle-fx-flash', 500);
-    const slash = spawnFx(card, 'battle-fx-slash', 500);
-    if (slash) slash.innerHTML = '<span class="battle-fx-slash-mark"></span><span class="battle-fx-slash-mark s2"></span>';
-    card.classList.remove('battle-fx-hit');
-    void card.offsetWidth;
-    card.classList.add('battle-fx-hit');
-    later(() => card.classList.remove('battle-fx-hit'), 450);
-  }
-  // damage number — text feedback, always shown (static under reduced motion)
-  spawnFx(card, 'battle-fx-dmg-num', 900, `${amount}`);
+function shakeCrest(crest) {
+  if (!crest || prefersReducedMotion()) return;
+  crest.classList.remove('duel-crest-shake');
+  void crest.offsetWidth;
+  crest.classList.add('duel-crest-shake');
+  later(() => crest.classList.remove('duel-crest-shake'), 460);
 }
 
-function victoryEffect(card, amount) {
-  ctxRef.audio.sfx('coin');
-  if (!card) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) spawnFx(card, 'battle-fx-burst', 600);
-  spawnFx(card, 'battle-fx-rise-num', 900, `+${amount}`);
+function outcomeCard(kind, head, body, math) {
+  const arena = rootEl ? rootEl.querySelector('[data-arena]') : null;
+  if (!arena) return;
+  spawnFxHtml(arena, `duel-outcome duel-outcome-${kind}`, OUTCOME_MS, `
+    <div class="oc-head">${head}</div>
+    ${math ? `<div class="oc-math">${math}</div>` : ''}
+    <div class="oc-body">${body}</div>`);
 }
 
-function blockEffect(card) {
-  ctxRef.audio.sfx('sword');
-  if (!card) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(card, 'battle-fx-shield-ring', 700);
-    spawnFx(card, 'battle-fx-flash battle-fx-flash-blue', 500);
-  }
-  spawnFx(card, 'battle-fx-blocked-label', 900, '🛡️ BLOCKED — Aegis Shield holds!');
+// The relic badge only exists while that house is the on-screen defender, so
+// callers pass the house whose relic actually absorbed the hit.
+function flareReduceBadge(houseId) {
+  if (houseId != null && houseId !== targetId) return;
+  const badge = rootEl ? rootEl.querySelector('[data-reduce-badge]') : null;
+  if (!badge || prefersReducedMotion()) return;
+  badge.classList.remove('duel-reduce-flare');
+  void badge.offsetWidth;
+  badge.classList.add('duel-reduce-flare');
+  later(() => badge.classList.remove('duel-reduce-flare'), 720);
 }
 
-// Damage-reduction hit: shows the halving explicitly ("10 → 5") and flares
-// the house's reduce badge.
-function reducedEffect(card, rawAmount, appliedAmount) {
-  ctxRef.audio.sfx('thud');
-  screenVignettePulse();
-  if (!card) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(card, 'battle-fx-flash battle-fx-flash-amber', 500);
-    const slash = spawnFx(card, 'battle-fx-slash', 500);
-    if (slash) slash.innerHTML = '<span class="battle-fx-slash-mark"></span>';
-    card.classList.remove('battle-fx-hit');
-    void card.offsetWidth;
-    card.classList.add('battle-fx-hit');
-    later(() => card.classList.remove('battle-fx-hit'), 450);
-    const badge = card.querySelector('[data-reduce-badge]');
-    if (badge) {
-      badge.classList.remove('battle-reduce-flare');
-      void badge.offsetWidth;
-      badge.classList.add('battle-reduce-flare');
-      later(() => badge.classList.remove('battle-reduce-flare'), 700);
-    }
-  }
-  // text feedback — always shown (static under reduced motion)
-  spawnFx(card, 'battle-fx-dmg-num', 900, `${rawAmount} → ${appliedAmount}`);
-}
-
-function houseCardHtml(store, house) {
-  const week = store.getTotal(house.id, 'week');
-  const term = store.getTotal(house.id, 'term');
-  const shielded = store.isShielded(house.id);
-  const hasReduce = store.hasReduction(house.id);
-  const shieldLabel = shielded ? fmtRemain(store.shieldRemainingMs(house.id)) : null;
-  return `
-    <div class="battle-card" style="--bc-accent:${house.accent}" data-house-card="${house.id}">
-      <div class="battle-card-top">
-        <div class="battle-card-thumb">${houseImg(house, 'w-full h-full')}</div>
-        <div class="battle-card-name">${esc(house.name)}</div>
-        <div class="battle-badges">
-          ${shielded ? `<span class="battle-shield-badge">🛡️ ${shieldLabel || 'Shielded'}</span>` : ''}
-          ${hasReduce ? `<span class="battle-reduce-badge" data-reduce-badge>🕵️ ½</span>` : ''}
-        </div>
-      </div>
-      <div class="battle-card-totals">
-        <div class="battle-total-chip"><div class="lbl">Week</div><div class="val">${week}</div></div>
-        <div class="battle-total-chip"><div class="lbl">Term</div><div class="val">${term}</div></div>
-      </div>
-      <div class="battle-card-actions">
-        <button type="button" class="battle-strike-btn battle-strike-victory" data-strike="10" data-house="${house.id}">+10 Victory</button>
-        <button type="button" class="battle-strike-btn battle-strike-defeat" data-strike="-10" data-house="${house.id}">−10 Defeat</button>
-      </div>
-    </div>`;
-}
-
-function renderCombat() {
-  if (!rootEl) return;
-  view = 'combat';
+// =============================================================================
+// THE STRIKE
+// =============================================================================
+function strike(itemId) {
+  if (!rootEl || resolving) return;
   const store = ctxRef.store;
-  const houses = Object.values(store.HOUSES);
+  const audio = ctxRef.audio;
+  const challenger = challengerHouse();
+  const target = targetId != null ? store.HOUSES[targetId] : null;
+  const item = offensiveItems(store).find((i) => i.id === itemId);
+  if (!item || !challenger || !target) return;
 
-  rootEl.innerHTML = `
-    <div class="battle-combat">
-      <div class="battle-embers">${emberField()}</div>
-      <div class="battle-header">
-        <div class="battle-header-sub">Friday Combat Protocol</div>
-        <div class="battle-header-title font-display">⚔️ COMBAT MODE — DOUBLE OR NOTHING FRIDAY</div>
-      </div>
-      <div class="battle-grid">
-        ${houses.map((h) => houseCardHtml(store, h)).join('')}
-      </div>
-      <div class="battle-action-row">
-        <button type="button" class="battle-shop-btn">🔮 Open Magic Shop</button>
-        <button type="button" class="battle-end-btn">🏳️ End Battle</button>
-      </div>
-    </div>`;
+  const kind = item.effect.kind;
+  const amount = item.effect.amount;
+  const pierce = kind === 'pierce';
+  const beforeChallenger = store.getTotal(challenger.id, 'term');
+  const beforeTarget = store.getTotal(target.id, 'term');
 
-  rootEl.querySelector('.battle-shop-btn').addEventListener('click', () => ctxRef.registry.navigate('shop'));
-  rootEl.querySelector('.battle-end-btn').addEventListener('click', endBattle);
+  // Suspend re-renders so the whole resolution lands in ONE redraw — otherwise
+  // purchase(), applyAttack() and the steal payout each rebuild the DOM and
+  // every fx node we spawn is attached to a soon-to-be-detached element.
+  resolving = true;
+  let result;
+  try {
+    if (!store.purchase(challenger.id, item.cost, item.name)) {
+      resolving = false;
+      renderDuel();
+      toast(`Not enough points — ${item.name} costs ${item.cost}`);
+      return;
+    }
+    result = store.applyAttack({ fromId: challenger.id, toId: target.id, amount, pierce, label: item.name });
+    // A steal loots exactly what was actually taken — 0 if blocked, half if reduced.
+    if (kind === 'steal' && result.outcome !== 'blocked' && result.applied > 0) {
+      store.addPoints(challenger.id, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+    }
+  } finally {
+    resolving = false;
+  }
 
-  rootEl.querySelectorAll('[data-strike]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const houseId = Number(btn.getAttribute('data-house'));
-      const delta = Number(btn.getAttribute('data-strike'));
+  renderDuel(); // one redraw, final numbers in the DOM
 
-      if (delta > 0) {
-        ctxRef.store.addPoints(houseId, delta, { reason: 'Battle Day Victory', tag: 'battle' });
-        // addPoints() synchronously fires store.subscribe -> renderCombat(),
-        // which rebuilds the grid via innerHTML — so re-query the card AFTER
-        // the point change; grabbing it earlier would attach the effect to a
-        // node that's already been detached and replaced.
-        victoryEffect(rootEl.querySelector(`[data-house-card="${houseId}"]`), delta);
-        return;
-      }
+  const afterChallenger = store.getTotal(challenger.id, 'term');
+  const afterTarget = store.getTotal(target.id, 'term');
+  const paidChallenger = beforeChallenger - item.cost;
 
-      // Negative strikes are attacks — per the teacher's rule, defensive shop
-      // items only matter during battle, so this routes through the SAME
-      // combat rule the Magic Shop uses (shield -> block, reduction -> halve).
-      const result = ctxRef.store.applyAttack({ toId: houseId, amount: -delta, label: 'Battle Day Defeat' });
-      const card = rootEl.querySelector(`[data-house-card="${houseId}"]`);
-      if (result.outcome === 'blocked') blockEffect(card);
-      else if (result.outcome === 'reduced') reducedEffect(card, -delta, result.applied);
-      else attackLandingEffect(card, -result.applied);
+  // Challenger pays up front — visible immediately.
+  animatePoints('challenger', beforeChallenger, paidChallenger, 300);
+  // Defender's total holds until the strike actually lands.
+  const defEl = rootEl.querySelector('[data-points="defender"]');
+  if (defEl) defEl.textContent = String(beforeTarget);
+
+  playStrike({ item, kind, amount, result, challenger, target,
+    paidChallenger, afterChallenger, beforeTarget, afterTarget });
+  if (audio) audio.sfx('coin');
+}
+
+function playStrike(o) {
+  const audio = ctxRef.audio;
+  const reduced = prefersReducedMotion();
+  const chalCrest = rootEl.querySelector('[data-crest="challenger"]');
+  const defCrest = rootEl.querySelector('[data-crest="defender"]');
+  const blocked = o.result.outcome === 'blocked';
+  const travel = reduced ? 0 : TRAVEL_MS;
+
+  let proj = null;
+  if (!reduced) {
+    proj = spawnProjectile(chalCrest, defCrest, {
+      emoji: o.item.emoji || '⚔️',
+      ghost: o.result.outcome === 'pierced',
+      stopAt: blocked ? 0.74 : 1,
+      travel,
     });
-  });
+  }
+
+  later(() => {
+    if (!rootEl) return;
+    const crest = rootEl.querySelector('[data-crest="defender"]');
+
+    if (blocked) {
+      if (proj) { proj.classList.add('duel-proj-stopped'); }
+      if (!reduced) {
+        spawnFx(crest, 'duel-fx-ring', IMPACT_MS);
+        spawnFx(crest, 'duel-fx-flash duel-fx-flash-blue', 500);
+      }
+      audio.sfx('sword');
+      outcomeCard('blocked', '🛡️ BLOCKED',
+        `${esc(o.target.name)} loses <b>no points</b>. ${esc(o.challenger.name)} still paid ${o.item.cost} pts.`,
+        `0 damage`);
+      // totals: only the challenger's spend moved
+      animatePoints('challenger', o.paidChallenger, o.afterChallenger, COUNT_MS);
+      return;
+    }
+
+    if (o.result.outcome === 'pierced') {
+      if (!reduced) spawnFx(crest, 'duel-fx-ghost', IMPACT_MS, '🛡️');
+      // the defence fails first, then the hit lands
+      later(() => {
+        if (!rootEl) return;
+        landHit(o, rootEl.querySelector('[data-crest="defender"]'), reduced);
+        outcomeCard('pierced', '🫥 PIERCED!',
+          `${esc(o.challenger.name)}'s strike phased straight through ${esc(o.target.name)}'s defense.`,
+          `−${o.result.applied} pts — full damage`);
+      }, reduced ? 0 : 180);
+      return;
+    }
+
+    if (o.result.outcome === 'reduced') {
+      flareReduceBadge(o.target.id);
+      landHit(o, crest, reduced, 'amber');
+      outcomeCard('reduced', '🕵️ HALVED',
+        `${esc(o.target.name)}'s relic weakened the blow.`,
+        `${o.amount} → ${o.result.applied}`);
+      return;
+    }
+
+    landHit(o, crest, reduced);
+    outcomeCard('hit', '💥 DIRECT HIT!',
+      `${esc(o.challenger.name)} struck ${esc(o.target.name)} with ${esc(o.item.name)}.${o.kind === 'steal' ? ` They looted <b>${o.result.applied} pts</b>.` : ''}`,
+      `−${o.result.applied} pts`);
+  }, travel);
+}
+
+// Shared "the hit lands" beat: flash, shake, big rising damage number, vignette,
+// thud, and both totals rolling to their new values.
+function landHit(o, crest, reduced, tint = 'red') {
+  ctxRef.audio.sfx('thud');
+  screenVignettePulse();
+  if (crest && !reduced) {
+    spawnFx(crest, `duel-fx-flash duel-fx-flash-${tint}`, 500);
+    shakeCrest(crest);
+  }
+  // Damage number is text feedback — always shown (static under reduced motion).
+  spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${o.result.applied}`);
+  animatePoints('defender', o.beforeTarget, o.afterTarget, COUNT_MS);
+  animatePoints('challenger', o.paidChallenger, o.afterChallenger, COUNT_MS);
+}
+
+// =============================================================================
+// TEACHER SCORING — same ±10 as before, but a deduction is a real attack so
+// shields and relics behave exactly as they do house-vs-house.
+// =============================================================================
+function teacherScore(houseId, delta) {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const house = store.HOUSES[houseId];
+  if (!house) return;
+
+  if (delta > 0) {
+    store.addPoints(houseId, delta, { reason: 'Battle Day Victory (teacher)', tag: 'battle' });
+    ctxRef.audio.sfx('coin');
+    // addPoints already re-rendered via subscribe — query the fresh chip.
+    spawnFx(rootEl.querySelector(`[data-tchip="${houseId}"]`), 'duel-fx-chip duel-fx-chip-good', 850, `+${delta}`);
+    return;
+  }
+
+  const result = store.applyAttack({ toId: houseId, amount: -delta, label: 'Battle Day Defeat (teacher)' });
+  const chip = rootEl.querySelector(`[data-tchip="${houseId}"]`);
+  if (result.outcome === 'blocked') {
+    ctxRef.audio.sfx('sword');
+    spawnFx(chip, 'duel-fx-chip duel-fx-chip-blue', 850, '🛡️ BLOCKED');
+  } else if (result.outcome === 'reduced') {
+    ctxRef.audio.sfx('thud');
+    flareReduceBadge(houseId);
+    spawnFx(chip, 'duel-fx-chip duel-fx-chip-bad', 850, `${-delta} → ${result.applied}`);
+  } else {
+    ctxRef.audio.sfx('thud');
+    spawnFx(chip, 'duel-fx-chip duel-fx-chip-bad', 850, `−${result.applied}`);
+  }
 }
 
 function endBattle() {
+  clearFx();
   if (overlayEl) { overlayEl.remove(); overlayEl = null; }
   const mainEl = document.getElementById('module-root');
   if (mainEl) mainEl.classList.remove('battle-shake');
@@ -572,9 +1135,12 @@ export default {
   mount(el, ctx) {
     ctxRef = ctx;
     rootEl = el;
+    targetId = null;
+    chooserOpen = false;
+    resolving = false;
     injectStyles();
     renderLanding();
-    unsub = ctx.store.subscribe(() => { if (view === 'combat') renderCombat(); });
+    unsub = ctx.store.subscribe(() => { if (view === 'duel' && !resolving) renderDuel(); });
   },
 
   unmount() {
@@ -587,5 +1153,8 @@ export default {
     rootEl = null;
     ctxRef = null;
     view = 'landing';
+    targetId = null;
+    chooserOpen = false;
+    resolving = false;
   },
 };

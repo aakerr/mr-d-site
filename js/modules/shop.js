@@ -4,6 +4,7 @@
 // this module renders whatever store.getShopItems() returns, live.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { media } from '../core/media.js';
+import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
 
 const STYLE_ID = 'shop-styles';
@@ -163,10 +164,20 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-  .shop-root{position:relative;height:100%;overflow-y:auto;padding:1.25rem clamp(1rem,3vw,2rem) 2rem;
+  .shop-root{position:relative;height:100%;overflow-y:auto;scrollbar-gutter:stable both-edges;padding:1.25rem clamp(1rem,3vw,2rem) 2rem;
     background:radial-gradient(ellipse at 50% -10%,rgba(88,28,135,.4),#0b0f19 55%),
       radial-gradient(ellipse at 100% 100%,rgba(76,29,149,.22),transparent 60%),#0b0f19;}
-  .shop-header{text-align:center;margin-bottom:1.25rem;}
+  /* The wizard mark sits OUTSIDE the centred text block, so the title and
+     subtitle centre on each other rather than on "icon + title". */
+  /* The TEXT centres on the screen; the mark hangs to its left and an equal
+     spacer on the right keeps that true. The mark is allowed to look
+     off-balance — that is the intended composition. */
+  .shop-header{display:flex;align-items:flex-start;justify-content:center;
+    gap:clamp(.5rem,1.4vw,1.1rem);margin-bottom:1rem;}
+  .shop-header-mark,.shop-header-spacer{width:clamp(2.2rem,5.4vw,3.6rem);flex:0 0 auto;}
+  .shop-header-mark{height:auto;filter:drop-shadow(0 4px 14px rgba(167,139,250,.5));}
+  .shop-headings{text-align:center;}
+  .mh-ink{display:inline-block;white-space:nowrap;}
   .shop-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
     font-size:clamp(1.4rem,3.4vw,2.4rem);color:${PURPLE};letter-spacing:.05em;
     text-shadow:0 0 26px ${PURPLE_SOFT};}
@@ -175,15 +186,20 @@ function injectStyles() {
 
   /* treasury pill — the ONLY house shown is whatever's active in the top bar,
      so this is a wide identity pill (crest + name + total) rather than a picker. */
-  .shop-treasury{max-width:760px;margin:0 auto 1.5rem;display:flex;align-items:center;gap:1.1rem;
-    text-align:left;background:#141225;border:2px solid ${PURPLE};border-radius:1.5rem;
-    padding:.9rem 1.5rem;box-shadow:0 0 26px ${PURPLE_SOFT};}
-  .shop-treasury-crest{width:64px;height:64px;border-radius:.9rem;object-fit:cover;flex-shrink:0;
-    border:2px solid var(--tr-accent,${PURPLE});box-shadow:0 4px 14px rgba(0,0,0,.4);}
-  .shop-treasury-info{flex:1;min-width:0;}
-  .shop-treasury .lbl{font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;color:#c4b5fd;
-    display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;}
-  .shop-treasury .val{font-size:2rem;font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums;}
+  /* Shields flank a points-only pill; the pill spans the width of the heading
+     text above it (set at render time from the heading block's measured width). */
+  .shop-treasury-row{display:flex;align-items:center;justify-content:center;
+    gap:clamp(.6rem,1.6vw,1.4rem);margin:0 auto 1.5rem;}
+  .shop-treasury-crest{height:clamp(3.2rem,8vw,5.4rem);width:auto;object-fit:contain;flex-shrink:0;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.6));}
+  .shop-treasury .val{font-size:clamp(1.8rem,5vw,3rem);font-weight:800;color:#fde68a;
+    font-variant-numeric:tabular-nums;line-height:1;}
+  .shop-treasury .unit{font-size:clamp(.9rem,2.2vw,1.4rem);font-weight:700;color:#fde68a;
+    margin-left:.4rem;opacity:.85;}
+  .shop-treasury{display:flex;align-items:baseline;justify-content:center;
+    background:#141225;border:2px solid ${PURPLE};border-radius:1.5rem;
+    padding:clamp(.5rem,1.4vh,1rem) 1.5rem;box-shadow:0 0 26px ${PURPLE_SOFT};
+    flex:0 0 auto;}
 
   /* shown instead of the shop grid when the top bar is on "All Cores" */
   .shop-pickhouse{max-width:520px;margin:2.5rem auto;text-align:center;color:#c4b5fd;font-style:italic;
@@ -523,6 +539,19 @@ function topHouseExcluding(store, buyerId) {
 // =============================================================================
 // item catalog helpers — validation + image resolution
 // =============================================================================
+// The points pill should span exactly the width of the heading text above it
+// (title/subtitle block), with the two shields sitting outside that span.
+// Measured after paint because the heading is fluid-typed.
+function sizeTreasuryToHeadings(root) {
+  try {
+    const headings = root.querySelector('.shop-headings');
+    const pill = root.querySelector('.shop-treasury');
+    if (!headings || !pill) return;
+    const w = Math.round(headings.getBoundingClientRect().width);
+    if (w > 0) { pill.style.width = w + 'px'; }
+  } catch (e) { /* presentation only — never break the shop */ }
+}
+
 function itemIssues(item) {
   if (!item || typeof item !== 'object') return ['missing item'];
   const issues = [];
@@ -749,8 +778,12 @@ function render(s) {
 
   const headerHtml = `
     <div class="shop-header">
-      <div class="shop-title font-display"><img src="images/icon-market.png" alt="" style="display:inline-block;height:1.2em;width:auto;vertical-align:-0.2em;margin-right:.25em" onerror="this.style.display='none'"/> THE FRIDAY MAGIC SHOP</div>
-      <div class="shop-subtitle">Spend your hoard. Strike your rivals. Guard your gold.</div>
+      <img class="shop-header-mark" src="images/icon-market.png" alt="" onerror="this.style.visibility='hidden'" />
+      <div class="shop-headings">
+        <div class="shop-title font-display"><span class="mh-ink">THE FRIDAY MAGIC SHOP</span></div>
+        <div class="shop-subtitle"><span class="mh-ink">Spend your hoard. Strike your rivals. Guard your points.</span></div>
+      </div>
+      <span class="shop-header-spacer" aria-hidden="true"></span>
     </div>`;
 
   let bodyHtml;
@@ -772,13 +805,14 @@ function render(s) {
     const anyBuyable = offensive.length || defensive.length || wildcards.length || broken.length;
 
     bodyHtml = `
-      <div class="shop-treasury" data-buyer="${buyerId}" style="--tr-accent:${buyer.accent}">
+      <div class="shop-treasury-row" data-buyer="${buyerId}" style="--tr-accent:${buyer.accent}">
         <img class="shop-treasury-crest" src="${esc(buyer.image)}" alt="${esc(buyer.name)} crest"
-          onerror="this.style.display='none'" />
-        <div class="shop-treasury-info">
-          <div class="lbl">🪙 Treasury &mdash; ${esc(buyer.name)}</div>
-          <div class="val">${treasury} pts</div>
+          onerror="this.style.visibility='hidden'" />
+        <div class="shop-treasury" title="${esc(buyer.name)} treasury">
+          <span class="val">${treasury}</span><span class="unit">pts</span>
         </div>
+        <img class="shop-treasury-crest" src="${esc(buyer.image)}" alt="" aria-hidden="true"
+          onerror="this.style.visibility='hidden'" />
       </div>
 
       ${anyBuyable ? `
@@ -799,6 +833,13 @@ function render(s) {
     </div>
     ${confirmModalHtml(store, s)}
   `;
+  fitMastheadWhenReady({
+    icon: rootEl.querySelector('.shop-header-mark'),
+    titleInk: rootEl.querySelector('.shop-title .mh-ink'),
+    subInk: rootEl.querySelector('.shop-subtitle .mh-ink'),
+    headings: rootEl.querySelector('.shop-headings'),
+    pill: rootEl.querySelector('.shop-treasury'),
+  });
 }
 
 // =============================================================================
