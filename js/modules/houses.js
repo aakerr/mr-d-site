@@ -195,17 +195,40 @@ const STYLE = `
   .hse-midrow { height: clamp(172px, 24vh, 330px); }
 }
 /* 1280x720 smartboards are the tight case: trim the chrome that is nice-to-have
-   rather than load-bearing so all four panels still fit without page scroll. */
+   rather than load-bearing so all four panels still fit without page scroll,
+   with at least 6 ledger rows visible. The chart loses the most (it stays
+   readable much smaller); ledger rows lose the least (text stays >=14px,
+   the undo target stays a real touch target, and award buttons stay >=44px). */
 @media (max-height: 820px) {
-  .hse-page { padding: 10px !important; gap: 10px !important; }
-  .hse-card { padding: 11px !important; }
-  .hse-pill { min-height: 50px; padding: 0 10px; gap: 7px; }
-  .hse-pill-total { font-size: 1.1rem; }
-  .hse-stack { height: 26px; }
-  .hse-midrow { height: clamp(184px, 25.5vh, 330px) !important; }
+  .hse-page { padding: 4px !important; gap: 4px !important; }
+  .hse-card { padding: 6px 9px !important; }
+  .hse-page h1 { font-size: 1.1rem !important; line-height: 1.1 !important; }
+  .hse-pill { min-height: 30px; padding: 0 6px; gap: 4px; }
+  .hse-pill img { height: 20px !important; width: auto !important; }
+  .hse-pill-name { font-size: 0.78rem; }
+  .hse-pill-total { font-size: 0.9rem; }
+  .hse-stack { height: 20px; }
+  .hse-eyebrow { font-size: 0.8rem; }
+  .hse-chart { height: clamp(44px, 6vh, 120px) !important; }
+  .hse-plot { top: 3px !important; bottom: 16px !important; }
+  .hse-seg { padding: 2px; gap: 3px; }
+  .hse-seg-btn { min-height: 28px; padding: 0 8px; font-size: 0.875rem; }
+  .hse-midrow { height: clamp(132px, 18.5vh, 260px) !important; }
   .hse-hide-short { display: none !important; }
-  .hse-insight { font-size: 0.88rem; padding: 8px 11px; }
-  .hse-preset { min-height: 46px; font-size: 0.88rem; }
+  .hse-insight { font-size: 0.88rem; padding: 5px 9px; }
+  .hse-target { padding: 3px 8px; }
+  .hse-preset { min-height: 44px; font-size: 0.86rem; }
+  .hse-srow { grid-template-columns: 120px minmax(0,1fr) 90px; }
+
+  /* ledger: this is where the reclaimed space goes */
+  .hse-input { min-height: 30px; font-size: 0.875rem; }
+  .hse-tx-row { padding-top: 3px !important; padding-bottom: 3px !important; }
+  .hse-tx-delta { font-size: 0.875rem !important; }
+  .hse-undo-btn {
+    width: 38px !important; height: 38px !important;
+    min-width: 38px !important; min-height: 38px !important;
+  }
+  .hse-tag-badge { padding: 1px 7px; }
 }
 `;
 
@@ -412,7 +435,7 @@ function renderArc(store, s) {
       <div class="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <div class="hse-eyebrow">The Term Arc</div>
-          <div class="hse-sub">${cumulative
+          <div class="hse-sub hse-hide-short">${cumulative
             ? 'The House Cup race — every house’s running total, week by week.'
             : 'What each house actually scored in each week of the term.'}</div>
         </div>
@@ -485,7 +508,7 @@ function renderArc(store, s) {
     <div class="hse-plot" style="top:auto; bottom:0; height:24px;">${xLabels}</div>`;
 
   const legend = `
-    <div class="flex items-center gap-1 flex-wrap">
+    <div class="flex items-center gap-1 flex-wrap hse-hide-short">
       ${houses.map((h) => {
         const last = drawn[drawn.length - 1].totals[h.id] || 0;
         const dim = focus && focus !== h.id;
@@ -699,7 +722,7 @@ function renderAwards(store, s) {
           </button>`;
         }).join('') : '<div class="hse-sub">No presets yet — add them in Admin → Settings.</div>'}
       </div>
-      <div class="hse-sub">Presets are edited in <b>Admin → Settings</b>.<span class="hse-hide-short"> Mistake? Undo it in the ledger below.</span></div>
+      <div class="hse-sub hse-hide-short">Presets are edited in <b>Admin → Settings</b>. Mistake? Undo it in the ledger below.</div>
     </div>`;
 }
 
@@ -747,7 +770,7 @@ function renderLedgerRows(store, s) {
           <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${h ? h.accent : '#666'}"></span>
           <span class="text-sm font-semibold truncate" style="color:${h ? h.accent : '#9ca3af'}">${h ? escapeHtml(h.name) : '—'}</span>
         </span>` : ''}
-        <span class="font-extrabold w-16 text-base shrink-0 text-right ${up ? 'text-emerald-400' : 'text-red-400'}">${signed(t.delta)}</span>
+        <span class="hse-tx-delta font-extrabold w-16 text-base shrink-0 text-right ${up ? 'text-emerald-400' : 'text-red-400'}">${signed(t.delta)}</span>
         <span class="flex-1 min-w-0 flex items-center gap-2">
           <span class="text-sm truncate" style="color:var(--color-text)">${escapeHtml(t.reason || 'Points adjustment')}</span>
           <span class="hse-tag-badge shrink-0" style="border-color:${m.color}66; color:${m.color}; background:${m.color}1a;">${escapeHtml(m.short)}</span>

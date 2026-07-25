@@ -180,6 +180,23 @@ export function initShell(ctx) {
     }
   }
 
+  // ---------------- global mute shortcut ----------------
+  // The sound and help icons were removed from the bar to save space, so this
+  // is the fast way to silence everything (ambient loops especially) without
+  // hunting through Admin. Ignored while typing.
+  function onGlobalKey(e) {
+    if (e.key !== 'm' && e.key !== 'M') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    try {
+      const on = store.getSettings().soundEnabled !== false;
+      store.updateSettings({ soundEnabled: !on });
+      if (on) { try { audio.stopAll(); } catch (err) {} }
+    } catch (err) { /* never break the app over a shortcut */ }
+  }
+  document.addEventListener('keydown', onGlobalKey);
+
   // ================= TOP BAR =================
   let coreMenuOpen = false;
   let currentModuleId = null;

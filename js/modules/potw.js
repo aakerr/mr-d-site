@@ -689,7 +689,8 @@ function createMap3d() {
 // ---- flyover background music -----------------------------------------------
 // Starts on the "🚀 Fly to…" tap (the reveal card waits for a human, so nothing
 // earlier could stay in sync) and fades out when the destination is reached.
-// Source order: teacher blob (potw:<key>:flyover) → profile.flyoverUrl → silence.
+// Source order: teacher blob (potw:<key>:flyover) → profile.flyoverUrl →
+// the bundled default track (CONFIG.POTW_FLYOVER_DEFAULT) → silence.
 async function startFlyoverMusic() {
   if (previewMode || flyMusicEl || !overlayEl) return;
   let src = null;
@@ -698,6 +699,7 @@ async function startFlyoverMusic() {
     const u = profile && profile.flyoverUrl;
     if (typeof u === 'string' && u.trim()) src = u.trim();
   }
+  if (!src && typeof CONFIG.POTW_FLYOVER_DEFAULT === 'string') src = CONFIG.POTW_FLYOVER_DEFAULT;
   if (!src || !overlayEl || flyMusicEl) return;   // nothing set — silence, no error
   try {
     // ctx.audio honours the sound switch (a muted track still returns an element

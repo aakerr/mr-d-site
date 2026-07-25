@@ -23,6 +23,24 @@ export const CONFIG = {
   ],
   POTW_DEFAULT_VIDEO_ID: 'rock',
 
+  // Music under the Google Earth flight. Any destination without its own
+  // track falls back to this, so a newly added place has music immediately.
+  // Timing: starts on the "Fly to" tap, fades over 3s once the presentation
+  // opens (~27.3s in), silent by ~30.4s. This file runs 32s.
+  POTW_FLYOVER_DEFAULT: 'music/travel-zoom.mp3',
+
+  // Quiet looping music per screen. Drop files in /music and map them here (or
+  // per-screen in Admin → Settings). Screens that make their own noise — Place
+  // of the Week, Battle Day — are intentionally left out.
+  AMBIENT_TRACKS: {
+    // dashboard: 'music/morning.mp3',
+    // council:   'music/council.mp3',
+    // quests:    'music/quests.mp3',
+    // shop:      'music/shop.mp3',
+    // houses:    'music/records.mp3',
+    // dice:      'music/dice.mp3',
+  },
+
   HOME_CAMERA: { lat: 40.8653, lng: -81.8604, altitude: 500 }, // Smithville, OH
 
   STORAGE_KEY: 'mrd-classroom-os-v1',

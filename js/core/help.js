@@ -379,7 +379,7 @@ const TOPICS = [
         <li>A house opens the <b>Quests</b> tile and reads the board.</li>
         <li>They tap <b>Accept</b> on a quest. It becomes their active quest.</li>
         <li>They do the thing in the real world and bring you the proof you asked for.</li>
-        <li><b>You</b> confirm it in <b>🗝️ Admin → Quests</b>. Only then do the points land.</li>
+        <li><b>You</b> confirm it — either right on the Quests screen (the green <b>✓</b> and red <b>✗</b> under the active quest, marked 🗝️ TEACHER ONLY) or in <b>🗝️ Admin → Quests</b>. Both do the same thing. Only then do the points land.</li>
       </ol>
       <p><b>One quest per house at a time.</b> While Camelot holds a quest, nobody else can take that same quest, and Camelot cannot take a second one.</p>
       <p>Points are never awarded by a student tapping something — a quest only ever pays out when you confirm it.</p>
@@ -389,6 +389,13 @@ const TOPICS = [
     id: 'quests-confirm', cat: 'quests', title: 'Confirming a completed quest',
     keywords: 'confirm complete quest verify approve award sign off',
     body: `
+      <p>There are two places to do this — they do exactly the same thing, so use whichever you're already looking at.</p>
+      <p><b>Fastest, on the Quests screen:</b></p>
+      <ol class="help-steps">
+        <li>The house's active quest sits at the top of the screen.</li>
+        <li>Tap the green <b>✓ Mark Complete</b> under it (the pair marked 🗝️ TEACHER ONLY).</li>
+      </ol>
+      <p><b>Or from Admin:</b></p>
       <ol class="help-steps">
         <li>Open <b>🗝️ Admin → Quests</b>.</li>
         <li>Find the house under <b>Active Quests</b>.</li>

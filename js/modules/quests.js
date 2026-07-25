@@ -333,6 +333,60 @@ function injectStyles() {
   @media (prefers-reduced-motion:reduce){
     .quest-hero,.quest-hero.quest-pop,.quest-modal,.quest-modal-bg,.quest-toast,.quest-fly{animation:none;}
   }
+
+  /* ---- 1280x720 smartboards: masthead + hero were costing ~390px combined,
+     leaving almost none of the 644px module area for the quest cards. Trim the
+     chrome that's nice-to-have (masthead scale, hero padding/sizes, board/deeds
+     chrome) so at least one full row of cards is visible without page scroll.
+     Text stays >=14px (0.875rem) and every button stays >=48px (touch). The
+     masthead sizes below only change what the CSS proposes — masthead.js still
+     measures the (now smaller) title ink and fits the subtitle/pill to match,
+     so nothing here fights the fitter. ---- */
+  @media (max-height: 800px) {
+    .quest-root{gap:clamp(5px,.9vh,9px);
+      padding:clamp(5px,.9vh,9px) clamp(10px,1.6vw,20px) clamp(6px,1vh,10px);}
+
+    /* masthead: smaller mark, tighter title (subtitle/pill scale to match) */
+    .quest-head{gap:clamp(.35rem,.9vw,.6rem);}
+    .quest-head-icon,.quest-head-spacer{width:clamp(1.4rem,3.2vw,1.9rem);}
+    .quest-head-title{font-size:clamp(1rem,2.2vw,1.4rem);}
+    .quest-points-row{margin:clamp(3px,.6vh,6px) auto 0;gap:clamp(.4rem,1vw,.7rem);}
+    .quest-crest{height:min(clamp(1.4rem,3.6vw,1.9rem),4.2vh);}
+    .quest-points{padding:.2rem 1rem;}
+    .quest-points .val{font-size:clamp(1.1rem,2.8vw,1.5rem);}
+    .quest-points .unit{font-size:.75rem;}
+
+    /* active-quest hero: tighter padding/gaps and smaller type; the two
+       teacher buttons stay pinned at the 48px touch minimum */
+    .quest-hero{padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);gap:clamp(8px,1.2vw,14px);}
+    .quest-hero-main{gap:3px;}
+    .quest-hero-eyebrow{font-size:.875rem;}
+    .quest-hero-crest{height:1.15rem;}
+    .quest-hero-title{font-size:clamp(1.1rem,2.6vh,1.5rem);line-height:1.05;}
+    .quest-hero-desc{font-size:.9rem;line-height:1.25;}
+    .quest-chip-row{padding-top:2px;}
+    .quest-chip{font-size:.875rem;padding:.2em .6em;}
+    .quest-hero-side{flex:0 0 180px;gap:4px;}
+    .quest-hero-points{font-size:1.4rem;}
+    .quest-hero-points small{font-size:.875rem;margin-top:0;}
+    .quest-teacher-bar{font-size:.875rem;}
+    .quest-act{min-height:48px;font-size:.9rem;}
+
+    /* board header + lockbar + cards: reclaim the rest for the grid */
+    .quest-board{gap:clamp(4px,.7vh,8px);}
+    .quest-board-title{font-size:1rem;}
+    .quest-board-count{font-size:.875rem;}
+    .quest-sort{min-height:36px;font-size:.9rem;padding:.3em .8em;}
+    .quest-lockbar{font-size:.9rem;padding:.35em .7em;}
+    .quest-card{padding:clamp(7px,.9vh,11px) clamp(8px,.8vw,12px);gap:4px;}
+    .quest-card-title{font-size:1rem;}
+    .quest-card-pts{font-size:1.25rem;}
+    .quest-card-desc{font-size:.9rem;line-height:1.25;}
+
+    /* Hall of Deeds: smaller chrome, still a full strip */
+    .quest-deeds{padding:clamp(4px,.7vh,8px) clamp(8px,.8vw,12px);}
+    .quest-deeds-title{font-size:.9rem;}
+  }
   `;
   document.head.appendChild(s);
 }

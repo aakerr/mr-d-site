@@ -27,7 +27,7 @@ const STYLE = `
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
 // their registered emoji so the plugin/tile pattern keeps working.
 const MODULE_ICON_MAP = {
-  houses: 'images/icon-points.png',
+  // houses: no PNG — falls back to the module's 📜 (it's the ledger now)
   potw: 'images/icon-potw.png',
   quests: 'images/icon-quest.png',
   battle: 'images/icon-battle.png',

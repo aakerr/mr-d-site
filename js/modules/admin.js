@@ -65,6 +65,7 @@ let videoForm = null;                 // in-progress intro-video preset editor (
 let awardForm = null;                 // in-progress quick-award preset editor (Settings tab)
 let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
+let musicPreview = null;              // { el, screen } — the one background-music preview clip playing, if any
 
 const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
@@ -178,6 +179,7 @@ function renderBody({ force = false } = {}) {
 
 function setTab(tab) {
   activeTab = tab;
+  stopMusicPreview();
   closePanel();
   closeModal();
   syncSegActive();
@@ -1775,6 +1777,8 @@ function renderSettings() {
         </details>
       </div>
 
+      ${renderMusicCard()}
+
       ${shieldPanelHTML()}
 
       <div class="admin-card">
@@ -1807,6 +1811,143 @@ function renderSettings() {
             <button class="admin-btn admin-btn-lg admin-btn-nuke" data-action="reset-open">Reset all points &amp; data…</button>
           </div>` : ''}
       </div>
+    </div>`;
+}
+
+// ----- background music (quiet per-screen ambient loops) -------------------
+
+// Screens a teacher would plausibly want music on. Place of the Week and
+// Battle Day make their own noise and are deliberately left out. Reads the
+// live module registry when available so a future module shows up here
+// automatically; falls back to the known screen list if the registry isn't
+// wired for some reason.
+const AMBIENT_EXCLUDE = new Set(['admin', 'potw', 'battle']);
+const AMBIENT_SCREENS_FALLBACK = [
+  { id: 'dashboard', label: 'Morning Dashboard' },
+  { id: 'council',   label: 'Council of Four' },
+  { id: 'houses',    label: 'Records' },
+  { id: 'quests',    label: 'Quests' },
+  { id: 'shop',      label: 'Magic Shop' },
+  { id: 'dice',      label: 'Die of Destiny' },
+];
+
+function ambientScreens() {
+  try {
+    const mods = ctxRef?.registry?.modules?.();
+    if (Array.isArray(mods) && mods.length) {
+      const list = mods
+        .filter((m) => m?.id && !AMBIENT_EXCLUDE.has(m.id))
+        .map((m) => ({ id: m.id, label: m.title || m.id }));
+      if (list.length) return list;
+    }
+  } catch (e) { /* fall through to the static list */ }
+  return AMBIENT_SCREENS_FALLBACK;
+}
+
+// Files the teacher actually has, as best we can tell without a directory
+// listing: anything already assigned to a screen, plus the flyover default.
+function knownMusicFiles() {
+  const store = ctxRef.store;
+  const { tracks } = store.getAmbient();
+  const set = new Set();
+  Object.values(tracks || {}).forEach((v) => { if (v) set.add(v); });
+  if (CONFIG.POTW_FLYOVER_DEFAULT) set.add(CONFIG.POTW_FLYOVER_DEFAULT);
+  return [...set].sort();
+}
+
+function musicErrEl(screen) { return el(`admin-music-err-${screen}`); }
+function showMusicError(screen, msg) {
+  const node = musicErrEl(screen);
+  if (!node) return;
+  node.textContent = msg;
+  node.style.display = msg ? 'block' : 'none';
+}
+
+// Preview playback is a plain local Audio element we own and stop ourselves —
+// never touches js/core/ambient.js, which keeps driving the real background
+// loop untouched while a preview auditions.
+//
+// NOTE: we deliberately do NOT reset `el.src = ''` when stopping — per the
+// HTML media spec, clearing src on a media element fires its OWN 'error'
+// event, which would otherwise get picked up by that element's `fail`
+// listener below and show a false "couldn't play that file" message after a
+// perfectly successful preview. Detaching the listener before pausing, and
+// leaving src alone, avoids that false positive; the element is simply
+// dropped and garbage-collected.
+function stopMusicPreview() {
+  if (!musicPreview) return;
+  const { el: a, fail } = musicPreview;
+  musicPreview = null;
+  try { if (fail) a.removeEventListener('error', fail); } catch (e) { /* detached */ }
+  try { a.pause(); } catch (e) { /* detached */ }
+}
+
+function previewMusicTrack(screen) {
+  stopMusicPreview();
+  showMusicError(screen, '');
+  const input = rootEl.querySelector(`.admin-music-path[data-screen="${screen}"]`);
+  const src = input ? input.value.trim() : '';
+  if (!src) { showMusicError(screen, 'Pick or type a file first.'); return; }
+  const store = ctxRef.store;
+  const { volume } = store.getAmbient();
+  const audio = new Audio(src);
+  audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+  const fail = () => {
+    if (musicPreview && musicPreview.el === audio) musicPreview = null;
+    showMusicError(screen, "Couldn't play that file — check the name and that it's in /music.");
+  };
+  audio.addEventListener('error', fail);
+  musicPreview = { el: audio, screen, fail };
+  const p = audio.play();
+  if (p && typeof p.catch === 'function') p.catch(fail);
+  // A brief audition, not a full loop — stop itself after a few seconds.
+  later(() => { if (musicPreview && musicPreview.el === audio) stopMusicPreview(); }, 6000);
+}
+
+function renderMusicCard() {
+  const store = ctxRef.store;
+  const ambient = store.getAmbient();
+  const files = knownMusicFiles();
+  const screens = ambientScreens();
+  const volPct = Math.round((Number(ambient.volume) || 0) * 100);
+
+  const rows = screens.map((sc) => {
+    const cur = ambient.tracks[sc.id] || '';
+    const options = ['<option value="">Pick a known file…</option>']
+      .concat(files.map((f) => `<option value="${esc(f)}"${f === cur ? ' selected' : ''}>${esc(f)}</option>`))
+      .join('');
+    return `
+      <div class="admin-music-row">
+        <div class="admin-music-name">${esc(sc.label)}</div>
+        <div class="admin-music-controls">
+          <select class="admin-input admin-music-pick" data-screen="${sc.id}" aria-label="Pick a known file for ${esc(sc.label)}">${options}</select>
+          <input class="admin-input admin-music-path" data-screen="${sc.id}" type="text" value="${esc(cur)}" placeholder="music/filename.mp3" aria-label="Track path for ${esc(sc.label)}" spellcheck="false" autocomplete="off" />
+          <button class="admin-btn admin-btn-sm" data-action="music-preview" data-screen="${sc.id}">▶ Preview</button>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="music-clear" data-screen="${sc.id}">Clear</button>
+        </div>
+        <div class="admin-music-error" id="admin-music-err-${sc.id}" style="display:none"></div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎵 Background music</div>
+      <div class="admin-mini">Quiet music that loops while a screen is open, fading gently when you move between screens. Keep it subtle — it plays under everything else.</div>
+
+      <label class="admin-flabel" style="margin-top:14px">Ambience</label>
+      <div class="admin-toggle-row">
+        <button class="admin-toggle${ambient.enabled ? ' on' : ''}" data-action="ambient-toggle" role="switch" aria-checked="${ambient.enabled}"><span class="admin-toggle-knob"></span></button>
+        <span class="admin-mini" style="margin:0">Off by default — turn it on when you want quiet music behind a screen. It also follows the app's main sound switch, and pressing <b>M</b> anywhere mutes everything instantly.</span>
+      </div>
+
+      <label class="admin-flabel" for="admin-ambient-volume" style="margin-top:12px">Volume — <span id="admin-ambient-vol-label">${volPct}%</span></label>
+      <input id="admin-ambient-volume" class="admin-input admin-music-volume" type="range" min="0" max="100" step="1" value="${volPct}" />
+
+      <div class="admin-mini" style="margin-top:16px">Put your .mp3 files in the <code>music</code> folder next to <code>index.html</code>, then type the filename here (for example <code>music/quests-loop.mp3</code>).</div>
+
+      <div class="admin-music-list">${rows}</div>
+
+      <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week and ⚔️ Battle Day play their own audio, so they don't take background music.</div>
     </div>`;
 }
 
@@ -3497,6 +3638,24 @@ function onClick(e) {
         }, { yesLabel: 'Clear reduction' });
       break;
     }
+    // background music (Settings tab)
+    case 'ambient-toggle': {
+      const cur = store.getAmbient();
+      store.updateAmbient({ enabled: !cur.enabled });
+      renderBody();
+      toast(`Background music ${!cur.enabled ? 'on' : 'off'}.`);
+      break;
+    }
+    case 'music-preview': previewMusicTrack(btn.dataset.screen); break;
+    case 'music-clear': {
+      const screen = btn.dataset.screen;
+      store.setAmbientTrack(screen, null);
+      showMusicError(screen, '');
+      renderBody({ force: true });
+      toast('Track cleared.');
+      break;
+    }
+
     case 'danger-toggle': dangerOpen = !dangerOpen; renderBody(); break;
     case 'reset-open': openResetModal(); break;
     case 'reset-confirm': if (!btn.disabled) doReset(); break;
@@ -3917,6 +4076,17 @@ function injectStyles() {
   .admin-steps{margin:0 0 12px 18px;padding:0;color:var(--color-text-soft);font-size:.82rem;line-height:1.6;display:flex;flex-direction:column;gap:4px;}
   .admin-steps code{background:var(--color-card2);padding:1px 6px;border-radius:.35rem;color:#fbbf24;}
 
+  /* background music (Settings tab) */
+  .admin-music-volume{width:100%;max-width:360px;accent-color:#f59e0b;height:30px;}
+  .admin-music-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+  .admin-music-row{padding:10px 12px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.75rem;}
+  .admin-music-name{font-weight:700;color:var(--color-text);font-size:.88rem;margin-bottom:8px;}
+  .admin-music-controls{display:grid;grid-template-columns:1fr 1.4fr auto auto;gap:8px;align-items:center;}
+  .admin-music-controls .admin-music-pick{min-width:0;}
+  .admin-music-controls .admin-music-path{min-width:0;font-family:monospace;font-size:.82rem;}
+  @media (max-width:760px){.admin-music-controls{grid-template-columns:1fr 1fr;}}
+  .admin-music-error{margin-top:6px;font-size:.78rem;color:#ef4444;font-weight:600;}
+
   /* modals */
   #admin-modal-root:empty{display:none;}
   .admin-modal-bg{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.65);backdrop-filter:blur(3px);
@@ -4166,6 +4336,24 @@ export default {
 
     // input change: effect radios, import-file picker, media/shop/asset file inputs
     changeHandler = (e) => {
+      if (e.target.classList && e.target.classList.contains('admin-music-pick')) {
+        const screen = e.target.dataset.screen;
+        const val = e.target.value;
+        if (!val) return; // "Pick a known file…" placeholder — no-op
+        const input = rootEl.querySelector(`.admin-music-path[data-screen="${screen}"]`);
+        if (input) input.value = val;
+        ctxRef.store.setAmbientTrack(screen, val);
+        showMusicError(screen, '');
+        toast('Track assigned.');
+        return;
+      }
+      if (e.target.classList && e.target.classList.contains('admin-music-path')) {
+        const screen = e.target.dataset.screen;
+        const val = e.target.value.trim();
+        ctxRef.store.setAmbientTrack(screen, val || null);
+        showMusicError(screen, '');
+        return;
+      }
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
       if (e.target.name === 'admin-quest-repeat') { syncQuestFromDom(); questForm.repeatable = e.target.value === '1'; renderQuestModal(); return; }
       if (e.target.id === 'admin-shop-mythic') { syncShopFromDom(); shopForm.mythicOnly = e.target.checked; renderShopModal(); return; }
@@ -4187,7 +4375,15 @@ export default {
 
     // live plain-English preview in the shop editor as cost/amount are typed
     inputHandler = (e) => {
-      if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
+      if (e.target.id === 'admin-ambient-volume') {
+        const pct = Number(e.target.value);
+        const label = el('admin-ambient-vol-label');
+        if (label) label.textContent = `${pct}%`;
+        // Applies immediately — ambient.js re-reads settings on every store
+        // change, so this alone re-tunes whatever is currently playing.
+        ctxRef.store.updateAmbient({ volume: Math.min(1, Math.max(0, pct / 100)) });
+      }
+      else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
       else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });
       else if (e.target.id === 'admin-quest-penalty') { if (questForm) questForm.penaltyTouched = true; updateQuestPreview(); }
       else if (e.target.id === 'admin-award-points') updateAwardPreview();
@@ -4239,6 +4435,7 @@ export default {
 
   unmount() {
     clearTimers();
+    stopMusicPreview();
     if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
     if (rootEl) {
       if (clickHandler) rootEl.removeEventListener('click', clickHandler);

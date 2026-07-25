@@ -63,6 +63,8 @@ function defaultState() {
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
       soundEnabled: true,       // master switch for sound effects/voice
+      // Quiet per-screen background loops (see js/core/ambient.js).
+      ambient: { enabled: false, volume: 0.25, tracks: null },  // opt-in: teacher turns it on in Admin
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
@@ -242,6 +244,7 @@ function load() {
       // Same for settings (new keys like theme/mapsApiKeyOverride).
       merged.settings = { ...def.settings, ...(merged.settings || {}) };
       merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
+      merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
@@ -571,6 +574,35 @@ export const store = {
     if (item.effect.kind === 'reduce') store.activateReduction(houseId, item.effect.amount);
     else if (item.effect.kind === 'shield') store.activateShield(houseId, item.effect.amount);
     return item;
+  },
+
+  // ----- ambient music (quiet per-screen loops) -----
+
+  getAmbient() {
+    const a = state.settings.ambient || {};
+    return {
+      enabled: a.enabled !== false,
+      volume: Number.isFinite(Number(a.volume)) ? Number(a.volume) : 0.25,
+      tracks: (a.tracks && typeof a.tracks === 'object') ? a.tracks : { ...(CONFIG.AMBIENT_TRACKS || {}) },
+    };
+  },
+
+  updateAmbient(patch = {}) {
+    const cur = store.getAmbient();
+    state.settings.ambient = {
+      enabled: patch.enabled != null ? !!patch.enabled : cur.enabled,
+      volume: patch.volume != null ? Math.min(1, Math.max(0, Number(patch.volume))) : cur.volume,
+      tracks: patch.tracks != null ? patch.tracks : cur.tracks,
+    };
+    emit();
+    return store.getAmbient();
+  },
+
+  setAmbientTrack(moduleId, src) {
+    const cur = store.getAmbient();
+    const tracks = { ...cur.tracks };
+    if (src) tracks[moduleId] = src; else delete tracks[moduleId];
+    return store.updateAmbient({ tracks });
   },
 
   // ----- houses (teacher-editable: names, mottos, colours, artwork) -----
