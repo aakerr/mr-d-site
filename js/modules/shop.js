@@ -229,7 +229,7 @@ function injectStyles() {
      rides margin-top:auto so it always sits on the bottom edge of the card. */
   .shop-card{position:relative;height:100%;box-sizing:border-box;border-radius:1.5rem;border:2px solid #4c1d95;
     background:linear-gradient(160deg,rgba(30,20,55,.92),rgba(11,15,25,.96));
-    padding:1.4rem 1.2rem;display:flex;flex-direction:column;align-items:center;text-align:center;gap:.6rem;
+    padding:1.4rem 1.2rem;display:flex;flex-direction:column;align-items:center;text-align:center;gap:.3rem;
     box-shadow:0 12px 34px rgba(76,29,149,.25);transition:transform .18s ease,box-shadow .18s ease;}
   .shop-card:hover{transform:translateY(-3px);box-shadow:0 16px 42px rgba(76,29,149,.4);}
   .shop-card-broken{border-color:#7f1d1d;border-style:dashed;opacity:.85;}
