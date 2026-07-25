@@ -6,6 +6,7 @@
 //   3. The Full Ledger   — complete history, filters, CSV export, undo
 //   4. Award Routines    — one-tap teacher presets, single house or all four
 // Module id stays 'houses' so navigation/dashboard wiring elsewhere is untouched.
+import { lock } from '../core/lock.js';
 
 const STYLE_ID = 'hse-styles';
 const STYLE = `
@@ -991,17 +992,24 @@ export default {
 
     doRender();
 
+    // Single submit path for both the all-houses award and the single-house
+    // award, and the only caller of the preset buttons below — gating here
+    // covers every point-awarding tap on this screen in one place. Refused →
+    // no store call, no sound, no toast: the tap simply did nothing.
     const award = (points, label, tag) => {
-      const allMode = s.scope === 'all';
-      if (allMode) {
-        store.awardAll(points, { reason: label, tag: tag || 'manual' });
-      } else {
-        store.addPoints(Number(s.scope), points, { reason: label, tag: tag || 'manual' });
-      }
-      ctx.audio.sfx(points > 0 ? 'coin' : 'thud');
-      floatFeedback(el.querySelector('#hse-award-anchor'), points);
-      const target = allMode ? 'all four houses' : store.HOUSES[Number(s.scope)].name;
-      showToast(toastHost, `${signed(points)} ${label} → ${target}`);
+      lock.requireUnlock('award points').then((ok) => {
+        if (!ok) return;
+        const allMode = s.scope === 'all';
+        if (allMode) {
+          store.awardAll(points, { reason: label, tag: tag || 'manual' });
+        } else {
+          store.addPoints(Number(s.scope), points, { reason: label, tag: tag || 'manual' });
+        }
+        ctx.audio.sfx(points > 0 ? 'coin' : 'thud');
+        floatFeedback(el.querySelector('#hse-award-anchor'), points);
+        const target = allMode ? 'all four houses' : store.HOUSES[Number(s.scope)].name;
+        showToast(toastHost, `${signed(points)} ${label} → ${target}`);
+      });
     };
 
     const clickHandler = (e) => {
@@ -1044,27 +1052,35 @@ export default {
       const modalConfirm = e.target.closest('[data-action="hse-modal-confirm"]');
       if (modalConfirm) {
         const txId = modalConfirm.getAttribute('data-tx');
-        const tx = store.getState().transactions.find((t) => t.id === txId);
-        s.confirmTxId = null;
-        doRender(); // Cancel and Confirm both dismiss the modal immediately
-        if (!tx) return;
-        const house = store.HOUSES[tx.houseId];
-        const row = el.querySelector(`[data-tx-row="${CSS.escape(txId)}"]`);
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          store.removeTransaction(txId); // store subscribe -> doRender() with updated totals
-          ctx.audio.sfx('thud');          // quiet: this is a correction, not a reward
-          showToast(toastHost, `Removed ${signed(tx.delta)}${house ? ` from ${house.name}` : ''}`);
-        };
-        if (row) {
-          row.classList.add('hse-row-out');
-          row.addEventListener('animationend', finish, { once: true });
-          setTimeout(finish, 420); // safety net when animations are off (reduced motion)
-        } else {
-          finish();
-        }
+        // Gate here, after the tap that means it, not at the ✕ that only opens
+        // this confirm — that way a curious student is stopped once, at the PIN,
+        // instead of twice. Refused → the confirm modal is left exactly as it
+        // was (still open, same entry), nothing deleted, nothing animated.
+        lock.requireUnlock('remove a ledger entry').then((ok) => {
+          if (!ok) return;
+          const tx = store.getState().transactions.find((t) => t.id === txId);
+          s.confirmTxId = null;
+          doRender(); // Cancel and Confirm both dismiss the modal immediately
+          if (!tx) return;
+          const house = store.HOUSES[tx.houseId];
+          const row = el.querySelector(`[data-tx-row="${CSS.escape(txId)}"]`);
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            store.removeTransaction(txId); // store subscribe -> doRender() with updated totals
+            ctx.audio.sfx('thud');          // quiet: this is a correction, not a reward
+            showToast(toastHost, `Removed ${signed(tx.delta)}${house ? ` from ${house.name}` : ''}`);
+          };
+          if (row) {
+            row.classList.add('hse-row-out');
+            row.addEventListener('animationend', finish, { once: true });
+            setTimeout(finish, 420); // safety net when animations are off (reduced motion)
+          } else {
+            finish();
+          }
+        });
+        return;
       }
     };
     el.addEventListener('click', clickHandler);

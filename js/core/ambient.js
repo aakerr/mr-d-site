@@ -28,9 +28,23 @@ function settings() {
   };
 }
 
-function targetVolume() {
+// A screen's entry is either 'music/x.mp3' or { src, volume } — the second form
+// lets a shop sit quieter than a council hall. Per-screen volume is a MULTIPLIER
+// of the master volume, so the master slider still governs everything.
+function entryFor(moduleId) {
+  const { tracks } = settings();
+  const raw = tracks[moduleId];
+  if (!raw) return null;
+  if (typeof raw === 'string') return { src: raw, gain: 1 };
+  const gain = Number.isFinite(Number(raw.volume)) ? Math.min(1, Math.max(0, Number(raw.volume))) : 1;
+  return raw.src ? { src: raw.src, gain } : null;
+}
+
+function targetVolume(moduleId = current?.moduleId) {
   const { enabled, volume, soundOn } = settings();
-  return (enabled && soundOn) ? volume : 0;
+  if (!enabled || !soundOn) return 0;
+  const e = moduleId ? entryFor(moduleId) : null;
+  return volume * (e ? e.gain : 1);
 }
 
 function ramp(el, to, done) {
@@ -58,13 +72,14 @@ function stopCurrent(fade = true) {
 // Play the track assigned to `moduleId`, or fade out if that screen has none.
 export function ambientFor(moduleId) {
   try {
-    const { tracks } = settings();
-    const src = tracks[moduleId];
-    if (!src) { stopCurrent(true); return; }
-    if (current && current.moduleId === moduleId) { ramp(current.el, targetVolume()); return; }
+    const entry = entryFor(moduleId);
+    if (!entry) { stopCurrent(true); return; }
+    if (current && current.moduleId === moduleId && current.src === entry.src) {
+      ramp(current.el, targetVolume(moduleId)); return;
+    }
 
     stopCurrent(true);
-    const el = new Audio(src);
+    const el = new Audio(entry.src);
     el.loop = true;
     el.volume = 0;
     el.addEventListener('error', () => { if (current && current.el === el) current = null; });
@@ -74,14 +89,19 @@ export function ambientFor(moduleId) {
       // the next navigation retries.
       p.catch(() => { if (current && current.el === el) current = null; });
     }
-    current = { el, moduleId };
-    ramp(el, targetVolume());
+    current = { el, moduleId, src: entry.src };
+    ramp(el, targetVolume(moduleId));
   } catch (e) { /* ambience is never worth an error */ }
 }
 
 // Re-apply volume when the teacher changes the sound or ambient settings.
 export function refreshAmbient() {
-  if (current) ramp(current.el, targetVolume());
+  if (!current) return;
+  // A track swap on the live screen must actually swap, not just re-ramp.
+  const e = entryFor(current.moduleId);
+  if (!e) { stopCurrent(true); return; }
+  if (e.src !== current.src) { ambientFor(current.moduleId); return; }
+  ramp(current.el, targetVolume(current.moduleId));
 }
 
 export function stopAmbient() { stopCurrent(false); }

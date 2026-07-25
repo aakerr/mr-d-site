@@ -5,6 +5,7 @@
 // strike resolving centre screen between the two shields.
 // Every attack resolves through store.applyAttack — the one combat rule.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
+import { lock } from '../core/lock.js';
 
 const STYLE_ID = 'battle-styles';
 
@@ -947,7 +948,7 @@ function flareReduceBadge(houseId) {
 // =============================================================================
 // THE STRIKE
 // =============================================================================
-function strike(itemId) {
+async function strike(itemId) {
   if (!rootEl || resolving) return;
   const store = ctxRef.store;
   const audio = ctxRef.audio;
@@ -959,13 +960,25 @@ function strike(itemId) {
   const kind = item.effect.kind;
   const amount = item.effect.amount;
   const pierce = kind === 'pierce';
+
+  // Gate the payout, not the ceremony: choosing the item is free, but nothing
+  // is spent or struck until the teacher approves. `resolving` doubles as the
+  // in-flight guard here — set true before the await so a double-tap on this
+  // or any other item/teacher-scoring button is blocked exactly like it is
+  // during the real mutation below, and it also suspends the store-subscribe
+  // re-render while the pad is up (no optimistic UI change on a refusal).
+  resolving = true;
+  const ok = await lock.requireUnlock('use this item');
+  if (!rootEl) { resolving = false; return; }   // unmounted while the pad was open
+  if (!ok) { resolving = false; return; }       // refused — nothing moves, retry stays open
+
   const beforeChallenger = store.getTotal(challenger.id, 'term');
   const beforeTarget = store.getTotal(target.id, 'term');
 
   // Suspend re-renders so the whole resolution lands in ONE redraw — otherwise
   // purchase(), applyAttack() and the steal payout each rebuild the DOM and
   // every fx node we spawn is attached to a soon-to-be-detached element.
-  resolving = true;
+  // (resolving is already true from the gate above; kept true straight through.)
   let result;
   try {
     if (!store.purchase(challenger.id, item.cost, item.name)) {
@@ -1085,11 +1098,22 @@ function landHit(o, crest, reduced, tint = 'red') {
 // TEACHER SCORING — same ±10 as before, but a deduction is a real attack so
 // shields and relics behave exactly as they do house-vs-house.
 // =============================================================================
-function teacherScore(houseId, delta) {
+async function teacherScore(houseId, delta) {
   if (!rootEl || resolving) return;
   const store = ctxRef.store;
   const house = store.HOUSES[houseId];
   if (!house) return;
+
+  // Gate the payout. `resolving` again doubles as the in-flight guard (blocks
+  // a second tap here or on a strike button while the pad is up) and the
+  // early `if (!rootEl || resolving) return;` above is re-checked below via
+  // the explicit `!rootEl` test, since a plain re-entry to this function
+  // would otherwise see `resolving` still true and bounce harmlessly anyway.
+  resolving = true;
+  const ok = await lock.requireUnlock('score this battle');
+  resolving = false;
+  if (!rootEl) return;   // unmounted while the pad was open
+  if (!ok) return;        // refused — nothing moves, retry stays open
 
   if (delta > 0) {
     store.addPoints(houseId, delta, { reason: 'Battle Day Victory (teacher)', tag: 'battle' });

@@ -12,6 +12,7 @@
 // Owns exactly one element (#firstrun-root), removed completely on close.
 import { store } from './store.js';
 import { backup } from './backup.js';
+import { lock, DEFAULT_PIN } from './lock.js';
 
 const ROOT_ID = 'firstrun-root';
 
@@ -37,7 +38,6 @@ let busy = false;         // a folder picker is open
 let termDraft = null;     // { termStart, termWeeks } while editing step 3
 let savedTerm = false;
 
-const TOTAL = 5;
 
 function isOpen() { return !!(rootEl && rootEl.isConnected); }
 
@@ -96,7 +96,7 @@ function stepBackup() {
   try { s = backup.status(); } catch (e) { s = { supported: false, connected: false }; }
   const btnLabel = s.needsPermission ? 'Reconnect the folder' : 'Choose a backup folder';
   return {
-    eyebrow: 'Step 2 of 5 — the important one',
+    eyebrow: 'Step 2 of 6 — the important one',
     title: 'Protect your work',
     html: `
       <p class="fr-lede">Everything this app knows lives inside this browser, on this computer. There is no cloud account holding a copy.</p>
@@ -119,7 +119,7 @@ function stepTerm() {
   const s = (() => { try { return store.getSettings(); } catch (e) { return {}; } })();
   const draft = termDraft || { termStart: s.termStart || nextMonday(), termWeeks: s.termWeeks || 9 };
   return {
-    eyebrow: 'Step 3 of 5',
+    eyebrow: 'Step 3 of 6',
     title: 'When does your term start?',
     html: `
       <p class="fr-lede">This drives the "Week 3 of 9" counter in the top bar and the term totals on the leaderboard.</p>
@@ -145,7 +145,7 @@ function stepHouses() {
   let houses = [];
   try { houses = [1, 2, 3, 4].map((c) => store.HOUSES[c]).filter(Boolean); } catch (e) { houses = []; }
   return {
-    eyebrow: 'Step 4 of 5',
+    eyebrow: 'Step 4 of 6',
     title: 'Your four houses',
     html: `
       <p class="fr-lede">One house per class period. Tap the big name in the middle of the top bar to switch between them.</p>
@@ -172,7 +172,7 @@ function stepDone() {
       <p class="fr-lede">Two things to remember, and then go and teach.</p>
       <ul class="fr-remember">
         <li><span class="fr-glyph">🗝️</span><div><b>The key, top right.</b> That is your Admin panel — the calendar, quests, the shop, the Place of the Week and all your settings. It is deliberately faint so students leave it alone.</div></li>
-        <li><span class="fr-glyph">❓</span><div><b>The question mark, next to it.</b> That is the handbook: how to award points, how to undo a mistake, how to set up next week's destination, and a <b>System check</b> that tells you if anything needs attention.</div></li>
+        <li><span class="fr-glyph">❓</span><div><b>The handbook, inside Admin.</b> Open the key and pick <b>❓ Help</b>: how to award points, how to undo a mistake, how to set up next week's destination, and a <b>System check</b> that tells you if anything needs attention.</div></li>
       </ul>
       <p class="fr-actions">
         <button type="button" class="fr-btn fr-btn-primary" data-fr-action="finish">Start using the app</button>
@@ -183,7 +183,33 @@ function stepDone() {
   };
 }
 
-const STEPS = [stepWelcome, stepBackup, stepTerm, stepHouses, stepDone];
+function stepLock() {
+  const on = (() => { try { return lock.isEnabled(); } catch (e) { return false; } })();
+  return {
+    eyebrow: 'Step 5 of 6',
+    title: 'Keep students out of the controls',
+    html: `
+      <p class="fr-lede">The board is at the front of the room, and it is going to be left alone sometimes.</p>
+      <p>You can put a short PIN in front of the things that matter — the Admin panel, and anything that awards or takes away points. Everything students are meant to do at the board stays open: rolling the Die of Destiny, taking on a quest, reading the standings.</p>
+      ${on ? `
+        <p class="fr-lock-on">✅ <b>The PIN is on.</b> You can change it any time in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
+      ` : `
+        <p class="fr-actions fr-lock-row">
+          <input type="text" inputmode="numeric" autocomplete="off" maxlength="8"
+                 class="fr-input fr-lock-input" data-fr-pin value="${esc(DEFAULT_PIN)}" aria-label="New teacher PIN" />
+          <button type="button" class="fr-btn fr-btn-primary" data-fr-action="set-pin">Turn on the PIN</button>
+        </p>
+        <p class="fr-lock-msg" data-fr-pin-msg hidden></p>
+        <p class="fr-fineprint">It starts filled in with <b>${esc(DEFAULT_PIN)}</b> — type over it with something of your own if you would rather. Leaving this step alone leaves the PIN off, which is fine; you can turn it on later in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
+      `}
+      <p>You type it once and it stays unlocked for 15 minutes, so a lesson never turns into typing a PIN over and over.</p>
+      <p class="fr-fineprint">Being straight with you: this stops a student walking up and tapping. It is not real security — it does not lock or scramble your saved data, and anyone who knows their way around a web browser can get past it. It is a classroom door, not a safe.</p>
+    `,
+    next: on ? 'Next' : 'Skip this for now',
+  };
+}
+
+const STEPS = [stepWelcome, stepBackup, stepTerm, stepHouses, stepLock, stepDone];
 
 // ---------------------------------------------------------------------------
 // rendering
@@ -276,6 +302,26 @@ function onClick(e) {
   }
 
   if (what === 'save-term') { saveTerm(); return; }
+
+  if (what === 'set-pin') {
+    const input = rootEl?.querySelector('[data-fr-pin]');
+    const msg = rootEl?.querySelector('[data-fr-pin-msg]');
+    const pin = String(input?.value || '').trim();
+    const fail = (text) => {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.hidden = false;
+      input?.focus();
+    };
+    if (!/^\d{4,8}$/.test(pin)) { fail('Use 4 to 8 numbers — something you will remember on a Monday morning.'); return; }
+    lock.setPin(pin)
+      .then((ok) => {
+        if (!isOpen()) return;               // wizard closed while we hashed
+        if (ok) render(); else fail('That PIN was too short — use at least 4 numbers.');
+      })
+      .catch((err) => { console.warn('firstrun: could not set PIN', err); fail('Something went wrong turning the PIN on.'); });
+    return;
+  }
 
   if (what === 'open-help') {
     markDone();

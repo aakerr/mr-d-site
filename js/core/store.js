@@ -65,6 +65,10 @@ function defaultState() {
       soundEnabled: true,       // master switch for sound effects/voice
       // Quiet per-screen background loops (see js/core/ambient.js).
       ambient: { enabled: false, volume: 0.25, tracks: null },  // opt-in: teacher turns it on in Admin
+      // Teacher PIN (js/core/lock.js). Empty pinHash = off, which is the default:
+      // the app must never lock a teacher out of a fresh install. `len` is the
+      // digit count so the PIN pad knows when an entry is complete.
+      lock: { pinHash: '', len: 4, minutes: 15 },
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
@@ -245,6 +249,7 @@ function load() {
       merged.settings = { ...def.settings, ...(merged.settings || {}) };
       merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
       merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
+      merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().

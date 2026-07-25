@@ -7,6 +7,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
+import { lock, DEFAULT_PIN } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
@@ -30,6 +31,7 @@ const HELP_TOPICS = {
   shop: 'shop-effects',
   potw: 'potw-schedule',
   backups: 'data-backup',
+  lock: 'admin-lock',
 };
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,10 @@ let questForm = null;                 // in-progress quest editor
 let houseForm = null;                 // in-progress house editor (Settings tab)
 let videoForm = null;                 // in-progress intro-video preset editor (POTW tab)
 let awardForm = null;                 // in-progress quick-award preset editor (Settings tab)
+// Teacher PIN card (Settings tab). mode is only meaningful once a PIN exists:
+// null = the default on/off summary view, 'change' / 'off' = the inline form
+// asking for the current PIN before either action goes through.
+let lockUi = { mode: null, currentPin: '', newPin: DEFAULT_PIN, confirmPin: DEFAULT_PIN, error: '' };
 let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 let musicPreview = null;              // { el, screen } — the one background-music preview clip playing, if any
@@ -1800,6 +1806,8 @@ function renderSettings() {
         <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in either backup.</div>
       </div>
 
+      ${renderLockCard()}
+
       <div class="admin-card admin-danger${dangerOpen ? ' open' : ''}">
         <button class="admin-danger-toggle" data-action="danger-toggle">
           <span>⚠️ Danger Zone</span>
@@ -1816,12 +1824,13 @@ function renderSettings() {
 
 // ----- background music (quiet per-screen ambient loops) -------------------
 
-// Screens a teacher would plausibly want music on. Place of the Week and
-// Battle Day make their own noise and are deliberately left out. Reads the
-// live module registry when available so a future module shows up here
-// automatically; falls back to the known screen list if the registry isn't
-// wired for some reason.
-const AMBIENT_EXCLUDE = new Set(['admin', 'potw', 'battle']);
+// Screens a teacher would plausibly want music on. Place of the Week plays
+// its own flight music and presentation audio, so it's deliberately left out.
+// Battle Day IS assignable — it just plays under the battle, and the opening
+// voice line still comes through on top of it. Reads the live module registry
+// when available so a future module shows up here automatically; falls back
+// to the known screen list if the registry isn't wired for some reason.
+const AMBIENT_EXCLUDE = new Set(['admin', 'potw']);
 const AMBIENT_SCREENS_FALLBACK = [
   { id: 'dashboard', label: 'Morning Dashboard' },
   { id: 'council',   label: 'Council of Four' },
@@ -1829,7 +1838,81 @@ const AMBIENT_SCREENS_FALLBACK = [
   { id: 'quests',    label: 'Quests' },
   { id: 'shop',      label: 'Magic Shop' },
   { id: 'dice',      label: 'Die of Destiny' },
+  { id: 'battle',    label: 'Battle Day' },
 ];
+
+// The teacher's actual files in /music, as of this build. A static site can't
+// list a directory, so this is a hard-coded convenience list for the
+// dropdown — the free-text field next to it still takes anything else he
+// adds to the folder later.
+const SUGGESTED_MUSIC_FILES = [
+  'music/breath-of-fate.mp3',
+  'music/bridging-the-path.mp3',
+  'music/honor-roll.mp3',
+  'music/looming-roll.mp3',
+  'music/storming-the-gates.mp3',
+  'music/the-grand-pavilion.mp3',
+  'music/the-long-road-ahead.mp3',
+  'music/travel-zoom.mp3',
+  'music/vanguard-charge.mp3',
+];
+
+// One-tap starter mapping so the teacher can hear the whole thing immediately,
+// then tweak from there. 60% for the "working" screens he wants barely-there;
+// 100% for the screens he wants more present.
+const SUGGESTED_MUSIC_SETUP = [
+  { screen: 'dashboard', src: 'music/bridging-the-path.mp3',   volume: 0.6 },
+  { screen: 'council',   src: 'music/the-grand-pavilion.mp3',  volume: 1 },
+  { screen: 'houses',    src: 'music/honor-roll.mp3',          volume: 0.6 },
+  { screen: 'quests',    src: 'music/the-long-road-ahead.mp3', volume: 1 },
+  { screen: 'shop',      src: 'music/breath-of-fate.mp3',      volume: 0.6 },
+  { screen: 'dice',      src: 'music/looming-roll.mp3',        volume: 1 },
+  { screen: 'battle',    src: 'music/storming-the-gates.mp3',  volume: 1 },
+];
+
+// A screen's tracks entry is either a plain path (legacy) or { src, volume }
+// (see js/core/ambient.js `entryFor`) — the per-screen volume is a multiplier
+// (0–1) of the master volume. Read defensively so either shape renders fine.
+function screenTrackEntry(tracks, id) {
+  const raw = (tracks || {})[id];
+  if (!raw) return { src: '', volume: 1 };
+  if (typeof raw === 'string') return { src: raw, volume: 1 };
+  const volume = Number.isFinite(Number(raw.volume)) ? Math.min(1, Math.max(0, Number(raw.volume))) : 1;
+  return { src: raw.src || '', volume };
+}
+
+// Assign (or clear) a screen's track. A newly-assigned track defaults to
+// 100% — an existing per-screen level is preserved when just the file changes.
+function setScreenTrack(screen, src) {
+  const store = ctxRef.store;
+  const ambient = store.getAmbient();
+  const tracks = { ...ambient.tracks };
+  if (!src) { delete tracks[screen]; store.updateAmbient({ tracks }); return; }
+  const prev = screenTrackEntry(tracks, screen);
+  tracks[screen] = { src, volume: prev.src ? prev.volume : 1 };
+  store.updateAmbient({ tracks });
+}
+
+// Per-screen volume only — applies live, ambient.js re-reads settings on
+// every store change so whatever is currently playing re-tunes immediately.
+function setScreenVolume(screen, pct) {
+  const store = ctxRef.store;
+  const ambient = store.getAmbient();
+  const entry = screenTrackEntry(ambient.tracks, screen);
+  if (!entry.src) return;
+  const tracks = { ...ambient.tracks, [screen]: { src: entry.src, volume: Math.min(1, Math.max(0, Number(pct) / 100)) } };
+  store.updateAmbient({ tracks });
+}
+
+function applySuggestedMusicSetup() {
+  const store = ctxRef.store;
+  const ambient = store.getAmbient();
+  const tracks = { ...ambient.tracks };
+  SUGGESTED_MUSIC_SETUP.forEach(({ screen, src, volume }) => { tracks[screen] = { src, volume }; });
+  store.updateAmbient({ tracks, enabled: true });
+  renderBody({ force: true });
+  toast('Suggested setup applied — tweak any track or level below.');
+}
 
 function ambientScreens() {
   try {
@@ -1844,13 +1927,19 @@ function ambientScreens() {
   return AMBIENT_SCREENS_FALLBACK;
 }
 
-// Files the teacher actually has, as best we can tell without a directory
-// listing: anything already assigned to a screen, plus the flyover default.
+// The dropdown's suggested list: the hard-coded files actually in /music,
+// plus anything already assigned to a screen (in case a custom file was typed
+// in) and the flyover default. A static site can't list a directory, so the
+// hard-coded list is the convenience — the free-text field still takes
+// anything else the teacher adds to the folder later.
 function knownMusicFiles() {
   const store = ctxRef.store;
   const { tracks } = store.getAmbient();
-  const set = new Set();
-  Object.values(tracks || {}).forEach((v) => { if (v) set.add(v); });
+  const set = new Set(SUGGESTED_MUSIC_FILES);
+  Object.values(tracks || {}).forEach((v) => {
+    const src = v && typeof v === 'object' ? v.src : v;
+    if (src) set.add(src);
+  });
   if (CONFIG.POTW_FLYOVER_DEFAULT) set.add(CONFIG.POTW_FLYOVER_DEFAULT);
   return [...set].sort();
 }
@@ -1889,9 +1978,13 @@ function previewMusicTrack(screen) {
   const src = input ? input.value.trim() : '';
   if (!src) { showMusicError(screen, 'Pick or type a file first.'); return; }
   const store = ctxRef.store;
-  const { volume } = store.getAmbient();
+  const ambient = store.getAmbient();
+  // Preview at the screen's own level (relative to master) when previewing
+  // the track that's actually assigned there, so the audition matches reality.
+  const entry = screenTrackEntry(ambient.tracks, screen);
+  const gain = entry.src === src ? entry.volume : 1;
   const audio = new Audio(src);
-  audio.volume = Math.min(1, Math.max(0, Number(volume) || 0));
+  audio.volume = Math.min(1, Math.max(0, (Number(ambient.volume) || 0) * gain));
   const fail = () => {
     if (musicPreview && musicPreview.el === audio) musicPreview = null;
     showMusicError(screen, "Couldn't play that file — check the name and that it's in /music.");
@@ -1912,10 +2005,15 @@ function renderMusicCard() {
   const volPct = Math.round((Number(ambient.volume) || 0) * 100);
 
   const rows = screens.map((sc) => {
-    const cur = ambient.tracks[sc.id] || '';
+    const entry = screenTrackEntry(ambient.tracks, sc.id);
+    const cur = entry.src;
+    const screenVolPct = Math.round(entry.volume * 100);
     const options = ['<option value="">Pick a known file…</option>']
       .concat(files.map((f) => `<option value="${esc(f)}"${f === cur ? ' selected' : ''}>${esc(f)}</option>`))
       .join('');
+    const caveat = sc.id === 'battle'
+      ? '<div class="admin-mini admin-music-caveat">⚔️ Plays under the battle — the opening voice line still comes through.</div>'
+      : '';
     return `
       <div class="admin-music-row">
         <div class="admin-music-name">${esc(sc.label)}</div>
@@ -1925,6 +2023,11 @@ function renderMusicCard() {
           <button class="admin-btn admin-btn-sm" data-action="music-preview" data-screen="${sc.id}">▶ Preview</button>
           <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="music-clear" data-screen="${sc.id}">Clear</button>
         </div>
+        <div class="admin-music-vol-row">
+          <label class="admin-flabel admin-music-vol-label" for="admin-music-vol-${sc.id}">Level on this screen — <span id="admin-music-vol-num-${sc.id}">${screenVolPct}%</span> <span class="admin-faint">(relative to the master volume above)</span></label>
+          <input id="admin-music-vol-${sc.id}" class="admin-input admin-music-screen-volume" data-screen="${sc.id}" type="range" min="0" max="100" step="1" value="${screenVolPct}" aria-label="Level on this screen for ${esc(sc.label)}"${cur ? '' : ' disabled'} />
+        </div>
+        ${caveat}
         <div class="admin-music-error" id="admin-music-err-${sc.id}" style="display:none"></div>
       </div>`;
   }).join('');
@@ -1943,11 +2046,16 @@ function renderMusicCard() {
       <label class="admin-flabel" for="admin-ambient-volume" style="margin-top:12px">Volume — <span id="admin-ambient-vol-label">${volPct}%</span></label>
       <input id="admin-ambient-volume" class="admin-input admin-music-volume" type="range" min="0" max="100" step="1" value="${volPct}" />
 
-      <div class="admin-mini" style="margin-top:16px">Put your .mp3 files in the <code>music</code> folder next to <code>index.html</code>, then type the filename here (for example <code>music/quests-loop.mp3</code>).</div>
+      <div class="admin-music-suggested">
+        <button class="admin-btn admin-btn-accent admin-btn-block" data-action="music-suggested-open">✨ Suggested setup</button>
+        <div class="admin-mini" style="margin-top:6px">One tap assigns a track and a starting level to every screen below, so you can hear it all right away — then tweak anything you like.</div>
+      </div>
+
+      <div class="admin-mini" style="margin-top:16px">Put your .mp3 files in the <code>music</code> folder next to <code>index.html</code>. Each row's dropdown suggests the files already in that folder — type a name instead for anything else. Files you add to the music folder later can be typed in by name.</div>
 
       <div class="admin-music-list">${rows}</div>
 
-      <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week and ⚔️ Battle Day play their own audio, so they don't take background music.</div>
+      <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week plays its own flight music and presentation audio, so it doesn't take background music.</div>
     </div>`;
 }
 
@@ -2162,6 +2270,144 @@ function autoBackupHTML() {
 function updateBackupStatusLine() {
   const box = el('admin-backup-status');
   if (box && ctxRef) box.innerHTML = backupStatusLine(backup.status());
+}
+
+// ----- Teacher PIN (js/core/lock.js) ----------------------------------------
+// A classroom deterrent, not real security — see the honest note baked into
+// the card itself. This module only ever calls the lock.* API; it never reads
+// or writes settings.lock directly.
+function resetLockUi() { lockUi = { mode: null, currentPin: '', newPin: '', confirmPin: '', error: '' }; }
+
+function renderLockCard() {
+  const enabled = lock.isEnabled();
+  const s = ctxRef.store.getSettings();
+  const minutes = Number.isFinite(Number(s.lock?.minutes)) ? Number(s.lock.minutes) : 15;
+  const errLine = lockUi.error ? `<div class="admin-warn-line">⚠️ ${esc(lockUi.error)}</div>` : '';
+
+  let body;
+  if (!enabled) {
+    body = `
+      <p class="admin-mini">Puts a PIN in front of the Admin panel and point-award actions, so a student can't wander up to the board while you're away and start tapping. Nothing students do themselves — quests, the shop, the dice — is affected.</p>
+      <p class="admin-mini">The boxes start filled in with <b>${esc(DEFAULT_PIN)}</b> as a suggestion — type over it with something of your own if you would rather. <b>The lock is off until you tap the button below.</b></p>
+      ${errLine}
+      <div class="admin-two">
+        <div>
+          <label class="admin-flabel" for="admin-lock-new">New PIN (4+ digits)</label>
+          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.newPin)}" />
+        </div>
+        <div>
+          <label class="admin-flabel" for="admin-lock-confirm">Confirm PIN</label>
+          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.confirmPin)}" />
+        </div>
+      </div>
+      <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="lock-set">Turn on the lock</button>
+    `;
+  } else if (lockUi.mode === 'change') {
+    body = `
+      <div class="admin-mini">Enter your current PIN, then the new one twice.</div>
+      ${errLine}
+      <label class="admin-flabel" for="admin-lock-current">Current PIN</label>
+      <input id="admin-lock-current" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.currentPin)}" />
+      <div class="admin-two" style="margin-top:10px">
+        <div>
+          <label class="admin-flabel" for="admin-lock-new">New PIN (4+ digits)</label>
+          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.newPin)}" />
+        </div>
+        <div>
+          <label class="admin-flabel" for="admin-lock-confirm">Confirm new PIN</label>
+          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.confirmPin)}" />
+        </div>
+      </div>
+      <div class="admin-backup-row" style="margin-top:12px">
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="lock-change-save">Save new PIN</button>
+        <button class="admin-btn admin-btn-lg" data-action="lock-cancel">Cancel</button>
+      </div>
+    `;
+  } else if (lockUi.mode === 'off') {
+    body = `
+      <div class="admin-mini">Enter the current PIN to turn the lock off.</div>
+      ${errLine}
+      <label class="admin-flabel" for="admin-lock-current">Current PIN</label>
+      <input id="admin-lock-current" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.currentPin)}" />
+      <div class="admin-backup-row" style="margin-top:12px">
+        <button class="admin-btn admin-btn-lg admin-btn-danger" data-action="lock-off-save">Turn off the lock</button>
+        <button class="admin-btn admin-btn-lg" data-action="lock-cancel">Cancel</button>
+      </div>
+    `;
+  } else {
+    body = `
+      <p class="admin-mini">🔒 The lock is <b>on</b>. The Admin panel and point-award actions ask for the PIN after ${minutes} minute${minutes === 1 ? '' : 's'} without teacher activity.</p>
+      <div class="admin-backup-row">
+        <button class="admin-btn admin-btn-lg" data-action="lock-now">Lock now</button>
+        <button class="admin-btn admin-btn-lg" data-action="lock-mode-change">Change PIN</button>
+        <button class="admin-btn admin-btn-lg admin-btn-danger" data-action="lock-mode-off">Turn off the lock</button>
+      </div>
+
+      <label class="admin-flabel" style="margin-top:16px">Auto-relock after</label>
+      <div class="admin-seg admin-theme-seg">
+        ${[5, 15, 30, 60].map((m) => `<button class="admin-theme-opt${minutes === m ? ' on' : ''}" data-action="lock-minutes" data-minutes="${m}">${m} min</button>`).join('')}
+      </div>
+      <div class="admin-mini">After this long with no teacher activity, the board asks for the PIN again.</div>
+    `;
+  }
+
+  const recoveryBox = enabled ? `
+      <div class="admin-code admin-recovery-code" style="margin:14px 0;text-align:center">
+        <div class="admin-flabel" style="margin-bottom:8px">🔑 Recovery code — write this down now and keep it in your desk</div>
+        <div style="font-size:1.4rem;font-weight:800;letter-spacing:.25em;color:var(--color-text);user-select:all">${esc(lock.getRecoveryCode())}</div>
+      </div>` : '';
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🔒 Teacher PIN</div>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.lock, 'What the Teacher PIN does and doesn’t protect')}</div>
+      ${body}
+      ${recoveryBox}
+      <hr class="admin-hr" />
+      <p class="admin-mini"><b>Honest note:</b> this stops a student from walking up to the board and tapping around while you're not looking — that is genuinely all it is for. It is <b>not real security</b>: anyone who knows their way around a browser's developer tools can get past it in seconds, and it does not encrypt or protect any of the saved data. The recovery code above is stored as plain, readable text (not scrambled like the PIN) — that's exactly what makes it possible to find in a backup file, and it also means anyone holding that backup file can read it.</p>
+      <details class="admin-details">
+        <summary>Forgot the PIN?</summary>
+        <ol class="admin-steps">
+          <li>Write the recovery code down now, while you can still see it above, and keep it somewhere in your desk.</li>
+          <li>Locked out at the board? On the PIN pad, tap <b>Forgot your PIN?</b>, then open your most recent backup <b>.json</b> file in any text editor and search it for the word <b>recovery</b>. Type that code in. The PIN turns off — nothing else changes and no points are lost.</li>
+          <li>Last resort only, if there is truly no backup file to read the code from: clearing this browser's saved site data also clears the PIN — but it erases <b>everything else too</b>: every point, the planner, quests, the shop, and the whole term along with it.</li>
+        </ol>
+      </details>
+    </div>`;
+}
+
+async function saveLockSet() {
+  lockUi.newPin = el('admin-lock-new') ? el('admin-lock-new').value.trim() : '';
+  lockUi.confirmPin = el('admin-lock-confirm') ? el('admin-lock-confirm').value.trim() : '';
+  if (lockUi.newPin.length < 4) { lockUi.error = 'The PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  if (lockUi.newPin !== lockUi.confirmPin) { lockUi.error = 'Those two PINs don’t match.'; renderBody({ force: true }); return; }
+  const ok = await lock.setPin(lockUi.newPin);
+  if (!ok) { lockUi.error = 'The PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  resetLockUi();
+  renderBody({ force: true });
+  toast('Teacher PIN turned on.');
+}
+
+async function saveLockChange() {
+  lockUi.currentPin = el('admin-lock-current') ? el('admin-lock-current').value.trim() : '';
+  lockUi.newPin = el('admin-lock-new') ? el('admin-lock-new').value.trim() : '';
+  lockUi.confirmPin = el('admin-lock-confirm') ? el('admin-lock-confirm').value.trim() : '';
+  if (lockUi.newPin.length < 4) { lockUi.error = 'The new PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  if (lockUi.newPin !== lockUi.confirmPin) { lockUi.error = 'Those two new PINs don’t match.'; renderBody({ force: true }); return; }
+  if (!(await lock.verify(lockUi.currentPin))) { lockUi.error = 'That current PIN is wrong.'; renderBody({ force: true }); return; }
+  await lock.setPin(lockUi.newPin);
+  resetLockUi();
+  renderBody({ force: true });
+  toast('Teacher PIN changed.');
+}
+
+async function saveLockOff() {
+  lockUi.currentPin = el('admin-lock-current') ? el('admin-lock-current').value.trim() : '';
+  const ok = await lock.clearPin(lockUi.currentPin);
+  if (!ok) { lockUi.error = 'That PIN is wrong.'; renderBody({ force: true }); return; }
+  resetLockUi();
+  renderBody({ force: true });
+  toast('Teacher PIN turned off.');
 }
 
 async function connectBackupFolder() {
@@ -3614,6 +3860,16 @@ function onClick(e) {
       renderBody({ force: true });
       break;
     }
+    // teacher PIN (lock.js)
+    case 'lock-set': saveLockSet(); break;
+    case 'lock-mode-change': lockUi = { mode: 'change', currentPin: '', newPin: '', confirmPin: '', error: '' }; renderBody(); break;
+    case 'lock-change-save': saveLockChange(); break;
+    case 'lock-mode-off': lockUi = { mode: 'off', currentPin: '', newPin: '', confirmPin: '', error: '' }; renderBody(); break;
+    case 'lock-off-save': saveLockOff(); break;
+    case 'lock-cancel': resetLockUi(); renderBody(); break;
+    case 'lock-now': lock.lockNow(); renderBody({ force: true }); toast('Locked.'); break;
+    case 'lock-minutes': lock.setMinutes(Number(btn.dataset.minutes)); renderBody({ force: true }); toast(`Auto-relock set to ${btn.dataset.minutes} minutes.`); break;
+
     case 'shield-clear': {
       const hid = Number(btn.dataset.house);
       const house = store.HOUSES[hid];
@@ -3653,6 +3909,14 @@ function onClick(e) {
       showMusicError(screen, '');
       renderBody({ force: true });
       toast('Track cleared.');
+      break;
+    }
+    case 'music-suggested-open': {
+      openConfirm(
+        'Apply the suggested background music setup?',
+        'This assigns a track and starting level to every screen (Dashboard, Council, Records, Quests, Shop, Dice, Battle Day), turns background music on, and replaces whatever is already assigned to those screens. You can change any track or level afterwards.',
+        () => applySuggestedMusicSetup(),
+        { danger: false, yesLabel: 'Apply suggested setup' });
       break;
     }
 
@@ -4086,6 +4350,12 @@ function injectStyles() {
   .admin-music-controls .admin-music-path{min-width:0;font-family:monospace;font-size:.82rem;}
   @media (max-width:760px){.admin-music-controls{grid-template-columns:1fr 1fr;}}
   .admin-music-error{margin-top:6px;font-size:.78rem;color:#ef4444;font-weight:600;}
+  .admin-music-suggested{margin-top:14px;padding:12px;background:var(--color-page);border:1px dashed var(--color-line);border-radius:.75rem;}
+  .admin-music-vol-row{margin-top:10px;}
+  .admin-music-vol-label{margin:0 0 4px;}
+  .admin-music-screen-volume{width:100%;max-width:360px;accent-color:#f59e0b;height:26px;}
+  .admin-music-screen-volume:disabled{opacity:.4;cursor:not-allowed;}
+  .admin-music-caveat{margin-top:6px;}
 
   /* modals */
   #admin-modal-root:empty{display:none;}
@@ -4340,18 +4610,18 @@ export default {
         const screen = e.target.dataset.screen;
         const val = e.target.value;
         if (!val) return; // "Pick a known file…" placeholder — no-op
-        const input = rootEl.querySelector(`.admin-music-path[data-screen="${screen}"]`);
-        if (input) input.value = val;
-        ctxRef.store.setAmbientTrack(screen, val);
+        setScreenTrack(screen, val);
         showMusicError(screen, '');
+        renderBody({ force: true });
         toast('Track assigned.');
         return;
       }
       if (e.target.classList && e.target.classList.contains('admin-music-path')) {
         const screen = e.target.dataset.screen;
         const val = e.target.value.trim();
-        ctxRef.store.setAmbientTrack(screen, val || null);
+        setScreenTrack(screen, val || null);
         showMusicError(screen, '');
+        renderBody({ force: true });
         return;
       }
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
@@ -4382,6 +4652,14 @@ export default {
         // Applies immediately — ambient.js re-reads settings on every store
         // change, so this alone re-tunes whatever is currently playing.
         ctxRef.store.updateAmbient({ volume: Math.min(1, Math.max(0, pct / 100)) });
+      }
+      else if (e.target.classList && e.target.classList.contains('admin-music-screen-volume')) {
+        const screen = e.target.dataset.screen;
+        const pct = Number(e.target.value);
+        const label = el(`admin-music-vol-num-${screen}`);
+        if (label) label.textContent = `${pct}%`;
+        // Applies immediately, same as the master slider above.
+        setScreenVolume(screen, pct);
       }
       else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
       else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });

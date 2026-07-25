@@ -243,6 +243,34 @@ html[data-mode="light"] .shell-icon-btn:active { background: rgba(0, 0, 0, 0.06)
 .points-trigger-btn:hover .points-trigger-dot { filter: brightness(1.08); }
 .points-trigger-btn[data-open="true"] .points-trigger-dot { rotate: 45deg; }
 
+/* Mute control — mirrors the ± trigger's geometry so the pair flanks the house
+   pill symmetrically. Quiet by default (it's not a primary action); it turns
+   amber when muted so a silenced room is obvious from across the classroom. */
+.sound-trigger-btn {
+  width: 44px; height: 44px;
+  min-width: 44px; min-height: 44px;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+.sound-trigger-btn:active { transform: scale(0.92); }
+.sound-trigger-dot {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  font-size: 17px; line-height: 1;
+  opacity: 0.45;
+  transition: opacity var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-med);
+}
+.sound-trigger-btn:hover .sound-trigger-dot,
+.sound-trigger-btn:focus-visible .sound-trigger-dot { opacity: 1; }
+.sound-trigger-btn[data-muted="true"] .sound-trigger-dot {
+  opacity: 1;
+  background: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.55);
+}
+
 /* ============ Quick-points panel (dropdown from the top bar) + toasts ============ */
 /* #fab-root is the lead-owned mount point from index.html; it now only ever
    hosts the dropdown panel (in its own #fab-panel-host child, see shell.js)
@@ -747,3 +775,116 @@ html[data-mode="light"] .fr-backdrop { background: rgba(17, 24, 39, 0.6); }
   background: var(--color-card);
 }
 .fr-foot-spacer { flex: 1 1 auto; }
+
+/* ============ teacher PIN pad (js/core/lock.js) ============
+   Sits above everything (help 90, first-run 95) because any gated action can
+   raise it. Sized for a finger on a smartboard, not a mouse. */
+.lock-pad-backdrop {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(3, 6, 15, 0.72);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: lockPadIn var(--transition-med) ease both;
+}
+html[data-mode="light"] .lock-pad-backdrop { background: rgba(17, 24, 39, 0.6); }
+
+.lock-pad {
+  width: min(92vw, 340px);
+  padding: clamp(18px, 3vh, 26px) clamp(18px, 3vw, 26px);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+.lock-pad-title { font-size: 1.05rem; font-weight: 700; color: var(--color-text); }
+.lock-pad-sub {
+  margin-top: 4px; font-size: 0.82rem; line-height: 1.35;
+  color: var(--color-text-soft);
+}
+
+/* Fixed height so the row never reflows as digits land. */
+.lock-pad-dots {
+  height: 34px; display: flex; align-items: center; justify-content: center;
+  margin: 14px 0 4px;
+  font-size: 1.5rem; letter-spacing: 0.38em; text-indent: 0.38em;
+  color: var(--accent);
+}
+
+.lock-pad-keys {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-top: 10px;
+}
+.lock-pad-keys button {
+  min-height: 52px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-card2);
+  color: var(--color-text);
+  font-size: 1.25rem; font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.lock-pad-keys button:hover { background: var(--color-line); }
+.lock-pad-keys button:active { transform: scale(0.95); }
+.lock-pad-keys .lock-pad-alt {
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--color-text-soft); background: transparent;
+}
+.lock-pad-keys .lock-pad-alt:hover { background: var(--color-card2); color: var(--color-text); }
+
+.lock-pad-err {
+  margin-top: 12px; font-size: 0.8rem;
+  color: var(--house-camelot);
+}
+
+@keyframes lockPadIn { from { opacity: 0; } to { opacity: 1; } }
+/* A wrong PIN shakes rather than shouting — it reads instantly across a room. */
+.lock-pad.shake { animation: lockPadShake 400ms ease; }
+@keyframes lockPadShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-9px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+
+html[data-mode="light"] .lock-pad { background: #ffffff; }
+html[data-mode="light"] .lock-pad-keys button { background: #f3f4f6; }
+html[data-mode="light"] .lock-pad-keys button:hover { background: #e5e7eb; }
+
+/* ---- first-run: the teacher PIN step ---- */
+.fr-lock-row { align-items: center; }
+.fr-lock-input {
+  width: 170px; flex: 0 0 auto;
+  letter-spacing: 0.3em; text-align: center; font-size: 1.05rem;
+}
+.fr-lock-msg { margin: -6px 0 12px; font-size: 0.86rem; color: var(--house-camelot); }
+.fr-lock-on {
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+}
+
+/* ---- PIN pad: the forgotten-PIN recovery view ---- */
+.lock-pad-forgot {
+  margin-top: 14px; padding: 4px;
+  background: none; border: 0; cursor: pointer;
+  font-size: 0.78rem; text-decoration: underline;
+  color: var(--color-text-soft);
+}
+.lock-pad-forgot:hover { color: var(--color-text); }
+.lock-pad-code {
+  width: 100%; margin-top: 14px; padding: 12px;
+  border: 1px solid var(--color-line); border-radius: 10px;
+  background: var(--color-card2); color: var(--color-text);
+  font-size: 1.15rem; font-weight: 700;
+  letter-spacing: 0.22em; text-align: center; text-transform: uppercase;
+}
+.lock-pad-code:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.lock-pad-keys-2 { grid-template-columns: 1fr 1.4fr; }
+.lock-pad-note {
+  margin-top: 14px; font-size: 0.74rem; line-height: 1.4;
+  color: var(--color-text-soft);
+}
+html[data-mode="light"] .lock-pad-code { background: #f3f4f6; }

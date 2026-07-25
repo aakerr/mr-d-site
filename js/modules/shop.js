@@ -6,6 +6,7 @@
 import { media } from '../core/media.js';
 import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
+import { lock } from '../core/lock.js';
 
 const STYLE_ID = 'shop-styles';
 const PURPLE = '#a78bfa';
@@ -1181,13 +1182,23 @@ function resolveWildPurchase(s, item, buyerId) {
   playWildReveal(s, item, buyer, buyerId, mountedRootAtStart);
 }
 
-function resolvePurchase(s) {
+async function resolvePurchase(s) {
   const store = ctxRef.store;
   const audio = ctxRef.audio;
   const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
   if (!item || itemIssues(item).length) { s.confirm = null; render(s); return; }
   const { buyerId, targetId } = s.confirm;
   const kind = item.effect.kind;
+
+  // Gate the spend itself — one PIN entry per shop session (lock.js keeps a
+  // 15-minute unlock window), not one per purchase. Everything above this
+  // line only reads the pending confirm state; nothing has been charged yet,
+  // and this single gate sits before BOTH the wild dispatch below and the
+  // normal store.purchase() further down, so it covers both paths.
+  const mountedRootAtStart = rootEl;
+  const allowed = await lock.requireUnlock('buy this item');
+  if (rootEl !== mountedRootAtStart) return; // shop was unmounted while the PIN pad was open
+  if (!allowed) return; // PIN refused — no charge, no sound, no FX, no banner; confirm modal stays open as-is
 
   if (kind === 'wild') { resolveWildPurchase(s, item, buyerId); return; }
 

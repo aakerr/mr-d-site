@@ -20,6 +20,7 @@
 // at 1280x720 and doesn't turn into a wall of text at 1920x1080.
 
 import { fitMastheadWhenReady } from '../core/masthead.js';
+import { lock } from '../core/lock.js';
 
 const STYLE_ID = 'quest-styles';
 
@@ -29,6 +30,7 @@ let rootEl = null;
 let unsub = null;
 let clickHandler = null;
 let keyHandler = null;
+let lockHandler = null;
 let tickTimer = null;
 const timers = new Set();
 const fxNodes = new Set();
@@ -463,6 +465,7 @@ function heroHtml(store, core) {
 
   const penalty = penaltyOf(q);
   const pop = ui.celebrateCore === core ? ' quest-pop' : '';
+  const stillLocked = lock.isEnabled() && !lock.isUnlocked();
   return `
     <section class="quest-hero${pop}" style="--h:${house.accent};--hs:${house.accentSoft}">
       <div class="quest-hero-main">
@@ -480,7 +483,7 @@ function heroHtml(store, core) {
       </div>
       <div class="quest-hero-side">
         <div class="quest-hero-points">${q.points}<small>points</small></div>
-        <div class="quest-teacher-bar">🗝️ Teacher only</div>
+        <div class="quest-teacher-bar">${stillLocked ? '🔒' : '🗝️'} Teacher only</div>
         <button type="button" class="quest-act quest-act-done" data-q="complete" data-core="${core}">
           ✓ Mark Complete
         </button>
@@ -716,13 +719,18 @@ function flyPoints(fromRect, points) {
 // =============================================================================
 // actions
 // =============================================================================
-function confirmModal() {
+// Teacher-only kinds ('complete', 'fail') are gated behind the PIN pad —
+// see lock.js. The confirm modal stays open (untouched) while the pad is up,
+// so a cancel leaves everything exactly as it was: no state change, no
+// optimistic render, no half-applied award/penalty. 'accept' is a student
+// action at the board and is never gated.
+async function confirmModal() {
   const store = ctxRef.store;
   const m = ui.modal;
   if (!m) return;
-  ui.modal = null;
 
   if (m.kind === 'accept') {
+    ui.modal = null;
     const ok = store.startQuest(m.core, m.questId);
     if (!ok) { render(); toast('That quest is no longer available.'); return; }
     ctxRef.audio?.sfx?.('sword');
@@ -733,6 +741,10 @@ function confirmModal() {
   }
 
   if (m.kind === 'complete') {
+    const granted = await lock.requireUnlock('mark this quest complete');
+    if (!ui) return;   // module was unmounted while the PIN pad was up
+    if (!granted) { ui.modal = null; render(); return; }
+    ui.modal = null;
     const heroPts = rootEl.querySelector('.quest-hero-points');
     const rect = heroPts ? heroPts.getBoundingClientRect() : null;
     const house = store.HOUSES[m.core];
@@ -747,6 +759,10 @@ function confirmModal() {
   }
 
   if (m.kind === 'fail') {
+    const granted = await lock.requireUnlock('fail this quest');
+    if (!ui) return;   // module was unmounted while the PIN pad was up
+    if (!granted) { ui.modal = null; render(); return; }
+    ui.modal = null;
     const house = store.HOUSES[m.core];
     const res = store.failQuest(m.core);
     render();
@@ -759,6 +775,7 @@ function confirmModal() {
     return;
   }
 
+  ui.modal = null;
   render();
 }
 
@@ -837,6 +854,11 @@ export default {
     };
     document.addEventListener('keydown', keyHandler);
 
+    // Keep the 🔒/🗝️ hero badge honest the moment the teacher unlocks (or the
+    // session times out and re-locks) — not just on the next store event.
+    lockHandler = () => render();
+    window.addEventListener('lock:changed', lockHandler);
+
     // Keeps "accepted 12 min ago" honest without any other churn.
     tickTimer = setInterval(() => { if (!ui || !ui.modal) render(); }, 60000);
 
@@ -850,8 +872,9 @@ export default {
     if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     if (keyHandler) document.removeEventListener('keydown', keyHandler);
+    if (lockHandler) window.removeEventListener('lock:changed', lockHandler);
     const st = document.getElementById(STYLE_ID);
     if (st) st.remove();
-    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; ui = null;
+    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; lockHandler = null; ui = null;
   },
 };

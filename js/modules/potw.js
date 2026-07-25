@@ -5,6 +5,7 @@
 // cinematic overlay into #overlay-root, tearing everything down cleanly on unmount.
 import { CONFIG } from '../config.js';
 import { media } from '../core/media.js';
+import { lock } from '../core/lock.js';
 
 // ---- module-scoped state (mount/unmount lifecycle owns all of this) ----------
 let ctxRef = null;
@@ -726,6 +727,12 @@ function fadeOutFlyoverMusic(ms = FLYOVER_FADE_MS) {
   }, 50);
 }
 
+// Belt and braces: if a background loop is somehow running (a future screen
+// assignment, a stray preview), silence it when a deck takes over.
+function stopAmbientIfAny() {
+  import('../core/ambient.js').then((m) => m.stopAmbient && m.stopAmbient()).catch(() => {});
+}
+
 function stopFlyoverMusic() {
   if (flyFadeTimer) { clearInterval(flyFadeTimer); flyFadeTimer = null; }
   const el = flyMusicEl;
@@ -1002,12 +1009,18 @@ function wireLesson() {
   // Quiz: award bounties — ONE payout per question per profile+week, enforced by
   // the store ledger (not just the DOM), so relaunching cannot pay twice.
   overlayEl.querySelectorAll('.potw-award').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (btn.disabled) return;
       const qi = Number(btn.dataset.q);
       const houseId = Number(btn.dataset.house);
       const q = profile.quiz[qi];
       const points = bountyPoints();
+
+      // Paying a bounty is real points, so it asks for the teacher PIN if one is
+      // set. The presentation stays up behind the pad; a refusal pays nothing.
+      const liveOverlay = overlayEl;
+      if (!(await lock.requireUnlock('award this bounty'))) return;
+      if (overlayEl !== liveOverlay || btn.disabled) return;   // lesson closed while the pad was open
 
       // payBounty awards the points AND records the payment; false = already paid.
       const paid = ctxRef.store.payBounty(activeKey, qi, houseId, points, q.q.slice(0, 40));
@@ -1099,7 +1112,11 @@ async function openPresentation(deck) {
   if (!overlayEl || presLayerEl) return;
   const d = deck || deckInfo || (await resolveDeck());
   if (!overlayEl || presLayerEl || !d || !d.type) return;
-  fadeOutFlyoverMusic();   // the deck is the room's focus now (no-op if silent)
+  // The deck owns the room from here: fade the app's music out quickly rather
+  // than trailing under the teacher's opening line. Anything the class hears
+  // after this point should be coming from the presentation itself.
+  fadeOutFlyoverMusic(900);
+  try { stopAmbientIfAny(); } catch (e) { /* ambience isn't assigned to POTW anyway */ }
   try { ctxRef.audio.sfx('coin'); } catch (e) {}
 
   // Hide the lesson card while presenting (ambient orbit keeps running).

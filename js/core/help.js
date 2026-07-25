@@ -14,6 +14,7 @@
 import { store } from './store.js';
 import { backup } from './backup.js';
 import { health } from './health.js';
+import { lock } from './lock.js';
 import { startSetup } from './firstrun.js';
 
 const ROOT_ID = 'help-root';
@@ -611,6 +612,52 @@ const TOPICS = [
       <p>Several screens also carry a small <b>❓ How this works</b> link that jumps you straight to the right article in here.</p>
       <p>Tap the crest at the top left to leave Admin and go back to the dashboard.</p>
     `,
+  },
+  {
+    id: 'admin-lock', cat: 'admin', title: 'The Teacher PIN: keeping students out of the controls',
+    keywords: 'pin password lock locked unlock security student admin protect padlock forgot code',
+    body: () => {
+      const on = (() => { try { return lock.isEnabled(); } catch (e) { return false; } })();
+      const status = on
+        ? '<p class="help-ok"><b>The PIN is on.</b> Admin and anything that moves points will ask for it.</p>'
+        : '<p class="help-warn"><b>No PIN is set.</b> Anyone who walks up to the board can award points or open Admin.</p>';
+      return `
+        ${status}
+        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. Four to eight numbers, something you will still remember on a Monday morning. The boxes come pre-filled with <b>0314</b> to save you thinking of one — type over it if you would rather have your own.</p>
+        <p><b>The PIN ships switched off.</b> Nothing in the app asks for it until you turn it on, so you can try everything out first and add the lock when you are ready.</p>
+
+        <h4>What it asks for a PIN</h4>
+        <ul class="help-list">
+          <li>Opening the <b>Admin panel</b></li>
+          <li>The <b>± button</b> in the top bar</li>
+          <li>Awards and the <b>undo</b> button on the Records screen</li>
+          <li>Marking a quest <b>complete</b> or <b>failed</b></li>
+          <li>Paying out the <b>Die of Destiny</b> and its mythic relics</li>
+          <li><b>Battle Day</b> scoring, and buying anything in the <b>Magic Shop</b></li>
+          <li><b>Quiz bounties</b> during Place of the Week</li>
+        </ul>
+
+        <h4>What stays open on purpose</h4>
+        <p>The parts students are supposed to do at the board: rolling the dice, taking on a quest, reading the standings and the ledger, and watching any of the presentations. None of those move points on their own.</p>
+
+        <h4>You only type it once</h4>
+        <p>After you enter it, it stays unlocked for <b>15 minutes</b> of teaching (you can change that to 5, 30 or 60 in the same place). So a Friday shop session costs you one PIN entry, not one per purchase.</p>
+        <p>Walking away mid-lesson? <b>Shift-click</b> the 🗝️ key in the top bar — or press and hold it — to lock it again straight away. The key turns into a 🔒 when it is locked.</p>
+
+        <h4>Be clear about what this is</h4>
+        <p class="help-warn">This is a classroom door, not a safe. It stops a student walking up and tapping the board, which is the thing that actually happens. It is <b>not</b> real security: it does not lock or scramble your saved data, and a student who knows their way around a web browser can get past it. Do not treat it as protection for anything sensitive.</p>
+
+        <h4>If you forget it — the recovery code</h4>
+        <p>There is no "email me a reset": the app has no account and no server. Instead, when you turn the PIN on, the app writes an eight-character <b>recovery code</b>. It is printed on the Teacher PIN card in Settings — worth copying onto something in your desk — and it is saved inside every backup file.</p>
+        <ol class="help-steps">
+          <li>On the PIN pad, tap <b>Forgot your PIN?</b></li>
+          <li>Open your most recent backup <code>.json</code> in any text editor (Notepad or TextEdit will do) and search for <b>recovery</b>.</li>
+          <li>Type that code in. The PIN switches off and <b>nothing else changes</b> — every point, quest and setting stays exactly as it was.</li>
+        </ol>
+        <p class="help-warn">Without a backup file or the written-down code, the only way to clear the PIN is to clear this browser's site data — which erases the whole term along with it. That is the real reason to connect a backup folder: it is also your way back in.</p>
+        <p class="help-fineprint">The recovery code is stored as plain readable text, which is what lets you find it in a backup. Anyone holding your backup file can therefore read it — so keep backups somewhere only you can reach, and treat the code as a key to the classroom, not to anything sensitive.</p>
+      `;
+    },
   },
   {
     id: 'admin-planner', cat: 'admin', title: 'Planner: a week or a whole semester',

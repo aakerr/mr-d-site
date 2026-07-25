@@ -15,6 +15,7 @@
 import { openHelp } from './help.js';
 import { maybeRunFirstRun } from './firstrun.js';
 import { health } from './health.js';
+import { lock } from './lock.js';
 
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
@@ -201,6 +202,17 @@ export function initShell(ctx) {
   let coreMenuOpen = false;
   let currentModuleId = null;
 
+  // Admin-glyph long-press: holding the key down while unlocked re-locks
+  // immediately (mirrors the shift-click below). adminLongPressFired is a
+  // one-shot flag so the click that follows the press-and-release doesn't
+  // ALSO navigate into Admin.
+  let adminLongPressTimer = null;
+  let adminLongPressFired = false;
+  const ADMIN_LONG_PRESS_MS = 550;
+  function clearAdminLongPress() {
+    if (adminLongPressTimer) { clearTimeout(adminLongPressTimer); adminLongPressTimer = null; }
+  }
+
   function renderTopbar() {
     let activeCore = 1;
     try { activeCore = store.getState().activeCore; } catch (e) { /* keep default */ }
@@ -219,6 +231,27 @@ export function initShell(ctx) {
 
     let soundOn = true;
     try { soundOn = store.getSettings().soundEnabled !== false; } catch (e) { /* default to audible */ }
+
+    // Teacher-lock glyph: only ever differs from the plain dim key when a PIN
+    // is actually set (lock.isEnabled()) — with no PIN, nothing below applies
+    // and the bar looks exactly as it always has.
+    let lockEnabled = false;
+    let lockLocked = false;
+    try {
+      lockEnabled = lock.isEnabled();
+      lockLocked = lockEnabled && !lock.isUnlocked();
+    } catch (e) { /* never let the lock glyph break the bar */ }
+    const adminGlyph = lockLocked ? '🔒' : '🗝️';
+    const adminTitle = lockLocked
+      ? "Teacher's Admin — locked. Tap to enter your PIN."
+      : lockEnabled
+        ? "Teacher's Admin — settings, help, planner. Shift-click or long-press to lock now."
+        : "Teacher's Admin — settings, help, planner";
+    // Text-shadow rather than opacity/color: .admin-glyph-btn's hover/active
+    // rules already drive opacity + color, and an inline style on those
+    // properties would out-specificity the hover state and freeze it. A glow
+    // layers on top of whatever opacity is current without fighting it.
+    const adminGlyphStyle = (lockEnabled && !lockLocked) ? 'text-shadow:0 0 6px rgba(245,158,11,0.6)' : '';
 
     const homeActive = !!(currentModuleId && currentModuleId !== 'dashboard');
 
@@ -278,8 +311,8 @@ export function initShell(ctx) {
 
           <!-- Sound and Help used to sit here. Both live inside Admin (Settings →
                sound, and the ❓ Help tab), so the bar keeps only the one door in. -->
-          <button type="button" data-admin-btn class="admin-glyph-btn flex items-center justify-center rounded-xl" title="Teacher's Admin — settings, help, planner" aria-label="Teacher's Admin">
-            <span class="text-base leading-none">🗝️</span>
+          <button type="button" data-admin-btn data-locked="${lockLocked}" class="admin-glyph-btn flex items-center justify-center rounded-xl" title="${adminTitle}" aria-label="Teacher's Admin">
+            <span class="text-base leading-none" style="${adminGlyphStyle}">${adminGlyph}</span>
           </button>
         </div>
       </div>
@@ -293,6 +326,13 @@ export function initShell(ctx) {
         ${menuHtml}
       </div>
 
+      <!-- Mute sits to the LEFT of the pill and ± to the right: the pair flanks
+           the switcher symmetrically and, being absolutely positioned, neither
+           one shifts the date block on the right. -->
+      <button type="button" data-sound-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" data-muted="${!soundOn}" style="right:calc(50% + ${pillWidthExpr}/2 + 12px)" title="${soundOn ? 'Sound on — tap to mute (or press M)' : 'Sound off — tap to unmute (or press M)'}" aria-label="${soundOn ? 'Mute all sound' : 'Unmute sound'}" aria-pressed="${!soundOn}">
+        <span class="sound-trigger-dot leading-none">${soundOn ? '🔊' : '🔇'}</span>
+      </button>
+
       ${currentModuleId === 'admin' ? '' : `
       <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full font-display" style="left:calc(50% + ${pillWidthExpr}/2 + 12px)" title="Quick Points" aria-label="Quick Points">
         <span class="points-trigger-dot leading-none" style="background:${dotColor};box-shadow:0 0 10px 1px ${dotSoft}">±</span>
@@ -303,9 +343,19 @@ export function initShell(ctx) {
 
   // Delegated listener on the (never-replaced) topbar root — survives every
   // innerHTML re-render of its children.
-  topbarRoot.addEventListener('click', (e) => {
+  // async: only the admin-btn branch below ever awaits anything, and every
+  // branch is mutually exclusive (each `if` returns), so pausing mid-await on
+  // that one branch cannot affect how the others run — they still execute
+  // fully synchronously on whichever click actually matches them.
+  topbarRoot.addEventListener('click', async (e) => {
     if (e.target.closest('[data-brand]')) { registry.home(); return; }
-    if (e.target.closest('[data-admin-btn]')) { registry.navigate('admin'); return; }
+
+    if (e.target.closest('[data-admin-btn]')) {
+      if (adminLongPressFired) { adminLongPressFired = false; return; } // the press already acted
+      if (e.shiftKey && lock.isEnabled() && lock.isUnlocked()) { lock.lockNow(); return; }
+      if (await lock.requireUnlock('open the Teacher Admin panel')) registry.navigate('admin');
+      return;
+    }
 
     if (e.target.closest('[data-help-btn]')) {
       try { openHelp(); } catch (err) { console.warn('shell: help failed to open', err); }
@@ -348,11 +398,31 @@ export function initShell(ctx) {
     }
   });
 
+  // Long-press the admin key to re-lock instantly (only means anything while
+  // a PIN is set and the session is currently unlocked — see clearAdminLongPress).
+  topbarRoot.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('[data-admin-btn]')) return;
+    clearAdminLongPress();
+    adminLongPressFired = false;
+    if (!lock.isEnabled() || !lock.isUnlocked()) return; // nothing to re-lock
+    adminLongPressTimer = setTimeout(() => {
+      adminLongPressFired = true;
+      lock.lockNow();
+    }, ADMIN_LONG_PRESS_MS);
+  });
+  topbarRoot.addEventListener('pointerup', clearAdminLongPress);
+  topbarRoot.addEventListener('pointercancel', clearAdminLongPress);
+  document.addEventListener('pointerup', clearAdminLongPress); // release outside the bar still cancels it
+
   window.addEventListener('module:navigate', (e) => {
     currentModuleId = e?.detail?.id ?? null;
     renderTopbar();
     setFabAdminHidden(currentModuleId === 'admin');
   });
+
+  // Keep the glyph (🗝️ / 🔒) and its title truthful as the lock state changes
+  // from any source: this button, the PIN pad itself, or an idle timeout.
+  window.addEventListener('lock:changed', () => renderTopbar());
 
   // The quick-point FAB has no place on the Teacher's Admin screen — hide it
   // (force-closing any open panel first) there, restore it everywhere else.
@@ -445,9 +515,15 @@ export function initShell(ctx) {
     } catch (e) { /* purely cosmetic — never block point logging */ }
   }
 
-  function applyPoints(delta) {
+  // Resolves true iff the points were actually applied. The lock gates the
+  // APPLY, not the panel opening (see file header note near the import) — so
+  // this awaits requireUnlock() before touching store/reason/sound/toast.
+  // On refusal it returns false having done nothing, so callers can leave the
+  // panel exactly as the teacher left it (typed amount and reason intact).
+  async function applyPoints(delta) {
     delta = Math.max(-9999, Math.min(9999, Math.round(delta) || 0));
-    if (!delta || !store.HOUSES[selectedHouseId]) return;
+    if (!delta || !store.HOUSES[selectedHouseId]) return false;
+    if (!(await lock.requireUnlock('award points'))) return false;
     const reasonEl = fabRoot.querySelector('[data-fab-reason]');
     const reason = ((reasonEl && reasonEl.value) || '').trim();
     const house = currentHouse();
@@ -462,6 +538,7 @@ export function initShell(ctx) {
     }
     if (audio && typeof audio.sfx === 'function') audio.sfx(delta > 0 ? 'coin' : 'thud');
     spawnToast(delta, house);
+    return true;
   }
 
   // These also re-render the top bar so the trigger button's data-open
@@ -475,7 +552,10 @@ export function initShell(ctx) {
     setTimeout(() => { fabOpen = false; fabClosing = false; renderFab(); renderTopbar(); }, 160);
   }
 
-  fabRoot.addEventListener('click', (e) => {
+  // async for the same reason as the top bar's click listener above: only the
+  // two applyPoints() branches ever await, the rest still run fully
+  // synchronously since every branch returns.
+  fabRoot.addEventListener('click', async (e) => {
     if (e.target.closest('[data-fab-close]')) { closeFab(); return; }
 
     const chip = e.target.closest('[data-fab-house]');
@@ -488,7 +568,7 @@ export function initShell(ctx) {
     }
 
     const quick = e.target.closest('[data-fab-quick]');
-    if (quick) { applyPoints(Number(quick.dataset.fabQuick)); return; }
+    if (quick) { await applyPoints(Number(quick.dataset.fabQuick)); return; }
 
     const apply = e.target.closest('[data-fab-apply]');
     if (apply) {
@@ -496,8 +576,10 @@ export function initShell(ctx) {
       const raw = ((amountEl && amountEl.value) || '').replace(/[^0-9]/g, '');
       const amt = Math.min(9999, parseInt(raw, 10) || 0);
       if (!amt) return;
-      applyPoints(apply.dataset.fabApply === 'add' ? amt : -amt);
-      if (amountEl) amountEl.value = '';
+      // Only clear the typed amount on success — a refused PIN must leave the
+      // panel exactly as the teacher left it, ready to retry.
+      const ok = await applyPoints(apply.dataset.fabApply === 'add' ? amt : -amt);
+      if (ok && amountEl) amountEl.value = '';
       return;
     }
   });
@@ -514,7 +596,10 @@ export function initShell(ctx) {
       coreMenuOpen = false;
       renderTopbar();
     }
-    if (fabOpen && !fabClosing && !e.target.closest('[data-fab-panel]') && !e.target.closest('[data-points-trigger]')) {
+    // The PIN pad (lock.js) mounts into #overlay-root, outside #fab-root, so
+    // without this exclusion tapping a digit while awarding points would read
+    // as an "outside" tap and collapse the quick-points panel mid-entry.
+    if (fabOpen && !fabClosing && !e.target.closest('[data-fab-panel]') && !e.target.closest('[data-points-trigger]') && !e.target.closest('.lock-pad-backdrop')) {
       closeFab();
     }
   });

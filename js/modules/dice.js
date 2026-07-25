@@ -4,6 +4,8 @@
 // result number, the d20 celebration + outcome plaque (overlaid on the stage),
 // one-tap point awards, and the (currently hidden) roll-history state. If WebGL
 // or the physics import is unavailable it degrades to a simple Math.random roller.
+import { lock } from '../core/lock.js';
+
 let store, registry, audio;
 let sim = null;           // 3D simulation handle (null in fallback mode)
 let sim3dFailed = false;
@@ -11,8 +13,11 @@ let storeUnsub = null;    // store subscription (recolors dice on core change)
 let rollInProgress = false;
 let currentMode = '1d6';
 let celebrateTimer = null;
+let mounted = false;              // guards against a PIN pad resolving after unmount
 let awardedThisRoll = false;      // one award per roll; a new roll re-enables awarding
+let awardInFlight = false;        // an award is mid-PIN-check; blocks a second tap
 let relicClaimedThisRoll = false; // one Mythic relic per natural 20
+let relicInFlight = false;        // a relic claim is mid-PIN-check; blocks a second tap
 let history = [];         // [{ mode, value1, value2?, total, outcome? }] — kept, not rendered
 const MAX_HISTORY = 8;
 
@@ -297,7 +302,9 @@ async function performRoll(el) {
   clearTimeout(celebrateTimer);
   closePlaque(el);
   awardedThisRoll = false;
+  awardInFlight = false;
   relicClaimedThisRoll = false;
+  relicInFlight = false;
 
   const mode = currentMode;
   let results;
@@ -404,10 +411,25 @@ function showOutcomePlaque(el, prophecy, variant) {
 
   const area = plaque.querySelector('.dice-award-area');
 
-  function award(houseId, points) {
-    if (awardedThisRoll) return;              // one award per roll
+  async function award(houseId, points) {
+    if (awardedThisRoll || awardInFlight) return;   // one award per roll; ignore a second tap while the PIN pad is up
     const h = store.HOUSES[houseId];
     if (!h) return;
+
+    // Gate the payout, not the ceremony: the plaque, the roll, the reveal all
+    // already happened. Nothing below this line runs until the teacher approves.
+    //   - awardInFlight goes true BEFORE the await so a double-tap during the
+    //     pad can't queue a second award() call.
+    //   - awardedThisRoll only goes true AFTER store.addPoints succeeds, so a
+    //     cancelled PIN never burns the roll's one award.
+    //   - awardInFlight is cleared right after the await resolves (either way)
+    //     so a refusal leaves the teacher free to tap again immediately.
+    awardInFlight = true;
+    const ok = await lock.requireUnlock('award these points');
+    awardInFlight = false;
+    if (!mounted) return;               // module unmounted while the pad was open
+    if (!ok || awardedThisRoll) return;  // refused, or already awarded some other way
+
     store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
     awardedThisRoll = true;
     audio?.sfx?.('coin');
@@ -430,8 +452,17 @@ function showOutcomePlaque(el, prophecy, variant) {
     });
   }
 
-  function claimRelic(house, itemId, awardedHtml) {
-    if (relicClaimedThisRoll) return;         // one relic per natural 20
+  async function claimRelic(house, itemId, awardedHtml) {
+    if (relicClaimedThisRoll || relicInFlight) return;   // one relic per natural 20; ignore a second tap while pending
+
+    // Same ordering as award(): flip the in-flight flag before the await,
+    // only mint relicClaimedThisRoll after store.grantMythicItem actually runs.
+    relicInFlight = true;
+    const ok = await lock.requireUnlock('award this relic');
+    relicInFlight = false;
+    if (!mounted) return;
+    if (!ok || relicClaimedThisRoll) return;
+
     const item = store.grantMythicItem(house.id, itemId);
     if (!item) return;
     relicClaimedThisRoll = true;
@@ -507,6 +538,9 @@ export default {
     audio = ctx.audio;
     currentMode = '1d6';
     rollInProgress = false;
+    mounted = true;
+    awardInFlight = false;
+    relicInFlight = false;
 
     el.innerHTML = createStyles() + `
       <div class="dice-container">
@@ -596,6 +630,7 @@ export default {
   },
 
   unmount() {
+    mounted = false;
     if (storeUnsub) { try { storeUnsub(); } catch (e) { console.error(e); } storeUnsub = null; }
     clearTimeout(celebrateTimer);
     celebrateTimer = null;
@@ -604,7 +639,9 @@ export default {
     audio?.stopAll?.();
     rollInProgress = false;
     awardedThisRoll = false;
+    awardInFlight = false;
     relicClaimedThisRoll = false;
+    relicInFlight = false;
     history = [];
   },
 };
