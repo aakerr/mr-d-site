@@ -116,7 +116,7 @@ const TOPICS = [
         <li><b>🗝️ key</b> — the Teacher's Admin panel. It is deliberately faint so students do not treat it as a button.</li>
       </ul>
       <h4>The Morning Dashboard (the home screen)</h4>
-      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: House Points, Quests, Place of the Week, Battle Day, the Magic Shop and the Die of Destiny.</p>
+      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop and the Die of Destiny.</p>
     `,
   },
   {
@@ -188,8 +188,8 @@ const TOPICS = [
         <li>Optional: type a <b>Reason</b> before you award. It is saved with the entry and shows up in the log later.</li>
       </ol>
       <p class="help-callout">The reason box clears itself after every award, so the next one does not silently inherit the last label.</p>
-      <h4>2. The House Points screen</h4>
-      <p>The <b>House Points</b> tile opens a bigger version of the same thing — pick a house, pick a reason tag, award. Better when you want the class to see the number move.</p>
+      <h4>2. The Records screen</h4>
+      <p>The <b>Records</b> tile opens a bigger version of the same thing — pick a house, pick a reason tag, award. Better when you want the class to see the number move.</p>
       <h4>3. Automatically, from the games</h4>
       <ul class="help-list">
         <li><b>Quests</b> — points land when <i>you</i> confirm a quest as complete.</li>
@@ -220,7 +220,7 @@ const TOPICS = [
       <p class="help-lede">Nothing is ever lost or hidden. Every single point change is its own entry in a log you can read, so a mistake is always findable and always fixable.</p>
       <h4>1. Find what actually happened</h4>
       <ol class="help-steps">
-        <li>Open the <b>House Points</b> tile.</li>
+        <li>Open the <b>Records</b> tile.</li>
         <li>Look at the <b>Transaction Log</b> on the left. It lists the last 30 changes, newest first, with the time, the house colour, the amount and the reason.</li>
       </ol>
       <h4>2. Reverse it</h4>
@@ -246,7 +246,7 @@ const TOPICS = [
         <li><b>Term total</b> — everything since the start of the term. This is the leaderboard number, and it is what the Magic Shop spends.</li>
         <li><b>This week</b> — only what has been earned since <b>Monday</b>. It resets itself every Monday morning; you never have to zero anything.</li>
       </ul>
-      <p>The Morning Dashboard shows both. The <b>House Points</b> screen has a toggle at the top right to flip between <b>Current Class Standings</b> (this week) and the <b>School-Wide 9-Week House Cup</b> (the term).</p>
+      <p>The Morning Dashboard shows both. The <b>Records</b> screen has a toggle at the top right to flip between <b>Current Class Standings</b> (this week) and the <b>School-Wide 9-Week House Cup</b> (the term).</p>
       <p class="help-callout">Nothing is ever deleted at the end of a week. "This week" is just a filtered view of the same log.</p>
     `,
   },
@@ -257,7 +257,7 @@ const TOPICS = [
       let n = 0;
       try { n = (store.getState().transactions || []).length; } catch (e) { n = 0; }
       return `
-        <p>Open the <b>House Points</b> tile. The <b>Transaction Log</b> down the left-hand side shows the last 30 point changes, newest first: the time, which house, how many points, and the reason.</p>
+        <p>Open the <b>Records</b> tile. The <b>Transaction Log</b> down the left-hand side shows the last 30 point changes, newest first: the time, which house, how many points, and the reason.</p>
         <p>Every change is stored with all four of those, whether it came from you, the shop, a quest, the dice or Battle Day. Nothing is ever silently overwritten.</p>
         <p>This browser currently holds <b>${n}</b> logged point change${n === 1 ? '' : 's'}.</p>
         <p>The <i>complete</i> history — not just the last 30 — is inside your backup file, <code>mrd-live-backup.json</code>, if you ever need to go digging for something from weeks ago.</p>

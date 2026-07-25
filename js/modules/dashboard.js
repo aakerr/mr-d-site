@@ -35,7 +35,7 @@ const MODULE_ICON_MAP = {
   dice: 'images/icon-dice.png',
 };
 const MODULE_SUBTITLE_MAP = {
-  houses: 'Track & award',
+  houses: 'History & analysis',
   potw: 'Explore the world',
   quests: 'Active challenges',
   battle: 'Team competitions',

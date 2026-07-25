@@ -259,15 +259,9 @@ export function initShell(ctx) {
             </div>
           </div>
 
-          <button type="button" data-sound-btn class="shell-icon-btn flex items-center justify-center rounded-xl" title="${soundOn ? 'Sound on — tap to mute' : 'Sound off — tap to unmute'}" aria-label="${soundOn ? 'Sound on. Tap to turn sound off.' : 'Sound off. Tap to turn sound on.'}" aria-pressed="${soundOn}">
-            <span class="text-base leading-none">${soundOn ? '🔊' : '🔇'}</span>
-          </button>
-
-          <button type="button" data-help-btn class="shell-icon-btn flex items-center justify-center rounded-xl" title="Help &amp; How-To" aria-label="Help and how-to">
-            <span class="shell-help-glyph leading-none">?</span>
-          </button>
-
-          <button type="button" data-admin-btn class="admin-glyph-btn flex items-center justify-center rounded-xl" title="Teacher's Admin" aria-label="Teacher's Admin">
+          <!-- Sound and Help used to sit here. Both live inside Admin (Settings →
+               sound, and the ❓ Help tab), so the bar keeps only the one door in. -->
+          <button type="button" data-admin-btn class="admin-glyph-btn flex items-center justify-center rounded-xl" title="Teacher's Admin — settings, help, planner" aria-label="Teacher's Admin">
             <span class="text-base leading-none">🗝️</span>
           </button>
         </div>

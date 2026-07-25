@@ -62,6 +62,7 @@ let questGuideOpen = false;           // "How quests work" accordion state
 let questForm = null;                 // in-progress quest editor
 let houseForm = null;                 // in-progress house editor (Settings tab)
 let videoForm = null;                 // in-progress intro-video preset editor (POTW tab)
+let awardForm = null;                 // in-progress quick-award preset editor (Settings tab)
 let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 
@@ -1532,6 +1533,158 @@ function openHouseResetConfirm(id) {
     }, { yesLabel: 'Reset house' });
 }
 
+// ---- Quick award presets (one-tap buttons on the Records screen) ----------
+// Order here IS the button order on Records — the teacher builds muscle memory
+// around it, so reordering is a first-class action, not an afterthought.
+function awardPtsColor(points) { return Number(points) >= 0 ? '#22c55e' : '#ef4444'; }
+function awardPtsLabel(points) {
+  const n = Math.round(Number(points) || 0);
+  return n >= 0 ? `+${n}` : `−${Math.abs(n)}`;
+}
+
+// Shared by the live preview in the editor and (if ever needed) elsewhere —
+// one sentence, in the teacher's own words, of what tapping the button does.
+function awardSentence(f) {
+  const n = Math.round(Number(f?.points));
+  if (!Number.isFinite(n) || n === 0) return 'Enter a points value to see a preview.';
+  return n > 0
+    ? `Tapping this gives Camelot +${n} points.`
+    : `Tapping this takes ${Math.abs(n)} points from Camelot.`;
+}
+
+function awardRowHTML(p, i, total) {
+  return `
+    <div class="admin-shop-row admin-award-row">
+      <div class="admin-shop-cost" style="color:${awardPtsColor(p.points)}">${awardPtsLabel(p.points)}<small>pts</small></div>
+      <div class="admin-q-main">
+        <div class="admin-q-title">${esc(p.label)}</div>
+      </div>
+      <div class="admin-q-row-actions">
+        <button class="admin-btn admin-btn-icon" data-action="award-up" data-id="${esc(p.id)}" aria-label="Move up"${i === 0 ? ' disabled' : ''}>▲</button>
+        <button class="admin-btn admin-btn-icon" data-action="award-down" data-id="${esc(p.id)}" aria-label="Move down"${i === total - 1 ? ' disabled' : ''}>▼</button>
+        <button class="admin-btn admin-btn-icon" data-action="award-edit" data-id="${esc(p.id)}" aria-label="Edit">✏️</button>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="award-del" data-id="${esc(p.id)}" aria-label="Delete">🗑️</button>
+      </div>
+    </div>`;
+}
+
+function renderAwardPresetsCard() {
+  const store = ctxRef.store;
+  const presets = store.getAwardPresets();
+  const rows = presets.map((p, i) => awardRowHTML(p, i, presets.length)).join('');
+  const crowdWarn = presets.length > 8
+    ? `<div class="admin-warn-line">⚠️ ${presets.length} quick award buttons is a lot for one row on the Records screen — consider trimming toward 8 or fewer so it doesn't get crowded on the board.</div>`
+    : '';
+  return `
+    <div class="admin-card">
+      <div class="admin-rows-head">
+        <span class="admin-card-title" style="margin:0">⚡ Quick award buttons</span>
+        <button class="admin-btn admin-btn-primary" data-action="award-new">+ Add a quick award</button>
+      </div>
+      <div class="admin-mini">These appear as one-tap buttons on the Records screen — your most common awards, ready to go.</div>
+      <div class="admin-q-list" style="margin-top:10px">${rows || '<div class="admin-empty admin-empty-sm">No quick awards yet. Add one to get started.</div>'}</div>
+      ${crowdWarn}
+    </div>`;
+}
+
+function openAwardForm(id) {
+  const store = ctxRef.store;
+  const p = id ? store.getAwardPresets().find((x) => x.id === id) : null;
+  awardForm = {
+    id: p ? p.id : null,
+    isNew: !p,
+    label: p?.label || '',
+    points: p ? p.points : 5,
+    saveError: null,
+  };
+  renderAwardModal();
+}
+
+function renderAwardModal() {
+  const f = awardForm;
+  const m = el('admin-modal-root');
+  const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="award-close"></div>
+    <div class="admin-modal">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${f.isNew ? '⚡ Add a Quick Award' : '⚡ Edit Quick Award'}</div>
+        <button class="admin-btn admin-btn-icon" data-action="award-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <label class="admin-flabel" for="admin-award-label">Label <span class="admin-faint">(what you'd call it out loud, e.g. "Bell Ringer done")</span></label>
+        <input id="admin-award-label" class="admin-input" type="text" value="${esc(f.label)}" placeholder="Bell Ringer done" />
+
+        <label class="admin-flabel" for="admin-award-points" style="margin-top:12px">Points</label>
+        <input id="admin-award-points" class="admin-input" type="number" step="1" value="${esc(f.points)}" style="max-width:160px" />
+        <div class="admin-step-hint">Use a negative number for a penalty, e.g. −5.</div>
+
+        <div class="admin-preview admin-shop-preview">
+          <span class="admin-preview-eyebrow">In plain English</span>
+          <span class="admin-shop-preview-text" id="admin-award-preview">${esc(awardSentence(f))}</span>
+        </div>
+        ${saveErr}
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="award-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="award-save">Save award</button>
+      </div>
+    </div>`;
+  const l = el('admin-award-label'); if (l) l.focus();
+}
+
+// Live preview as the teacher types points, without a full re-render (which
+// would steal focus mid-keystroke) — mirrors updateShopPreview/updateQuestPreview.
+function updateAwardPreview() {
+  if (!awardForm || !el('admin-award-preview')) return;
+  el('admin-award-preview').textContent = awardSentence({
+    points: el('admin-award-points') ? el('admin-award-points').value : awardForm.points,
+  });
+}
+
+function syncAwardFromDom() {
+  if (!awardForm) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  awardForm.label = g('admin-award-label');
+  awardForm.points = g('admin-award-points');
+  awardForm.saveError = null;
+}
+
+function saveAwardForm() {
+  syncAwardFromDom();
+  const f = awardForm;
+  const store = ctxRef.store;
+  const label = String(f.label || '').trim();
+  const rawPoints = f.points;
+  const points = Number(rawPoints);
+  if (!label) { f.saveError = 'This award needs a label — it\'s what shows on the button.'; renderAwardModal(); return; }
+  if (rawPoints === '' || rawPoints == null || !Number.isFinite(points)) {
+    f.saveError = 'Points must be a number.'; renderAwardModal(); return;
+  }
+  if (Math.round(points) === 0) {
+    f.saveError = "Points can't be zero — tapping the button has to actually change something. Use a negative number for a penalty."; renderAwardModal(); return;
+  }
+  const saved = store.saveAwardPreset({ id: f.id, label, points: Math.round(points), tag: 'manual' });
+  if (!saved) { f.saveError = "Something here wasn't accepted — check the label and points."; renderAwardModal(); return; }
+  const wasNew = f.isNew;
+  awardForm = null;
+  closeModal();
+  renderBody({ force: true });
+  toast(wasNew ? 'Quick award added.' : 'Quick award updated.');
+}
+
+function moveAwardPreset(id, dir) {
+  const store = ctxRef.store;
+  const list = store.getAwardPresets().slice();
+  const i = list.findIndex((p) => p.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  store.updateSettings({ awardPresets: list });
+  renderBody();
+}
+
 // ===========================================================================
 // TAB — SETTINGS
 // ===========================================================================
@@ -1570,6 +1723,8 @@ function renderSettings() {
       </div>
 
       ${renderHousesCard()}
+
+      ${renderAwardPresetsCard()}
 
       <div class="admin-card">
         <div class="admin-card-title">Term Start / End Markers</div>
@@ -3352,6 +3507,22 @@ function onClick(e) {
     case 'house-save': saveHouseForm(); break;
     case 'house-close': houseForm = null; closeModal(); break;
 
+    // quick award presets (Records one-tap buttons)
+    case 'award-new': openAwardForm(null); break;
+    case 'award-edit': openAwardForm(btn.dataset.id); break;
+    case 'award-save': saveAwardForm(); break;
+    case 'award-close': awardForm = null; closeModal(); break;
+    case 'award-up': moveAwardPreset(btn.dataset.id, -1); break;
+    case 'award-down': moveAwardPreset(btn.dataset.id, 1); break;
+    case 'award-del': {
+      const id = btn.dataset.id;
+      const p = store.getAwardPresets().find((x) => x.id === id);
+      openConfirm(`Delete quick award “${p ? p.label : ''}”?`, 'This removes it from the one-tap buttons on the Records screen.', () => {
+        store.deleteAwardPreset(id); renderBody(); toast('Quick award deleted.');
+      });
+      break;
+    }
+
     // intro video presets
     case 'video-new': openVideoForm(null); break;
     case 'video-edit': openVideoForm(btn.dataset.id); break;
@@ -3985,7 +4156,7 @@ export default {
     cal.year = now.getFullYear();
     cal.month = now.getMonth();
     activeTab = 'planner';
-    panelView = null; form = null; potwForm = null; questForm = null; houseForm = null; videoForm = null; dangerOpen = false;
+    panelView = null; form = null; potwForm = null; questForm = null; houseForm = null; videoForm = null; awardForm = null; dangerOpen = false;
     helpState = null;
 
     renderShell();
@@ -4019,6 +4190,7 @@ export default {
       if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
       else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });
       else if (e.target.id === 'admin-quest-penalty') { if (questForm) questForm.penaltyTouched = true; updateQuestPreview(); }
+      else if (e.target.id === 'admin-award-points') updateAwardPreview();
       else if (e.target.id === 'admin-house-name' || e.target.id === 'admin-house-motto' || e.target.id === 'admin-house-image') updateHousePreview();
       else if (e.target.id === 'admin-house-accent-color') {
         const hex = e.target.value;
@@ -4085,6 +4257,6 @@ export default {
     // #module-root on navigate, but null our refs so nothing dangles.
     rootEl = null; ctxRef = null;
     clickHandler = changeHandler = dragOverHandler = dragLeaveHandler = dropHandler = inputHandler = null;
-    panelView = null; form = null; potwForm = null; shopForm = null; questForm = null; houseForm = null; videoForm = null;
+    panelView = null; form = null; potwForm = null; shopForm = null; questForm = null; houseForm = null; videoForm = null; awardForm = null;
   },
 };

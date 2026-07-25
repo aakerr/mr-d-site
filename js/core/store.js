@@ -16,6 +16,17 @@ const HOUSES = {
 const HOUSE_DEFAULTS = JSON.parse(JSON.stringify(HOUSES));
 function defaultHouses() { return JSON.parse(JSON.stringify(HOUSE_DEFAULTS)); }
 
+// The teacher's most-used awards, one tap each. Editable in Admin.
+function defaultAwardPresets() {
+  return [
+    { id: 'ap-bell',     label: 'Bell Ringer done',  points: 5,  tag: 'manual' },
+    { id: 'ap-homework', label: 'Homework Hero',     points: 10, tag: 'manual' },
+    { id: 'ap-teamwork', label: 'Great teamwork',    points: 5,  tag: 'manual' },
+    { id: 'ap-quiz',     label: 'Map Quiz Champion', points: 50, tag: 'manual' },
+    { id: 'ap-penalty',  label: 'Penalty',           points: -5, tag: 'manual' },
+  ];
+}
+
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
@@ -52,6 +63,7 @@ function defaultState() {
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
       soundEnabled: true,       // master switch for sound effects/voice
+      awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
       houses: {},
@@ -356,10 +368,89 @@ export const store = {
       .sort((a, b) => b.total - a.total);
   },
 
-  getTransactions({ houseId = null, limit = 50 } = {}) {
+  getTransactions({ houseId = null, tag = null, from = null, to = null, search = '', limit = 50 } = {}) {
     let txs = state.transactions;
     if (houseId != null) txs = txs.filter((t) => t.houseId === Number(houseId));
-    return txs.slice(-limit).reverse();
+    if (tag) txs = txs.filter((t) => (t.tag || 'manual') === tag);
+    if (from) { const f = new Date(from + 'T00:00:00').getTime(); txs = txs.filter((t) => t.ts >= f); }
+    if (to) { const e = new Date(to + 'T23:59:59').getTime(); txs = txs.filter((t) => t.ts <= e); }
+    if (search) { const q = search.toLowerCase(); txs = txs.filter((t) => (t.reason || '').toLowerCase().includes(q)); }
+    const out = txs.slice().reverse();
+    return limit == null ? out : out.slice(0, limit);
+  },
+
+  // ----- ledger analytics -----
+
+  // Points per house for each week of the term — the shape of the House Cup
+  // race. `cumulative` gives the running total instead of the week's net.
+  getWeeklySeries({ cumulative = false } = {}) {
+    const s = store.getSettings();
+    const start = new Date(s.termStart + 'T00:00:00').getTime();
+    const weeks = Math.max(1, Number(s.termWeeks) || 9);
+    const running = {};
+    const out = [];
+    for (let w = 0; w < weeks; w++) {
+      const from = start + w * 7 * 86400000;
+      const to = from + 7 * 86400000;
+      const totals = {};
+      for (const id of Object.keys(HOUSES)) {
+        const net = state.transactions.reduce((sum, t) =>
+          (t.houseId === Number(id) && t.ts >= from && t.ts < to ? sum + t.delta : sum), 0);
+        running[id] = (running[id] || 0) + net;
+        totals[id] = cumulative ? running[id] : net;
+      }
+      out.push({ week: w + 1, from: new Date(from), totals });
+    }
+    return out;
+  },
+
+  // Where a house's points actually came from, by tag.
+  getBreakdown(houseId, scope = 'term') {
+    const since = scope === 'week' ? startOfWeek().getTime() : 0;
+    const by = {};
+    for (const t of state.transactions) {
+      if (t.houseId !== Number(houseId) || t.ts < since) continue;
+      const key = t.tag || 'manual';
+      by[key] = by[key] || { earned: 0, lost: 0, net: 0, count: 0 };
+      if (t.delta >= 0) by[key].earned += t.delta; else by[key].lost += -t.delta;
+      by[key].net += t.delta;
+      by[key].count += 1;
+    }
+    return by;
+  },
+
+  // ----- award presets + bulk awards (teacher-defined routines) -----
+
+  getAwardPresets() {
+    const p = state.settings.awardPresets;
+    return Array.isArray(p) ? p : defaultAwardPresets();
+  },
+
+  saveAwardPreset(preset) {
+    if (!preset?.label || !Number.isFinite(Number(preset.points))) return null;
+    const list = store.getAwardPresets().slice();
+    const p = { id: preset.id || `ap-${Date.now()}`, label: preset.label, points: Math.round(Number(preset.points)), tag: preset.tag || 'manual' };
+    const i = list.findIndex((x) => x.id === p.id);
+    if (i >= 0) list[i] = p; else list.push(p);
+    state.settings.awardPresets = list;
+    emit();
+    return p;
+  },
+
+  deleteAwardPreset(id) {
+    state.settings.awardPresets = store.getAwardPresets().filter((p) => p.id !== id);
+    emit();
+  },
+
+  // Same award to every house at once — what actually happens when the whole
+  // class earns something.
+  awardAll(delta, { reason = 'All houses', tag = 'manual' } = {}) {
+    const made = [];
+    for (const id of Object.keys(HOUSES)) {
+      const tx = store.addPoints(Number(id), delta, { reason, tag });
+      if (tx) made.push(tx);
+    }
+    return made;
   },
 
   purchase(houseId, cost, itemName) {
