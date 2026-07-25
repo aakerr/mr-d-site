@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mr. D's Classroom OS</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind vendored locally: the classroom smartboard must render even if
+       the school network blocks CDNs. Update by re-downloading vendor/tailwind.js. -->
+  <script src="vendor/tailwind.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -29,8 +31,8 @@
       },
     };
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&display=swap" rel="stylesheet">
+  <!-- Display font vendored locally (see vendor/fonts.css) — no CDN needed. -->
+  <link rel="stylesheet" href="vendor/fonts.css">
   <link rel="stylesheet" href="css/theme.css">
 </head>
 <body class="bg-page text-gray-50 font-body h-screen w-screen overflow-hidden flex flex-col">
@@ -51,8 +53,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+      "three": "./vendor/three.module.js",
+      "cannon-es": "./vendor/cannon-es.js"
     }
   }
   </script>

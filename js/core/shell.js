@@ -365,6 +365,14 @@ export function initShell(ctx) {
     const reason = ((reasonEl && reasonEl.value) || '').trim();
     const house = currentHouse();
     store.addPoints(selectedHouseId, delta, { reason: reason || 'Quick adjust', tag: 'quick' });
+    // Clear the reason so the NEXT award doesn't silently inherit this one's
+    // label — the panel is deliberately not re-rendered, so do it by hand.
+    if (reasonEl) {
+      reasonEl.value = '';
+      // Keep typing possible immediately, but only if the teacher was already
+      // in the field — never steal focus from wherever he actually is.
+      if (document.activeElement === reasonEl) reasonEl.focus();
+    }
     if (audio && typeof audio.sfx === 'function') audio.sfx(delta > 0 ? 'coin' : 'thud');
     spawnToast(delta, house);
   }

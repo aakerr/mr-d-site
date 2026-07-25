@@ -64,9 +64,12 @@ const ROLL = {
 // we ALWAYS display the actually-settled face and fall back to the real result
 // on the rare numerical divergence (never snapping the mesh).
 // Nudges are disabled while fate is on so the pre-sim and visible roll agree.
-const FATE_ENABLED = true;
+//
+// Fate is PER-INSTANCE (createDiceSim({ fate })). It defaults to true so the
+// classroom Die of Destiny keeps its weighting, but any other consumer (e.g. a
+// paid Magic Shop gamble) must pass fate:false to get genuinely uniform rolls.
+const FATE_DEFAULT = true;
 const FATE_HIGH_CHANCE = 0.60;
-const NUDGES_ENABLED = !FATE_ENABLED;
 
 const MODE_DICE = { '1d6': ['d6'], '2d6': ['d6', 'd6'], d20: ['d20'] };
 
@@ -104,7 +107,18 @@ function traySize(aspect) {
   return { w: base * Math.sqrt(a), d: base / Math.sqrt(a) };
 }
 
-export function createDiceSim({ container, audio }) {
+// Every call builds a fully self-contained instance: its own renderer, scene,
+// cannon-es world, material cache and RAF loop. Nothing mutable is shared
+// between instances, so several sims can run concurrently in different hosts.
+// (The only cross-instance state is the immutable die-geometry cache in
+// geometry.js, which is read-only and deliberately never disposed per-instance.)
+export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs } = {}) {
+  const fateEnabled = !!fate;
+  // Nudges would desync the visible roll from the fate pre-sim, so they are
+  // only enabled when fate is off.
+  const nudgesEnabled = !fateEnabled;
+  const minRoll = Number.isFinite(minRollMs) ? Math.max(0, minRollMs) : ROLL.minRollMs;
+
   // --- renderer -----------------------------------------------------------
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -566,7 +580,7 @@ export function createDiceSim({ container, audio }) {
     // lands the target. The collision shapes are unchanged, so the roll is real.
     const ics = types.map((t, i) => computeSpawn(t, i, types.length));
     const targets = types.map(() => null);
-    if (FATE_ENABLED) {
+    if (fateEnabled) {
       const landings = simulateHeadless(types.map((t, i) => ({ type: t, ic: ics[i] })));
       for (let i = 0; i < types.length; i++) {
         const data = getDieGeometry(types[i]);
@@ -603,7 +617,7 @@ export function createDiceSim({ container, audio }) {
     const overdue = elapsed > ROLL.hardCapMs;
     // Enforce a lively minimum: keep simulating (never read the settled face)
     // until minRollMs, so even a quick-settling die still gets a full roll.
-    if (elapsed < ROLL.minRollMs && !overdue) return;
+    if (elapsed < minRoll && !overdue) return;
     // After the ramp point, bleed velocity every frame so even a die that keeps
     // skittering is guaranteed to come to rest well before the hard cap.
     const ramping = elapsed > ROLL.dampRampStartMs;
@@ -629,7 +643,7 @@ export function createDiceSim({ container, audio }) {
       _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w);
       const [faceIdx, alignment] = readFace(die.data, _q);
 
-      if (NUDGES_ENABLED && alignment < COCKED_DOT && die.nudges < MAX_NUDGES && !overdue) {
+      if (nudgesEnabled && alignment < COCKED_DOT && die.nudges < MAX_NUDGES && !overdue) {
         nudge(die);
         allResolved = false;
         continue;
@@ -742,10 +756,11 @@ export function createDiceSim({ container, audio }) {
       material.dispose();
     }
     matCache.clear();
-    // Shared cached die geometries are disposed too (cache is per-module-load).
-    for (const type of ['d6', 'd20']) {
-      try { getDieGeometry(type).geometry.dispose(); } catch (e) { /* ignore */ }
-    }
+    // NOTE: the die geometries in geometry.js are an immutable module-level
+    // cache SHARED by every sim instance. Disposing them here would yank the
+    // buffers out from under any concurrently-running sim, so we deliberately
+    // leave them alone. They are two small BufferGeometries that live for the
+    // lifetime of the page — bounded, not a leak.
     scene.clear();
     renderer.dispose();
     if (canvas.parentNode) canvas.parentNode.removeChild(canvas);

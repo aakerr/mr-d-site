@@ -7,6 +7,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
+import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
@@ -29,6 +30,7 @@ let changeHandler = null;
 let dragOverHandler = null;
 let dragLeaveHandler = null;
 let dropHandler = null;
+let inputHandler = null;
 const timers = new Set();
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
 
@@ -42,6 +44,8 @@ let shopForm = null;                  // in-progress shop item editor
 let dangerOpen = false;               // danger-zone accordion state
 const shopUrls = new Set();           // object URLs we own for shop image previews
 let backupStatusTimer = null;         // interval that keeps the auto-backup "last saved" line live
+let shopGuideOpen = false;            // "How magic items work" accordion state
+let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 
 const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
@@ -134,12 +138,15 @@ function syncSegActive() {
     b.classList.toggle('active', b.dataset.tab === activeTab));
 }
 
-function renderBody() {
+// force=true bypasses the mid-typing guard — used by explicit saves, which must
+// always repaint even when the teacher is still focused in the field they edited.
+function renderBody({ force = false } = {}) {
   const body = el('admin-body');
   if (!body) return;
   // Don't clobber a field the teacher is mid-typing in the body.
   const ae = document.activeElement;
-  if (ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  if (!force && ae && body.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  if (force && ae && body.contains(ae) && typeof ae.blur === 'function') ae.blur();
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
   else if (activeTab === 'quests') body.innerHTML = renderQuests();
   else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
@@ -688,18 +695,90 @@ function confirmQuestComplete(core) {
 // ===========================================================================
 // TAB — SHOP (Magic Shop item manager)
 // ===========================================================================
+// Everything the editor needs to TEACH each kind, not just collect a number.
+// `sentence(n)` is the single plain-English phrasing reused by the catalog list
+// and the live preview, so the teacher reads the same words in both places.
 const EFFECTS = {
-  attack: { label: '⚔️ Attack', explain: 'Deducts points from a target house the buyer picks.', amountLabel: 'Points deducted from target' },
-  steal:  { label: '🐴 Steal',  explain: 'Takes points from the current leading house and gives them to the buyer.', amountLabel: 'Points stolen from leader' },
-  shield: { label: '🛡️ Defend', explain: 'Blocks incoming attacks on the buyer for a duration.', amountLabel: 'Protection duration (hours)' },
+  attack: {
+    label: '⚔️ Attack', group: 'Offensive', amountLabel: 'Points deducted from target',
+    explain: 'Deducts points from a house you choose.',
+    does: 'The buyer picks a rival house and knocks points off their score.',
+    defense: 'A Shield stops it completely; a half-damage relic cuts it in half.',
+    example: 'Greek Fire: 45 pts to take 25 from a rival — but a Shield Wall stops it cold.',
+    range: 'Most attacks land between 10 and 40 points.',
+    sentence: (n) => `Takes ${n} points from a house you choose. Blocked by shields. Halved by a half-damage relic.`,
+  },
+  steal: {
+    label: '🐴 Steal', group: 'Offensive', amountLabel: 'Points stolen from leader',
+    explain: 'Takes points from the leading house and gives them to the buyer.',
+    does: 'Points come off whichever house is in first place and go to the buyer.',
+    defense: 'Still an attack — a Shield on the leader stops it; a half-damage relic halves it.',
+    example: 'Trojan Horse: 50 pts to move 25 points from the leader onto your own score.',
+    range: 'Most steals land between 10 and 30 points.',
+    sentence: (n) => `Takes ${n} points from whichever house is leading and gives them to the buyer. Blocked by shields. Halved by a half-damage relic.`,
+  },
+  pierce: {
+    label: '🫥 Pierce', group: 'Offensive', amountLabel: 'Points deducted (unblockable)',
+    explain: 'An attack that ignores shields AND damage reduction.',
+    does: 'Same as an attack, but no defense can stop or soften it.',
+    defense: 'Ignores BOTH shields and half-damage relics — it always lands in full.',
+    example: 'Invisibility Cloak: 60 pts to take 20 — it gets through even a Great Wall.',
+    range: 'Price these higher than a plain attack, since nothing can stop them.',
+    sentence: (n) => `Takes ${n} points from a house you choose. Cannot be blocked or reduced.`,
+  },
+  shield: {
+    label: '🛡️ Defend', group: 'Defensive', amountLabel: 'Protection duration (hours)',
+    explain: 'Blocks ALL incoming attacks for a while.',
+    does: 'For a set number of hours, attacks against the buyer do nothing at all.',
+    defense: 'Stops attacks and steals outright — but a Pierce item goes straight through.',
+    example: 'Aegis Shield: 30 pts to block every attack for 24 hours.',
+    range: 'Typical protection runs 12 to 48 hours.',
+    sentence: (n) => `Blocks all incoming attacks on the buyer for ${n} hours. A Pierce item still gets through.`,
+  },
+  reduce: {
+    label: '🕵️ Halve damage', group: 'Defensive', amountLabel: 'Duration (hours)',
+    explain: 'Incoming damage is cut in half for a while. Usually a Mythic reward.',
+    does: 'For a set number of hours, every attack against the buyer lands at half strength.',
+    defense: 'Softens attacks and steals; a Pierce item ignores it entirely.',
+    example: 'Spy Network: earned with a natural 20 — halves incoming damage for 48 hours.',
+    range: 'Mythic relics usually run 48 to 72 hours.',
+    sentence: (n) => `Cuts incoming damage to the buyer in half for ${n} hours. A Pierce item still lands in full.`,
+  },
+  wild: {
+    label: '🎲 Wildcard', group: 'Wildcard', amountLabel: 'Maximum swing (either direction)',
+    explain: 'Random swing, for or against the buyer.',
+    does: 'A gamble — the buyer might gain points or lose them, up to the amount you set.',
+    defense: 'Not an attack, so shields and relics do not apply.',
+    example: "Pandora's Box: 40 pts for a coin-flip swing of up to 30 points, either way.",
+    range: 'Keep the swing between 10 and 30 so a bad roll is not devastating.',
+    sentence: (n) => `Random swing of up to ${n} points, which may help OR hurt the buyer.`,
+  },
 };
+const EFFECT_ORDER = ['attack', 'steal', 'pierce', 'shield', 'reduce', 'wild'];
 
+// One-line label+amount for compact spots (kept short for the row header).
 function effectSummary(effect) {
   const e = EFFECTS[effect?.kind];
   if (!e) return '';
-  if (effect.kind === 'shield') return `${e.label} · ${effect.amount}h protection`;
-  if (effect.kind === 'steal') return `${e.label} · ${effect.amount} from leader`;
-  return `${e.label} · −${effect.amount} to target`;
+  const n = effect.amount;
+  switch (effect.kind) {
+    case 'shield': return `${e.label} · blocks all attacks for ${n}h`;
+    case 'reduce': return `${e.label} · incoming damage halved for ${n}h`;
+    case 'steal':  return `${e.label} · takes ${n} from the leader`;
+    case 'pierce': return `${e.label} · −${n}, ignores shields & reduction`;
+    case 'wild':   return `${e.label} · random ±${n}`;
+    default:       return `${e.label} · −${n} to a house you choose`;
+  }
+}
+
+// The full plain-English sentence, shared by the catalog list and live preview.
+function effectSentence(item) {
+  const e = EFFECTS[item?.effect?.kind];
+  if (!e) return '';
+  const price = item.mythicOnly
+    ? 'Cannot be bought. Granted when a house rolls a natural 20.'
+    : `Costs ${Number(item.cost) || 0} points.`;
+  return `${price} ${e.sentence(Number(item.effect.amount) || 0)}`;
 }
 
 function shopThumbHTML(item) {
@@ -710,35 +789,103 @@ function shopThumbHTML(item) {
   return `<span class="admin-shop-thumb"><span class="admin-shop-emoji">${esc(item.emoji || '✨')}</span></span>`;
 }
 
-function renderShop() {
-  const store = ctxRef.store;
-  const items = store.getShopItems().slice().sort((a, b) => a.cost - b.cost);
-  const rows = items.map((it) => `
-    <div class="admin-shop-row">
+function shopRowHTML(it) {
+  return `
+    <div class="admin-shop-row${it.mythicOnly ? ' mythic' : ''}">
       ${shopThumbHTML(it)}
       <div class="admin-q-main">
-        <div class="admin-q-title">${esc(it.name)}</div>
+        <div class="admin-q-title">${esc(it.name)} ${it.mythicOnly ? '<span class="admin-mythic-badge">🏆 MYTHIC</span>' : ''}</div>
         <div class="admin-q-desc">${esc(it.desc || '')}</div>
         <div class="admin-shop-effect">${esc(effectSummary(it.effect))}</div>
+        <div class="admin-shop-plain">${esc(effectSentence(it))}</div>
       </div>
-      <div class="admin-shop-cost">${it.cost}<small>pts</small></div>
+      <div class="admin-shop-cost">${it.mythicOnly ? '<span class="admin-shop-free">—</span><small>reward</small>' : `${it.cost}<small>pts</small>`}</div>
       <div class="admin-q-row-actions">
         <button class="admin-btn admin-btn-icon" data-action="shop-edit" data-id="${esc(it.id)}" aria-label="Edit">✏️</button>
         <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="shop-del" data-id="${esc(it.id)}" aria-label="Delete">🗑️</button>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+// 17+ items — grouped so the teacher can still scan it.
+function renderShop() {
+  const store = ctxRef.store;
+  const items = store.getShopItems();
+  const groups = [
+    { key: 'Offensive', title: '⚔️ Offensive', note: 'Spend points to take points.' },
+    { key: 'Defensive', title: '🛡️ Defensive', note: 'Protect the buyer for a stretch of time.' },
+    { key: 'Wildcard',  title: '🎲 Wildcard',  note: 'Risky — can help or hurt the buyer.' },
+    { key: 'Mythic',    title: '🏆 Mythic rewards', note: "Not purchasable — granted by a natural 20." },
+  ];
+  const bucket = (it) => (it.mythicOnly ? 'Mythic' : (EFFECTS[it.effect?.kind]?.group || 'Wildcard'));
+  const sections = groups.map((g) => {
+    const list = items
+      .filter((it) => bucket(it) === g.key)
+      .sort((a, b) => (a.cost - b.cost) || a.name.localeCompare(b.name));
+    if (!list.length) return '';
+    return `
+      <div class="admin-shop-group">
+        <div class="admin-shop-group-head">
+          <span class="admin-shop-group-title">${g.title} <span class="admin-faint">(${list.length})</span></span>
+          <span class="admin-faint">${esc(g.note)}</span>
+        </div>
+        <div class="admin-q-list">${list.map(shopRowHTML).join('')}</div>
+      </div>`;
+  }).join('');
+
   return `
     <div class="admin-quests">
+      ${shopGuideHTML()}
       <div class="admin-card">
         <div class="admin-rows-head">
           <span class="admin-card-title" style="margin:0">Magic Shop <span class="admin-faint">(${items.length} items)</span></span>
           <button class="admin-btn admin-btn-primary" data-action="shop-new">+ New Item</button>
         </div>
-        <div class="admin-mini">Items students can buy with house points. The effect decides what happens when an item is used.</div>
-        <div class="admin-q-list">
-          ${rows || '<div class="admin-empty admin-empty-sm">No items yet. Add one to stock the shop.</div>'}
-        </div>
+        <div class="admin-mini">Items students buy with house points. The effect decides what happens when an item is used.</div>
+        ${sections || '<div class="admin-empty admin-empty-sm">No items yet. Add one to stock the shop.</div>'}
       </div>
+    </div>`;
+}
+
+// Plain-language primer so Mr. D can invent balanced items of his own.
+function shopGuideHTML() {
+  return `
+    <div class="admin-card">
+      <details class="admin-details admin-guide" ${shopGuideOpen ? 'open' : ''}>
+        <summary data-action="shop-guide-toggle">📖 How magic items work</summary>
+
+        <div class="admin-guide-body">
+          <p class="admin-guide-p"><b>Attacks and Steals take points away.</b> An Attack hits a house the buyer picks; a Steal takes from whichever house is currently in the lead.</p>
+          <p class="admin-guide-p"><b>Shields stop them completely.</b> While a house has a Shield, attacks against it do nothing at all.</p>
+          <p class="admin-guide-p"><b>Half-damage relics cut them in half.</b> A 20-point hit becomes 10.</p>
+          <p class="admin-guide-p"><b>Pierce items go through BOTH.</b> Nothing stops a Pierce attack — that's why they cost more.</p>
+          <p class="admin-guide-p"><b>Wildcards can help or hurt</b> the house that buys them. It's a gamble, and defenses don't apply.</p>
+          <p class="admin-guide-p"><b>Mythic relics can't be bought.</b> The only way to earn one is a natural 20 on the Die of Destiny.</p>
+
+          <div class="admin-guide-callout">
+            ⚠️ <b>Defenses only apply to attacks</b> — shop items and Battle Day strikes. Points you give or take yourself, from the House Points screen or the ± button, are <b>never</b> blocked or halved.
+          </div>
+
+          <div class="admin-guide-tablewrap">
+            <div class="admin-guide-tabletitle">What actually lands</div>
+            <table class="admin-matchup">
+              <thead>
+                <tr><th>Incoming</th><th>No defense</th><th>Shield</th><th>Half-damage</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="admin-mu-row">Plain attack of 20</td>
+                  <td><b>20</b></td><td class="admin-mu-block">blocked</td><td><b>10</b></td>
+                </tr>
+                <tr>
+                  <td class="admin-mu-row">Pierce attack of 20</td>
+                  <td><b>20</b></td><td><b>20</b></td><td><b>20</b></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -753,6 +900,7 @@ function openShopForm(id) {
     desc: it?.desc || '',
     emoji: it?.emoji || '✨',
     cost: it?.cost ?? 25,
+    mythicOnly: !!it?.mythicOnly,
     effectKind: it?.effect?.kind || 'attack',
     effectAmount: it?.effect?.amount ?? 20,
     imageFile: null,      // staged new File
@@ -771,7 +919,7 @@ async function hydrateShopImage(id) {
 function renderShopModal() {
   const f = shopForm;
   const m = el('admin-modal-root');
-  const effChips = Object.keys(EFFECTS).map((k) => {
+  const effChips = EFFECT_ORDER.map((k) => {
     const e = EFFECTS[k];
     const on = f.effectKind === k;
     return `<label class="admin-eff-opt${on ? ' on' : ''}">
@@ -780,7 +928,28 @@ function renderShopModal() {
       <span class="admin-eff-explain">${e.explain}</span>
     </label>`;
   }).join('');
-  const amountLabel = EFFECTS[f.effectKind].amountLabel;
+  const kind = EFFECTS[f.effectKind];
+  const amountLabel = kind.amountLabel;
+
+  // (b) guidance that changes with the selected kind
+  const kindGuide = `
+    <div class="admin-kind-guide">
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">What it does</span><span>${esc(kind.does)}</span></div>
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">Vs. defenses</span><span>${esc(kind.defense)}</span></div>
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">Example</span><span class="admin-kind-example">${esc(kind.example)}</span></div>
+    </div>`;
+
+  // (c) live plain-English preview composed from the current form values
+  const previewItem = {
+    cost: f.cost, mythicOnly: f.mythicOnly,
+    effect: { kind: f.effectKind, amount: f.effectAmount },
+  };
+
+  // (d) friendly guardrails
+  const reduceWarn = (f.effectKind === 'reduce' && !f.mythicOnly)
+    ? '<div class="admin-warn-line">Half-damage relics are usually Mythic rewards. If it\'s purchasable, attacks become very weak — are you sure?</div>' : '';
+  const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
+
   const previewUrl = f.imageFile || f.imageStored ? f.imageUrl : '';
   const imageArea = (f.imageFile || f.imageStored)
     ? `<div class="admin-shop-imgprev">
@@ -813,19 +982,37 @@ function renderShopModal() {
             <input id="admin-shop-emoji" class="admin-input" type="text" value="${esc(f.emoji)}" placeholder="✨" style="max-width:110px" />
           </div>
           <div>
-            <label class="admin-flabel" for="admin-shop-cost">Cost <span class="admin-faint">(points to buy)</span></label>
-            <input id="admin-shop-cost" class="admin-input" type="number" min="1" max="9999" value="${esc(f.cost)}" style="max-width:150px" />
+            ${f.mythicOnly ? `
+              <label class="admin-flabel">Cost</label>
+              <div class="admin-mythic-note">🏆 Mythic rewards are free — they're granted by a natural 20, never bought.</div>`
+            : `
+              <label class="admin-flabel" for="admin-shop-cost">Cost <span class="admin-faint">(points to buy)</span></label>
+              <input id="admin-shop-cost" class="admin-input" type="number" min="1" max="9999" value="${esc(f.cost)}" style="max-width:150px" />`}
           </div>
         </div>
+
+        <label class="admin-check admin-mythic-check">
+          <input type="checkbox" id="admin-shop-mythic" ${f.mythicOnly ? 'checked' : ''} />
+          <span>🏆 Mythic reward only <span class="admin-faint">(not purchasable — granted by a natural 20)</span></span>
+        </label>
 
         <label class="admin-flabel">Image <span class="admin-faint">(optional — overrides the emoji)</span></label>
         ${imageArea}
 
         <label class="admin-flabel" style="margin-top:16px">What happens when it's used?</label>
         <div class="admin-eff-group">${effChips}</div>
+        ${kindGuide}
+        ${reduceWarn}
 
         <label class="admin-flabel" for="admin-shop-amount">${amountLabel}</label>
         <input id="admin-shop-amount" class="admin-input" type="number" min="1" max="9999" value="${esc(f.effectAmount)}" style="max-width:220px" />
+        <div class="admin-step-hint" style="margin-top:6px">${esc(kind.range)}</div>
+
+        <div class="admin-preview admin-shop-preview">
+          <span class="admin-preview-eyebrow">In plain English</span>
+          <span class="admin-shop-preview-text" id="admin-shop-preview">${esc(effectSentence(previewItem))}</span>
+        </div>
+        ${saveErr}
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="shop-close">Cancel</button>
@@ -835,16 +1022,30 @@ function renderShopModal() {
   const n = el('admin-shop-name'); if (n && f.isNew) n.focus();
 }
 
+// Live preview: recompute the sentence as the teacher types cost/amount,
+// without re-rendering (which would steal focus mid-keystroke).
+function updateShopPreview() {
+  if (!shopForm || !el('admin-shop-preview')) return;
+  const g = (id) => (el(id) ? el(id).value : '');
+  el('admin-shop-preview').textContent = effectSentence({
+    cost: el('admin-shop-cost') ? g('admin-shop-cost') : shopForm.cost,
+    mythicOnly: shopForm.mythicOnly,
+    effect: { kind: shopForm.effectKind, amount: g('admin-shop-amount') },
+  });
+}
+
 function syncShopFromDom() {
   if (!shopForm) return;
   const g = (id) => (el(id) ? el(id).value : '');
   shopForm.name = g('admin-shop-name');
   shopForm.desc = g('admin-shop-desc');
   shopForm.emoji = g('admin-shop-emoji') || '✨';
-  shopForm.cost = g('admin-shop-cost');
+  if (el('admin-shop-cost')) shopForm.cost = g('admin-shop-cost');   // hidden while mythic
   shopForm.effectAmount = g('admin-shop-amount');
+  if (el('admin-shop-mythic')) shopForm.mythicOnly = el('admin-shop-mythic').checked;
   const checked = rootEl.querySelector('input[name="admin-eff"]:checked');
   if (checked) shopForm.effectKind = checked.value;
+  shopForm.saveError = null;   // any edit clears the previous failure notice
 }
 
 function stageShopImage(file) {
@@ -859,27 +1060,43 @@ function stageShopImage(file) {
   renderShopModal();
 }
 
+// Explain a null from store.saveShopItem() in the teacher's own terms rather
+// than failing silently. Mirrors the store's validation order.
+function explainSaveFailure(f, store) {
+  if (!f.name.trim()) return 'This item needs a name.';
+  if (!store.SHOP_KINDS.includes(f.effectKind)) return `“${f.effectKind}” isn't a magic type this game understands. Pick one of the six options above.`;
+  if (!f.mythicOnly && !(Number(f.cost) > 0)) return 'Give this item a price of at least 1 point — or tick “Mythic reward only” if it should be earned instead of bought.';
+  return "Something in this item wasn't accepted. Check the name, price, and type.";
+}
+
 async function saveShopItem() {
   syncShopFromDom();
   const f = shopForm;
   const store = ctxRef.store;
-  if (!f.name.trim()) { toast('An item name is required.'); return; }
-  if (!(Number(f.cost) >= 1)) { toast('Cost must be at least 1.'); return; }
   const imgKey = `shop:${f.id}:image`;
   let image = '';
   if (f.imageFile) { await media.put(imgKey, f.imageFile); image = `media:${imgKey}`; }
   else if (f.imageStored) { image = `media:${imgKey}`; }
   else { await media.delete(imgKey); image = ''; } // emoji-only or image removed
+
+  // The store owns validation: it checks the kind, forces cost 0 for mythic
+  // relics, and rejects a priceless non-mythic item.
   const saved = store.saveShopItem({
     id: f.id, name: f.name.trim(), desc: f.desc.trim(), emoji: f.emoji || '✨', image,
-    cost: f.cost, effect: { kind: f.effectKind, amount: f.effectAmount },
+    cost: f.cost, mythicOnly: f.mythicOnly,
+    effect: { kind: f.effectKind, amount: f.effectAmount },
   });
-  if (!saved) { toast('Could not save — check name, cost, and effect.'); return; }
+  if (!saved) {
+    shopForm.saveError = explainSaveFailure(f, store);
+    renderShopModal();
+    return;
+  }
   revokeShopUrls();
+  const wasNew = f.isNew;
   shopForm = null;
   closeModal();
-  renderBody();
-  toast(f.isNew ? 'Item added.' : 'Item updated.');
+  renderBody({ force: true });
+  toast(wasNew ? 'Item added.' : 'Item updated.');
 }
 
 function revokeShopUrls() { shopUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); shopUrls.clear(); }
@@ -980,6 +1197,8 @@ function renderSettings() {
         </details>
       </div>
 
+      ${shieldPanelHTML()}
+
       <div class="admin-card">
         <div class="admin-card-title">Backup &amp; Restore</div>
 
@@ -1012,6 +1231,70 @@ function renderSettings() {
     </div>`;
 }
 
+// ----- Aegis shields (teacher oversight of a time-based effect) -------------
+function fmtRemaining(ms) {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h && m) return `${h}h ${m}m left`;
+  if (h) return `${h}h left`;
+  return `${m}m left`;
+}
+
+// Tick the "3h 12m left" texts in place; re-render only when one actually expires.
+function updateShieldTimes() {
+  if (!rootEl || !ctxRef) return;
+  const store = ctxRef.store;
+  const spans = [...rootEl.querySelectorAll('.admin-def-time[data-house][data-kind]')];
+  if (!spans.length) return;
+  let expired = false;
+  for (const s of spans) {
+    const id = Number(s.dataset.house);
+    const ms = s.dataset.kind === 'shield' ? store.shieldRemainingMs(id) : store.reductionRemainingMs(id);
+    if (ms <= 0) { expired = true; continue; }
+    s.textContent = fmtRemaining(ms);
+  }
+  if (expired) renderBody({ force: true });
+}
+
+// Both time-based defenses in one place: full shields and damage reductions.
+function shieldPanelHTML() {
+  const store = ctxRef.store;
+  const live = Object.values(store.HOUSES)
+    .map((h) => ({
+      house: h,
+      shield: store.shieldRemainingMs(h.id),
+      reduce: store.reductionRemainingMs(h.id),
+    }))
+    .filter((x) => x.shield > 0 || x.reduce > 0)
+    .sort((a, b) => Math.max(b.shield, b.reduce) - Math.max(a.shield, a.reduce));
+
+  const defRow = (house, kind, ms) => `
+    <div class="admin-def-line">
+      <span class="admin-shield-emoji">${kind === 'shield' ? '🛡️' : '🕵️'}</span>
+      <div class="admin-q-main">
+        <div class="admin-def-name">${kind === 'shield' ? 'Shield' : 'Damage halved'}</div>
+        <div class="admin-q-desc"><span class="admin-def-time" data-house="${house.id}" data-kind="${kind}">${esc(fmtRemaining(ms))}</span></div>
+      </div>
+      <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="${kind === 'shield' ? 'shield-clear' : 'reduction-clear'}" data-house="${house.id}">Clear</button>
+    </div>`;
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🛡️ Active Defenses</div>
+      <div class="admin-mini">Shields block attacks outright; damage reduction halves them. Clear one early if a house used it by mistake.</div>
+      ${live.length ? `<div class="admin-shield-list">${live.map(({ house, shield, reduce }) => `
+        <div class="admin-shield-row" style="--house:${house.accent}">
+          <div class="admin-def-house" style="color:${house.accent}">${esc(house.name)}</div>
+          <div class="admin-def-lines">
+            ${shield > 0 ? defRow(house, 'shield', shield) : ''}
+            ${reduce > 0 ? defRow(house, 'reduce', reduce) : ''}
+          </div>
+        </div>`).join('')}</div>`
+        : '<div class="admin-empty admin-empty-sm">No house currently has a shield or damage reduction.</div>'}
+    </div>`;
+}
+
 // Upsert an auto-managed event keyed by its `auto` flag (so we move/replace the
 // existing marker instead of stacking duplicates). patch === null removes it.
 function upsertAuto(flag, patch) {
@@ -1038,7 +1321,7 @@ function saveSettings() {
   store.updateSettings({ termStart, termWeeks });
   syncTermMarkers(termStart, termWeeks);
   toast('Term settings saved — markers placed on the calendar.');
-  renderBody();
+  renderBody({ force: true });   // explicit save must repaint even if still focused
 }
 
 function openResetModal() {
@@ -1200,75 +1483,202 @@ function renderPotw() {
   const active = store.getActivePotwKey();
   const keys = Object.keys(profiles);
 
+  const manual = store.getManualPotwKey();
+  const videoOpts = store.getPotwVideoOptions();
+
   return `
     <div class="admin-potw">
       <div class="admin-potw-head">
-        <div class="admin-card-title" style="margin:0">Destinations</div>
-        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-new">+ New Destination</button>
+        <div>
+          <div class="admin-card-title" style="margin:0">Places of the Week</div>
+          <div class="admin-mini" style="margin:4px 0 0">Set up a place for each week — the app switches to the new one automatically every Monday.</div>
+        </div>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-new">+ Add a Place of the Week</button>
       </div>
       <div class="admin-potw-list">
-        ${keys.map((k) => {
+        ${keys.length ? keys
+          .slice()
+          .sort((a, b) => (profiles[b].weekOf || '').localeCompare(profiles[a].weekOf || ''))
+          .map((k) => {
           const pr = profiles[k];
-          const isActive = k === active;
-          const dateBadge = pr.date ? `<span class="admin-date-badge">🌍 ${esc(pr.date)}</span>` : '<span class="admin-date-badge muted">no date set</span>';
-          const pres = pr.presentation;
-          let presBadge = '';
-          if (pres?.type === 'pdf') presBadge = `<span class="admin-pres-tag">📊 PDF <span class="admin-pres-size" data-mkey="potw:${esc(k)}:slides.pdf"></span></span>`;
-          else if (pres?.type === 'images') presBadge = `<span class="admin-pres-tag">📊 ${pres.count || 0} slide${pres.count === 1 ? '' : 's'}</span>`;
-          else if (pres?.type === 'gslides') presBadge = '<span class="admin-pres-tag">📊 Google Slides</span>';
-          const urlBadge = pr.videoUrl ? '<span class="admin-pres-tag">🔗 Video URL</span>' : '';
-          const linkBadge = (pr.links || []).length ? `<span class="admin-pres-tag">🔖 ${pr.links.length} link${pr.links.length === 1 ? '' : 's'}</span>` : '';
+          const isPlaying = k === active;
+          const weekLine = pr.weekOf
+            ? `<span class="admin-week-line">📅 Week of ${esc(weekRangeLabel(pr.weekOf))}</span>`
+            : '<span class="admin-week-line none">📅 No week set — won\'t play automatically</span>';
+          const vid = videoOpts.find((v) => v.id === (pr.introVideoId || 'rock'));
+          // Wrapped so verifyPotwMedia() can flip it if this destination depends
+          // on a stored video blob that no longer exists (no URL fallback).
+          const reliesOnBlob = store.getPotwVideoUrl(pr) ? '0' : '1';
+          const vidLine = `<span class="admin-video-check" data-key="${esc(k)}" data-relies="${reliesOnBlob}">${
+            pr.videoUrl
+              ? '<span class="admin-pres-tag">🎬 Custom video link</span>'
+              : `<span class="admin-pres-tag">🎬 ${esc(vid ? vid.label : 'Rock')} intro</span>`
+          }</span>`;
           return `
-          <div class="admin-potw-card${isActive ? ' active' : ''}">
+          <div class="admin-potw-card${isPlaying ? ' active' : ''}">
             <div class="admin-potw-top">
               <div class="admin-potw-info">
-                <div class="admin-potw-title">${esc(pr.title)} ${isActive ? '<span class="admin-badge">ACTIVE</span>' : ''}</div>
+                <div class="admin-potw-title">${esc(pr.title)} ${isPlaying ? '<span class="admin-playing-badge">▶ Playing this week</span>' : ''}</div>
                 <div class="admin-potw-sub">${esc(pr.subtitle || '')}</div>
-                <div class="admin-potw-meta">${dateBadge} ${presBadge} ${urlBadge} ${linkBadge} · ${(pr.quickFacts || []).length} facts · ${(pr.primarySources || []).length} sources · ${(pr.quiz || []).length} quiz · key <code>${esc(k)}</code></div>
+                <div class="admin-potw-week">${weekLine}</div>
+                <div class="admin-potw-meta">${vidLine} ${arrivalBadgeHTML(k, pr)}</div>
               </div>
               <div class="admin-potw-actions">
-                <button class="admin-btn" data-action="potw-active" data-key="${esc(k)}"${isActive ? ' disabled' : ''}>${isActive ? 'Active' : 'Set Active'}</button>
                 <button class="admin-btn" data-action="potw-edit" data-key="${esc(k)}">Edit</button>
-                <button class="admin-btn admin-btn-danger" data-action="potw-delete" data-key="${esc(k)}"${isActive ? ' disabled' : ''} title="${isActive ? 'Cannot delete the active destination' : 'Delete'}">Delete</button>
+                <button class="admin-btn admin-btn-secondary" data-action="potw-testflight" data-key="${esc(k)}"
+                  title="Preview the 3D flight to this spot — changes nothing">🧭 Test flight</button>
+                <button class="admin-btn" data-action="potw-active" data-key="${esc(k)}"${manual === k ? ' disabled' : ''}
+                  title="Override: play this one when no week matches today">${manual === k ? 'Fallback pick' : 'Play this one now'}</button>
+                <button class="admin-btn admin-btn-danger" data-action="potw-delete" data-key="${esc(k)}"${manual === k ? ' disabled' : ''}
+                  title="${manual === k ? 'This is the fallback pick — choose another first' : 'Delete'}">Delete</button>
               </div>
             </div>
-            <div class="admin-va-title">🎬 Video &amp; Assets</div>
-            <div class="admin-drops admin-drops-one">
-              ${dropZoneHTML('video', k)}
+
+            <div class="admin-pres-block">
+              <div class="admin-va-title">📽️ Lesson Presentation <span class="admin-faint">— plays full-screen the moment you land</span></div>
+              <div class="admin-arrival" data-arrival="${esc(k)}">${arrivalBadgeHTML(k, pr)}</div>
+              <div class="admin-drop admin-pres-drop" data-presdrop="${esc(k)}" data-action="media-browse" title="Drop a PDF or click to browse">
+                <input type="file" class="admin-file" data-presdrop="${esc(k)}" accept="application/pdf" hidden />
+                <span class="admin-drop-prompt">⬇ Drop the lesson PDF here, or click to browse</span>
+              </div>
+              <div class="admin-mini" style="margin:8px 0 0">Export from PowerPoint or Google Slides as a PDF.</div>
             </div>
-            <div class="admin-mini" style="margin:0 0 10px">Playback priority: <b>dropped file › video URL › bundled fallback</b>. Set a video URL &amp; Docs/Links in <b>Edit</b>.</div>
-            <div class="admin-assets-label">📎 Resource assets <span class="admin-faint">(images, PDFs, any files — shown on the lesson's Resources tab)</span></div>
+
+            <div class="admin-assets-label admin-secondary">📎 Extra resources <span class="admin-faint">(handouts, images)</span></div>
+            <div class="admin-mini" style="margin:0 0 6px">These appear on the Resources tab — they open as files, <b>not slides</b>.</div>
             <div class="admin-drop admin-assets-drop" data-assets="${esc(k)}" data-action="media-browse" title="Drop files or click to browse">
               <input type="file" class="admin-file" data-assets="${esc(k)}" accept="*/*" multiple hidden />
-              <span class="admin-drop-prompt">⬇ Drop resource files here, or click to browse (multiple)</span>
+              <span class="admin-drop-prompt">⬇ Drop handouts &amp; images here, or click to browse (multiple)</span>
             </div>
             <div class="admin-assets" data-assets-list="${esc(k)}"><span class="admin-faint">Checking…</span></div>
           </div>`;
-        }).join('')}
+        }).join('') : '<div class="admin-empty">No places yet. Add your first one to get started.</div>'}
       </div>
 
       <div class="admin-card admin-files">
-        <div class="admin-card-title">About media storage</div>
-        <p class="admin-mini">💾 Files dropped above are stored <b>in this browser on this smartboard machine</b> (not uploaded anywhere). The Place-of-the-Week playback and lesson prefer them when present.</p>
-        <p class="admin-mini">Fallback method — or drop a video into the site folder:</p>
-        <pre class="admin-code">site-root/potw-intro.mp4        ← intro video (fallback)</pre>
+        <div class="admin-card-title">How the weekly switch works</div>
+        <p class="admin-mini">Each place plays for the whole week you picked, Monday through Sunday, and the app moves to the next one on its own. If today isn't inside any place's week, the app plays whichever one you marked with <b>Play this one now</b>.</p>
+        <p class="admin-mini">💾 Files you drop are stored <b>in this browser on this smartboard machine</b> — they aren't uploaded anywhere.</p>
       </div>
     </div>`;
 }
 
-// ---- media drop zones (drag-drop + click-to-browse via js/core/media.js) ----
-function dropZoneHTML(kind, key) {
-  const mkey = `potw:${key}:${kind === 'video' ? 'video' : 'song'}`;
-  const label = kind === 'video' ? 'Intro Video' : 'Theme Song';
-  const accept = kind === 'video' ? 'video/*' : 'audio/*';
-  const icon = kind === 'video' ? '🎬' : '🎵';
-  return `
-    <div class="admin-drop" data-kind="${kind}" data-mkey="${esc(mkey)}" data-action="media-browse" title="Drop a file or click to browse">
-      <input type="file" class="admin-file" accept="${accept}" data-mkey="${esc(mkey)}" hidden />
-      <div class="admin-drop-label">${icon} ${label}</div>
-      <div class="admin-drop-body" data-mkey="${esc(mkey)}"><span class="admin-faint">Checking…</span></div>
-    </div>`;
+// ---- week helpers (POTW scheduling) ----------------------------------------
+// Any day the teacher picks is normalized to that week's MONDAY.
+function mondayOfDate(dateStr) {
+  const d = parseYMD(dateStr);
+  const dow = (d.getDay() + 6) % 7;         // Mon=0 … Sun=6
+  d.setDate(d.getDate() - dow);
+  return ymd(d);
 }
+function fmtDayShort(dateStr) {
+  return parseYMD(dateStr).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+// School week (Mon–Fri) for the card; the store's window itself runs Mon–Sun.
+function weekRangeLabel(weekOf) {
+  if (!weekOf) return '';
+  return `${fmtDayShort(weekOf)} – ${fmtDayShort(ymd(addDays(parseYMD(weekOf), 4)))}`;
+}
+function fullWeekRangeLabel(weekOf) {
+  if (!weekOf) return '';
+  return `${fmtDayShort(weekOf)} – ${fmtDayShort(ymd(addDays(parseYMD(weekOf), 6)))}`;
+}
+
+// ---- Google Maps link → { lat, lng } ---------------------------------------
+// Handles: @lat,lng,15z · ?q=lat,lng · !3d<lat>!4d<lng> · /place/…/@lat,lng ·
+// a bare "lat, lng" paste. Short maps.app.goo.gl links carry no coordinates.
+function parseMapsLink(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { ok: false, reason: 'empty' };
+  if (/(maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)) return { ok: false, reason: 'short' };
+
+  const valid = (la, ln) => Number.isFinite(la) && Number.isFinite(ln) && Math.abs(la) <= 90 && Math.abs(ln) <= 180;
+  const num = '(-?\\d+(?:\\.\\d+)?)';
+  const tries = [
+    new RegExp(`!3d${num}!4d${num}`),            // place data blob (most precise)
+    new RegExp(`@${num},${num}`),                 // /@lat,lng,15z
+    new RegExp(`[?&](?:q|query|ll|center|daddr)=${num},\\s*${num}`, 'i'),
+    new RegExp(`^${num},\\s*${num}$`),            // bare "lat, lng"
+  ];
+  for (const re of tries) {
+    const m = s.match(re);
+    if (m) {
+      const la = parseFloat(m[1]); const ln = parseFloat(m[2]);
+      if (valid(la, ln)) return { ok: true, lat: la, lng: ln };
+    }
+  }
+  return { ok: false, reason: 'parse' };
+}
+
+// Unmistakable "what happens on arrival" badge for a destination card.
+// Rendered optimistically, then VERIFIED against IndexedDB by verifyPotwMedia()
+// — backups carry the JSON flags but not the blobs, so a restored machine can
+// have `presentation:{type:'pdf'}` with no PDF behind it.
+function arrivalBadgeHTML(key, profile) {
+  const pres = profile.presentation;
+  if (pres?.type === 'pdf') {
+    return `<span class="admin-arrival-badge ok" data-verify="pdf" data-key="${esc(key)}">▶ Presentation: PDF <span class="admin-pres-size" data-mkey="potw:${esc(key)}:slides.pdf"></span> — auto-plays on arrival</span>`;
+  }
+  if (pres?.type === 'images') {
+    return `<span class="admin-arrival-badge ok" data-verify="images" data-key="${esc(key)}" data-count="${Number(pres.count) || 0}">▶ Presentation: ${pres.count || 0} slide${pres.count === 1 ? '' : 's'} — auto-plays on arrival</span>`;
+  }
+  if (pres?.type === 'gslides') {
+    // A Google Slides deck is a URL — nothing to verify locally.
+    return `<span class="admin-arrival-badge ok">▶ Presentation: Google Slides — auto-plays on arrival</span>`;
+  }
+  return '<span class="admin-arrival-badge none">No presentation attached</span>';
+}
+
+// Non-destructive integrity check: flip badges to a loud warning when the blob a
+// profile claims is missing. NEVER clears profile fields — the teacher may be
+// about to re-upload, and silently dropping their config would be worse.
+async function verifyPotwMedia() {
+  if (activeTab !== 'potw' || !rootEl) return;
+  const badges = [...rootEl.querySelectorAll('.admin-arrival-badge[data-verify]')];
+  for (const b of badges) {
+    const key = b.dataset.key;
+    let missing = false;
+    let label = '';
+    if (b.dataset.verify === 'pdf') {
+      missing = !(await media.info(`potw:${key}:slides.pdf`));
+      label = '⚠ Slides missing — re-upload the PDF';
+    } else if (b.dataset.verify === 'images') {
+      const have = (await media.list(`potw:${key}:slide:`)).length;
+      missing = have === 0;
+      if (!missing && have < Number(b.dataset.count || 0)) {
+        // partial restore — some slides survived, some didn't
+        if (b.isConnected) {
+          b.classList.remove('ok'); b.classList.add('warn');
+          b.textContent = `⚠ Only ${have} of ${b.dataset.count} slides found — re-upload the deck`;
+        }
+        continue;
+      }
+      label = '⚠ Slides missing — re-upload the images';
+    }
+    if (missing && b.isConnected) {
+      b.classList.remove('ok');
+      b.classList.add('warn');
+      b.textContent = label;
+    }
+  }
+
+  // Intro-video blobs: only warn for destinations that actually rely on one
+  // (no preset/legacy URL to fall back on).
+  const store = ctxRef.store;
+  const vids = [...rootEl.querySelectorAll('.admin-video-check[data-key]')];
+  for (const v of vids) {
+    const key = v.dataset.key;
+    const profile = store.getPotwProfiles()[key];
+    if (!profile) continue;
+    const info = await media.info(`potw:${key}:video`);
+    const hasUrlFallback = !!store.getPotwVideoUrl(profile);
+    if (!info && v.dataset.relies === '1' && !hasUrlFallback && v.isConnected) {
+      v.innerHTML = '<span class="admin-arrival-badge warn">⚠ Intro video file missing — re-upload it</span>';
+    }
+  }
+}
+
+// (The theme-song upload concept is retired — intro videos are presets now.)
 
 function mediaBodyHTML(mkey, info) {
   if (info) {
@@ -1302,16 +1712,85 @@ async function refreshPotwMedia() {
   const lists = [...rootEl.querySelectorAll('.admin-assets[data-assets-list]')];
   for (const box of lists) {
     const key = box.dataset.assetsList;
+    const hasPres = !!ctxRef.store.getPotwProfiles()[key]?.presentation;
     const assets = (await media.list(`potw:${key}:asset:`)).sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
     if (!box.isConnected) continue;
-    box.innerHTML = assets.length ? assets.map((a) => `
+    box.innerHTML = assets.length ? assets.map((a) => {
+      const isPdf = a.type === 'application/pdf' || /\.pdf$/i.test(a.name || '');
+      // A PDF sitting in resources with no presentation set is almost certainly
+      // the lesson deck — offer a one-tap promotion.
+      const promote = (isPdf && !hasPres)
+        ? `<button class="admin-btn admin-btn-sm admin-btn-accent" data-action="asset-promote" data-key="${esc(key)}" data-mkey="${esc(a.key)}" title="Use this PDF as the lesson presentation">▶ Promote to presentation</button>`
+        : '';
+      return `
       <div class="admin-asset-row">
         <span class="admin-asset-icon">${fileIcon(a.type, a.name)}</span>
         <span class="admin-asset-name" title="${esc(a.name)}">${esc(a.name)}</span>
         <span class="admin-asset-size">${humanSize(a.size)}</span>
+        ${promote}
         <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="asset-remove" data-mkey="${esc(a.key)}" aria-label="Remove">✕</button>
-      </div>`).join('') : '<span class="admin-faint">No resource files yet.</span>';
+      </div>`;
+    }).join('') : '<span class="admin-faint">No resource files yet.</span>';
   }
+  // finally, flag any presentation/video the profile claims but IndexedDB lacks
+  await verifyPotwMedia();
+}
+
+// Store a PDF as the destination's lesson presentation and flag the profile.
+async function setPdfAsPresentation(key, file) {
+  const store = ctxRef.store;
+  const profile = store.getPotwProfiles()[key];
+  if (!profile) return false;
+  await media.put(`potw:${key}:slides.pdf`, file);
+  store.savePotwProfile(key, { ...profile, presentation: { type: 'pdf' } });
+  renderBody();
+  toast('Set as the lesson presentation — it will auto-play on arrival.');
+  return true;
+}
+
+// Move an already-stored asset blob into the presentation slot.
+async function promoteAssetToPresentation(key, assetKey) {
+  const url = await media.url(assetKey);
+  if (!url) { toast('Could not read that file.'); return; }
+  try {
+    const blob = await (await fetch(url)).blob();
+    const info = await media.info(assetKey);
+    const file = new File([blob], info?.name || 'slides.pdf', { type: blob.type || 'application/pdf' });
+    await setPdfAsPresentation(key, file);
+    await media.delete(assetKey);   // it lives in the presentation slot now
+    refreshPotwMedia();
+  } catch (e) { console.warn('admin: promote failed', e); toast('Could not promote that file.'); }
+}
+
+// Direct drop onto the card's Lesson Presentation zone — PDFs only.
+async function handlePresDrop(key, file) {
+  if (!key || !file) return;
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  if (!isPdf) { toast('Please drop a PDF here — use Edit for slide images or Google Slides.'); return; }
+  await setPdfAsPresentation(key, file);
+}
+
+// Smart catch: a PDF dropped into the general resources zone when no
+// presentation is configured is far more likely to be the lesson deck.
+function askPdfIntent(key, file, rest) {
+  pendingPdf = { key, file, rest };
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="pdf-intent-resource"></div>
+    <div class="admin-modal">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">📽️ Use this PDF as the lesson presentation?</div>
+        <button class="admin-btn admin-btn-icon" data-action="pdf-intent-resource" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <p class="admin-modal-lead"><b>${esc(file.name)}</b> (${humanSize(file.size)})</p>
+        <p class="admin-modal-lead">It'll play full-screen after landing at this destination. Otherwise it's kept as a resource file that opens in a new tab.</p>
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="pdf-intent-resource">Keep as a resource file</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="pdf-intent-presentation">Use as presentation</button>
+      </div>
+    </div>`;
 }
 
 function fileIcon(type, name) {
@@ -1329,17 +1808,33 @@ function fileIcon(type, name) {
 
 async function handleMediaFile(mkey, file) {
   if (!mkey || !file) return;
-  const kind = mkey.endsWith(':video') ? 'video' : 'song';
-  const okType = kind === 'video' ? /^video\//.test(file.type || '') : /^audio\//.test(file.type || '');
-  if (file.type && !okType) { toast(`That doesn't look like ${kind === 'video' ? 'a video' : 'an audio'} file.`); return; }
+  if (file.type && !/^video\//.test(file.type)) { toast("That doesn't look like a video file."); return; }
   const res = await media.put(mkey, file);
-  toast(res ? `${kind === 'video' ? 'Video' : 'Song'} stored (${humanSize(res.size)}).` : 'Could not store the file.');
+  toast(res ? `Video stored (${humanSize(res.size)}).` : 'Could not store the file.');
   refreshPotwMedia();
 }
 
 // Store one or more resource files sequentially under potw:<key>:asset:<n>.
+// Smart catch: a single PDF dropped here with NO presentation configured is
+// probably the lesson deck — ask before filing it away as a document.
 async function handleAssetFiles(key, fileList) {
   if (!key) return;
+  const files = [...fileList];
+  const hasPres = !!ctxRef.store.getPotwProfiles()[key]?.presentation;
+  if (!hasPres) {
+    const pdfIdx = files.findIndex((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+    if (pdfIdx >= 0) {
+      const pdf = files[pdfIdx];
+      const rest = files.filter((_, i) => i !== pdfIdx);
+      askPdfIntent(key, pdf, rest);
+      return;
+    }
+  }
+  await storeAssets(key, files);
+}
+
+async function storeAssets(key, fileList) {
+  if (!key || !fileList.length) { refreshPotwMedia(); return; }
   const existing = await media.list(`potw:${key}:asset:`);
   let next = existing.reduce((mx, a) => {
     const m = a.key.match(/:asset:(\d+)$/);
@@ -1361,27 +1856,40 @@ function openPotwEditor(key) {
     const p = profiles[key];
     potwForm = {
       key, isNew: false,
-      title: p.title || '', subtitle: p.subtitle || '', date: p.date || '',
+      title: p.title || '', subtitle: p.subtitle || '',
+      weekOf: p.weekOf || '',
+      introVideoId: p.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID,
+      legacyPresetAtOpen: p.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID,
+      legacyVideoUrl: p.videoUrl || '',   // preserved unless a preset is picked
+      mapsLink: '',
+      mapsState: (Number.isFinite(p.camera?.center?.lat) && Number.isFinite(p.camera?.center?.lng))
+        ? { ok: true, lat: p.camera.center.lat, lng: p.camera.center.lng } : null,
+      manualCoords: false,
       camera: {
-        lat: p.camera?.center?.lat ?? '', lng: p.camera?.center?.lng ?? '', altitude: p.camera?.center?.altitude ?? '',
-        range: p.camera?.range ?? '', tilt: p.camera?.tilt ?? '', heading: p.camera?.heading ?? '',
+        lat: p.camera?.center?.lat ?? '', lng: p.camera?.center?.lng ?? '',
+        altitude: p.camera?.center?.altitude ?? DEFAULT_CAM.altitude,
+        range: p.camera?.range ?? DEFAULT_CAM.range,
+        tilt: p.camera?.tilt ?? DEFAULT_CAM.tilt,
+        heading: p.camera?.heading ?? DEFAULT_CAM.heading,
       },
+      advancedOpen: false, extrasOpen: false,
       facts: (p.quickFacts || []).join('\n'),
       sources: (p.primarySources || []).map((s) => ({ emoji: s.emoji || '', name: s.name || '', desc: s.desc || '' })),
       quiz: (p.quiz || []).map((q) => ({ q: q.q || '', a: q.a || '' })),
       pres: { type: p.presentation?.type || null, pdf: null, images: [], url: p.presentation?.type === 'gslides' ? (p.presentation.url || '') : '' },
-      videoUrl: p.videoUrl || '',
       links: (p.links || []).map((l) => ({ title: l.title || '', url: l.url || '' })),
     };
   } else {
     potwForm = {
-      key: '', isNew: true, title: '', subtitle: '', date: '',
-      camera: { lat: '', lng: '', altitude: '', range: '', tilt: '', heading: '' },
+      key: '', isNew: true, title: '', subtitle: '',
+      weekOf: '', introVideoId: CONFIG.POTW_DEFAULT_VIDEO_ID, legacyVideoUrl: '',
+      mapsLink: '', mapsState: null, manualCoords: false,
+      camera: { lat: '', lng: '', altitude: DEFAULT_CAM.altitude, range: DEFAULT_CAM.range, tilt: DEFAULT_CAM.tilt, heading: DEFAULT_CAM.heading },
+      advancedOpen: false, extrasOpen: false,
       facts: '',
       sources: [{ emoji: '', name: '', desc: '' }],
       quiz: [{ q: '', a: '' }],
       pres: { type: null, pdf: null, images: [], url: '' },
-      videoUrl: '',
       links: [],
     };
   }
@@ -1412,7 +1920,6 @@ async function hydratePresentation(key) {
 function renderPotwModal() {
   const m = el('admin-modal-root');
   const f = potwForm;
-  const cam = f.camera;
   const srcRows = f.sources.map((s, i) => `
     <div class="admin-srow">
       <input class="admin-input admin-s-emoji" type="text" value="${esc(s.emoji)}" placeholder="⚖️" aria-label="Emoji" />
@@ -1427,65 +1934,138 @@ function renderPotwModal() {
       <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="potw-quiz-del" data-i="${i}" aria-label="Remove">✕</button>
     </div>`).join('');
 
+  const store = ctxRef.store;
+
+  // ---- step 2: week ----
+  const weekMonday = f.weekOf ? mondayOfDate(f.weekOf) : '';
+  const weekEcho = weekMonday
+    ? `<div class="admin-ok-line">✓ Plays ${esc(fullWeekRangeLabel(weekMonday))}</div>` : '';
+  let weekClash = '';
+  if (weekMonday) {
+    const clash = Object.entries(store.getPotwProfiles())
+      .find(([k, p]) => k !== f.key && p.weekOf && mondayOfDate(p.weekOf) === weekMonday);
+    if (clash) weekClash = `<div class="admin-warn-line">⚠️ <b>${esc(clash[1].title)}</b> is already set for this week — the most recently added one will win.</div>`;
+  }
+
+  // ---- step 3: location ----
+  let mapsFeedback = '';
+  if (f.mapsState?.ok) {
+    mapsFeedback = `<div class="admin-ok-line">✓ Got it — ${f.mapsState.lat}, ${f.mapsState.lng}</div>`;
+  } else if (f.mapsState?.reason === 'short') {
+    mapsFeedback = `<div class="admin-warn-line">Short links don't include the coordinates. In Google Maps, right-click the spot → click the numbers at the top to copy them, then paste here.</div>`;
+  } else if (f.mapsState?.reason === 'parse') {
+    mapsFeedback = `<div class="admin-warn-line">Couldn't find coordinates in that. Paste the link from the Google Maps address bar, or <button type="button" class="admin-linkbtn" data-action="potw-manual-coords">enter numbers manually</button>.</div>`;
+  }
+  const manualCoords = (f.manualCoords || (!f.mapsState?.ok && (f.camera.lat !== '' || f.camera.lng !== ''))) ? `
+    <div class="admin-two" style="margin-top:10px">
+      <div><label class="admin-flabel" for="admin-c-lat">Latitude</label>
+        <input id="admin-c-lat" class="admin-input" type="number" step="any" value="${esc(f.camera.lat)}" placeholder="${DEFAULT_CAM.lat}" /></div>
+      <div><label class="admin-flabel" for="admin-c-lng">Longitude</label>
+        <input id="admin-c-lng" class="admin-input" type="number" step="any" value="${esc(f.camera.lng)}" placeholder="${DEFAULT_CAM.lng}" /></div>
+    </div>` : '';
+
+  // ---- step 4: intro video ----
+  const vidOptions = store.getPotwVideoOptions().map((v) =>
+    `<option value="${esc(v.id)}"${f.introVideoId === v.id ? ' selected' : ''}>${esc(v.label)}</option>`).join('');
+  const legacyNote = f.legacyVideoUrl
+    ? '<div class="admin-warn-line">This place currently uses a custom video link. Choosing a preset above and saving will switch it over.</div>' : '';
+
   m.innerHTML = `
     <div class="admin-modal-bg" data-action="potw-close"></div>
     <div class="admin-modal admin-modal-lg">
       <div class="admin-modal-head">
-        <div class="admin-modal-title">${f.isNew ? '🌍 New Destination' : '🌍 Edit: ' + esc(f.title || f.key)}</div>
+        <div class="admin-modal-title">${f.isNew ? '🌍 Add a Place of the Week' : '🌍 Edit: ' + esc(f.title || f.key)}</div>
         <button class="admin-btn admin-btn-icon" data-action="potw-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body admin-modal-scroll">
-        <div class="admin-two">
-          <div><label class="admin-flabel" for="admin-p-title">Title</label>
-            <input id="admin-p-title" class="admin-input" type="text" value="${esc(f.title)}" placeholder="Ancient Mesopotamia" /></div>
-          <div><label class="admin-flabel" for="admin-p-key">Key (slug)</label>
-            <input id="admin-p-key" class="admin-input" type="text" value="${esc(f.key)}" placeholder="auto from title"${f.isNew ? '' : ' readonly'} /></div>
-        </div>
-        <div class="admin-two">
-          <div><label class="admin-flabel" for="admin-p-sub">Subtitle</label>
-            <input id="admin-p-sub" class="admin-input" type="text" value="${esc(f.subtitle)}" placeholder="Modern Day Iraq • The Fertile Crescent" /></div>
-          <div><label class="admin-flabel" for="admin-p-date">Week-of date</label>
-            <input id="admin-p-date" class="admin-input" type="date" value="${esc(f.date)}" />
-            <div class="admin-faint" style="margin-top:4px">Places a 🌍 marker on the calendar.</div></div>
+
+        <div class="admin-step">
+          <div class="admin-step-title"><span class="admin-step-num">1</span> What place are you visiting?</div>
+          <label class="admin-flabel" for="admin-p-title">Place name</label>
+          <input id="admin-p-title" class="admin-input" type="text" value="${esc(f.title)}" placeholder="Ancient Mesopotamia" />
+          <label class="admin-flabel" for="admin-p-sub">Where is it?</label>
+          <input id="admin-p-sub" class="admin-input admin-input-sm" type="text" value="${esc(f.subtitle)}" placeholder="Modern Day Iraq • The Fertile Crescent" />
+          <div class="admin-step-hint">Shown on the big reveal screen before you fly there.</div>
         </div>
 
-        <div class="admin-card-title admin-mini-title">3D Camera</div>
-        <div class="admin-cam-grid">
-          <div><label class="admin-flabel" for="admin-c-lat">Latitude</label>
-            <input id="admin-c-lat" class="admin-input" type="number" step="any" value="${esc(cam.lat)}" placeholder="${DEFAULT_CAM.lat}" /></div>
-          <div><label class="admin-flabel" for="admin-c-lng">Longitude</label>
-            <input id="admin-c-lng" class="admin-input" type="number" step="any" value="${esc(cam.lng)}" placeholder="${DEFAULT_CAM.lng}" /></div>
-          <div><label class="admin-flabel" for="admin-c-alt">Altitude</label>
-            <input id="admin-c-alt" class="admin-input" type="number" step="any" value="${esc(cam.altitude)}" placeholder="${DEFAULT_CAM.altitude}" /></div>
-          <div><label class="admin-flabel" for="admin-c-range">Range</label>
-            <input id="admin-c-range" class="admin-input" type="number" step="any" value="${esc(cam.range)}" placeholder="${DEFAULT_CAM.range}" /></div>
-          <div><label class="admin-flabel" for="admin-c-tilt">Tilt</label>
-            <input id="admin-c-tilt" class="admin-input" type="number" step="any" value="${esc(cam.tilt)}" placeholder="${DEFAULT_CAM.tilt}" /></div>
-          <div><label class="admin-flabel" for="admin-c-heading">Heading</label>
-            <input id="admin-c-heading" class="admin-input" type="number" step="any" value="${esc(cam.heading)}" placeholder="${DEFAULT_CAM.heading}" /></div>
+        <div class="admin-step">
+          <div class="admin-step-title"><span class="admin-step-num">2</span> Which week does this play?</div>
+          <div class="admin-step-hint">Pick any day in that week — the app plays this place all week and switches automatically when the next one starts.</div>
+          <input id="admin-p-week" class="admin-input" type="date" value="${esc(f.weekOf)}" style="max-width:240px" />
+          ${weekEcho}${weekClash}
         </div>
 
-        <label class="admin-flabel" for="admin-p-facts">Quick facts (one per line)</label>
-        <textarea id="admin-p-facts" class="admin-input admin-textarea" rows="5" placeholder="One fact per line…">${esc(f.facts)}</textarea>
-
-        <div class="admin-rows-head">
-          <span class="admin-card-title admin-mini-title" style="margin:0">Primary sources</span>
-          <button class="admin-btn admin-btn-sm" data-action="potw-src-add">+ Add source</button>
+        <div class="admin-step">
+          <div class="admin-step-title"><span class="admin-step-num">3</span> Where on Earth should we fly?</div>
+          <div class="admin-step-hint">Open Google Maps, find the place, copy the address bar link, and paste it here.</div>
+          <div class="admin-key-row">
+            <input id="admin-p-maps" class="admin-input" type="text" value="${esc(f.mapsLink)}" placeholder="https://www.google.com/maps/place/…/@32.5363,44.4223,15z" autocomplete="off" spellcheck="false" />
+            <button class="admin-btn admin-btn-primary" data-action="potw-parse-maps">Use this spot</button>
+          </div>
+          ${mapsFeedback}
+          ${manualCoords}
+          <div class="admin-testflight-row">
+            <button class="admin-btn admin-btn-secondary" data-action="potw-testflight-form"
+              title="Fly there now using the coordinates above — nothing is saved">🧭 Test flight from here</button>
+            <span class="admin-mini">Check the landing spot before you save. Nothing is saved or scheduled.</span>
+          </div>
+          <details class="admin-details" ${f.advancedOpen ? 'open' : ''}>
+            <summary>Advanced camera settings</summary>
+            <div class="admin-mini" style="margin:0 0 8px">Most teachers never need these — the defaults look good everywhere.</div>
+            <div class="admin-cam-grid">
+              <div><label class="admin-flabel" for="admin-c-alt">Altitude</label>
+                <input id="admin-c-alt" class="admin-input" type="number" step="any" value="${esc(f.camera.altitude)}" placeholder="${DEFAULT_CAM.altitude}" /></div>
+              <div><label class="admin-flabel" for="admin-c-range">Range</label>
+                <input id="admin-c-range" class="admin-input" type="number" step="any" value="${esc(f.camera.range)}" placeholder="${DEFAULT_CAM.range}" /></div>
+              <div><label class="admin-flabel" for="admin-c-tilt">Tilt</label>
+                <input id="admin-c-tilt" class="admin-input" type="number" step="any" value="${esc(f.camera.tilt)}" placeholder="${DEFAULT_CAM.tilt}" /></div>
+              <div><label class="admin-flabel" for="admin-c-heading">Heading</label>
+                <input id="admin-c-heading" class="admin-input" type="number" step="any" value="${esc(f.camera.heading)}" placeholder="${DEFAULT_CAM.heading}" /></div>
+            </div>
+          </details>
         </div>
-        <div class="admin-srows">${srcRows || '<div class="admin-empty admin-empty-sm">No sources yet.</div>'}</div>
 
-        <div class="admin-rows-head">
-          <span class="admin-card-title admin-mini-title" style="margin:0">Quiz</span>
-          <button class="admin-btn admin-btn-sm" data-action="potw-quiz-add">+ Add question</button>
+        <div class="admin-step">
+          <div class="admin-step-title"><span class="admin-step-num">4</span> Which intro video?</div>
+          <div class="admin-step-hint">Plays before the flight.</div>
+          <select id="admin-p-video" class="admin-input" style="max-width:240px">${vidOptions}</select>
+          ${legacyNote}
         </div>
-        <div class="admin-qrows">${quizRows || '<div class="admin-empty admin-empty-sm">No questions yet.</div>'}</div>
 
-        ${presSectionHTML()}
-        ${linksSectionHTML()}
+        <div class="admin-step">
+          <div class="admin-step-title"><span class="admin-step-num">5</span> Your lesson presentation</div>
+          <div class="admin-step-hint">Plays full-screen the moment you land. Export from PowerPoint or Google Slides as a PDF.</div>
+          <div class="admin-pres-block">${presSectionHTML()}</div>
+        </div>
+
+        <div class="admin-step">
+          <details class="admin-details admin-extras" ${f.extrasOpen ? 'open' : ''}>
+            <summary><span class="admin-step-num">6</span> Extras (optional)</summary>
+            <div class="admin-mini" style="margin:0 0 8px">These appear on the optional 📋 Lesson card — they don't show automatically.</div>
+
+            <label class="admin-flabel" for="admin-p-facts">Quick facts (one per line)</label>
+            <textarea id="admin-p-facts" class="admin-input admin-textarea" rows="4" placeholder="One fact per line…">${esc(f.facts)}</textarea>
+
+            <div class="admin-rows-head">
+              <span class="admin-card-title admin-mini-title" style="margin:0">Primary sources</span>
+              <button class="admin-btn admin-btn-sm" data-action="potw-src-add">+ Add source</button>
+            </div>
+            <div class="admin-srows">${srcRows || '<div class="admin-empty admin-empty-sm">No sources yet.</div>'}</div>
+
+            <div class="admin-rows-head">
+              <span class="admin-card-title admin-mini-title" style="margin:0">Quiz</span>
+              <button class="admin-btn admin-btn-sm" data-action="potw-quiz-add">+ Add question</button>
+            </div>
+            <div class="admin-qrows">${quizRows || '<div class="admin-empty admin-empty-sm">No questions yet.</div>'}</div>
+
+            ${linksSectionHTML()}
+          </details>
+        </div>
+
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="potw-close">Cancel</button>
-        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-save">Save destination</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-save">Save this week's destination</button>
       </div>
     </div>`;
 }
@@ -1534,7 +2114,8 @@ function presSectionHTML() {
 
   const clear = pres.type ? '<button type="button" class="admin-btn admin-btn-sm" data-action="pres-clear" style="margin-top:10px">Clear presentation</button>' : '';
   return `
-    <div class="admin-rows-head"><span class="admin-card-title admin-mini-title" style="margin:0">Presentation <span class="admin-faint">— launches at the location</span></span></div>
+    <div class="admin-rows-head"><span class="admin-card-title admin-mini-title" style="margin:0">📽️ Lesson Presentation <span class="admin-faint">— shown full-screen after you land</span></span></div>
+    <div class="admin-mini" style="margin:0 0 10px">PDF is easiest: export from PowerPoint or Google Slides.</div>
     <div class="admin-seg admin-pres-seg">
       ${opt('gslides', '🔗 Google Slides <span class="admin-feat-chip">Easiest with Google Classroom</span>', true)}
       ${opt('pdf', '📄 PDF')}
@@ -1617,8 +2198,7 @@ function normalizeVideoUrl(raw) {
   return u; // direct video URL or site-relative path — leave as-is
 }
 
-// "Link media by URL" — video URL + Docs & Links rows, edited in-memory and
-// committed on Save. Sits alongside the card's drag-drop zones.
+// Docs & Links rows — edited in memory, committed on Save.
 function linksSectionHTML() {
   const f = potwForm;
   const linkRows = (f.links || []).map((l, i) => `
@@ -1628,11 +2208,6 @@ function linksSectionHTML() {
       <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="potw-link-del" data-i="${i}" aria-label="Remove">✕</button>
     </div>`).join('');
   return `
-    <div class="admin-rows-head"><span class="admin-card-title admin-mini-title" style="margin:0">Link media by URL</span></div>
-    <label class="admin-flabel" for="admin-p-videourl">Intro video URL</label>
-    <input id="admin-p-videourl" class="admin-input" type="text" value="${esc(f.videoUrl)}" placeholder="YouTube link, direct .mp4 URL, or videos/intro.mp4" autocomplete="off" spellcheck="false" />
-    <div class="admin-mini admin-pres-hint">Priority when the lesson plays: <b>dropped file › video URL › bundled fallback</b>. YouTube watch/share links are auto-converted to the embed form.</div>
-
     <div class="admin-rows-head" style="margin-top:14px">
       <span class="admin-card-title admin-mini-title" style="margin:0">Docs &amp; Links</span>
       <button class="admin-btn admin-btn-sm" data-action="potw-link-add">+ Add link</button>
@@ -1683,18 +2258,74 @@ async function commitPresentation(key) {
   return null;
 }
 
+// ---- 🧭 Test flight -------------------------------------------------------
+// Opens the POTW 3D preview over the admin panel. Read-only: nothing is saved
+// and the scheduled/active destination is never touched. The admin modal sits
+// above the overlay (z-index 81 vs 60), so it is hidden for the duration and
+// restored untouched on close — the teacher lands back exactly where he was.
+function runTestFlight(profile) {
+  if (!profile) { toast('That destination is missing.'); return; }
+  const modalRoot = el('admin-modal-root');
+  const prevDisplay = modalRoot ? modalRoot.style.display : null;
+  if (modalRoot) modalRoot.style.display = 'none';
+
+  const ok = testFlight({
+    profile,
+    onClose() { if (modalRoot) modalRoot.style.display = prevDisplay || ''; },
+  });
+  if (!ok) {
+    if (modalRoot) modalRoot.style.display = prevDisplay || '';
+    toast('Close the current Place of the Week view first.');
+  }
+}
+
+// Test flight using the editor's CURRENT unsaved values (same coordinate
+// precedence as savePotw), but with NO lat/lng default — missing coordinates
+// must surface the friendly "no location set" message, not fly to Mesopotamia.
+function runTestFlightFromForm() {
+  syncPotwFromDom();
+  const f = potwForm;
+  if (!f) return;
+  const num = (v, d) => (v !== '' && v !== null && Number.isFinite(Number(v)) ? Number(v) : d);
+  const lat = f.mapsState?.ok ? f.mapsState.lat : num(f.camera.lat, null);
+  const lng = f.mapsState?.ok ? f.mapsState.lng : num(f.camera.lng, null);
+
+  runTestFlight({
+    title: (f.title || '').trim() || 'Untitled destination',
+    subtitle: (f.subtitle || '').trim(),
+    camera: {
+      center: { lat, lng, altitude: num(f.camera.altitude, DEFAULT_CAM.altitude) },
+      range: num(f.camera.range, DEFAULT_CAM.range),
+      tilt: num(f.camera.tilt, DEFAULT_CAM.tilt),
+      heading: num(f.camera.heading, DEFAULT_CAM.heading),
+    },
+  });
+}
+
 function syncPotwFromDom() {
   if (!potwForm) return;
   const g = (id) => (el(id) ? el(id).value : '');
+  const has = (id) => !!el(id);
   potwForm.title = g('admin-p-title');
-  if (potwForm.isNew) potwForm.key = g('admin-p-key');
   potwForm.subtitle = g('admin-p-sub');
-  potwForm.date = g('admin-p-date');
+  potwForm.weekOf = g('admin-p-week');
+  if (has('admin-p-maps')) potwForm.mapsLink = g('admin-p-maps');
+  if (has('admin-p-video')) potwForm.introVideoId = g('admin-p-video');
   potwForm.camera = {
-    lat: g('admin-c-lat'), lng: g('admin-c-lng'), altitude: g('admin-c-alt'),
-    range: g('admin-c-range'), tilt: g('admin-c-tilt'), heading: g('admin-c-heading'),
+    // lat/lng come from the parsed maps link unless the manual escape hatch is open
+    lat: has('admin-c-lat') ? g('admin-c-lat') : potwForm.camera.lat,
+    lng: has('admin-c-lng') ? g('admin-c-lng') : potwForm.camera.lng,
+    altitude: has('admin-c-alt') ? g('admin-c-alt') : potwForm.camera.altitude,
+    range: has('admin-c-range') ? g('admin-c-range') : potwForm.camera.range,
+    tilt: has('admin-c-tilt') ? g('admin-c-tilt') : potwForm.camera.tilt,
+    heading: has('admin-c-heading') ? g('admin-c-heading') : potwForm.camera.heading,
   };
-  potwForm.facts = g('admin-p-facts');
+  // keep collapsible state across re-renders
+  const adv = rootEl.querySelector('.admin-step details.admin-details:not(.admin-extras)');
+  if (adv) potwForm.advancedOpen = adv.open;
+  const ext = rootEl.querySelector('details.admin-extras');
+  if (ext) potwForm.extrasOpen = ext.open;
+  if (has('admin-p-facts')) potwForm.facts = g('admin-p-facts');
   potwForm.sources = [...rootEl.querySelectorAll('.admin-srow')].map((r) => ({
     emoji: r.querySelector('.admin-s-emoji').value.trim(),
     name: r.querySelector('.admin-s-name').value.trim(),
@@ -1705,7 +2336,6 @@ function syncPotwFromDom() {
     a: r.querySelector('.admin-q-a').value.trim(),
   }));
   if (potwForm.pres && el('admin-pres-url')) potwForm.pres.url = el('admin-pres-url').value;
-  if (el('admin-p-videourl')) potwForm.videoUrl = el('admin-p-videourl').value;
   potwForm.links = [...rootEl.querySelectorAll('.admin-link-row')].map((r) => ({
     title: r.querySelector('.admin-link-title').value.trim(),
     url: r.querySelector('.admin-link-url').value.trim(),
@@ -1716,25 +2346,30 @@ async function savePotw() {
   syncPotwFromDom();
   const f = potwForm;
   const title = f.title.trim();
-  if (!title) { toast('A title is required.'); return; }
+  if (!title) { toast('Give this place a name first.'); return; }
   // Validate a Google Slides URL up front so we fail with a friendly message.
   if (f.pres?.type === 'gslides') {
     const u = (f.pres.url || '').trim();
     if (!u) { toast('Enter a Google Slides embed URL.'); return; }
     if (!normalizeGslides(u)) { toast('That must be a docs.google.com presentation URL.'); return; }
   }
-  const key = (f.isNew ? (f.key.trim() || slugify(title)) : f.key);
-  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && v !== '' ? n : d; };
-  const date = (f.date || '').trim();
-  const finalKey = slugify(key);
+  const num = (v, d) => { const n = Number(v); return Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d; };
+  const finalKey = slugify(f.isNew ? (f.key.trim() || title) : f.key);
+  const weekOf = f.weekOf ? mondayOfDate(f.weekOf) : '';
   const presentation = await commitPresentation(finalKey);
   if (!potwForm) return; // editor was closed mid-await
+
+  // Coordinates: a freshly parsed maps link wins, else the manual/existing values.
+  const lat = f.mapsState?.ok ? f.mapsState.lat : num(f.camera.lat, DEFAULT_CAM.lat);
+  const lng = f.mapsState?.ok ? f.mapsState.lng : num(f.camera.lng, DEFAULT_CAM.lng);
+
   const profile = {
     title,
     subtitle: f.subtitle.trim(),
-    date,
+    weekOf,
+    introVideoId: f.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID,
     camera: {
-      center: { lat: num(f.camera.lat, DEFAULT_CAM.lat), lng: num(f.camera.lng, DEFAULT_CAM.lng), altitude: num(f.camera.altitude, DEFAULT_CAM.altitude) },
+      center: { lat, lng, altitude: num(f.camera.altitude, DEFAULT_CAM.altitude) },
       range: num(f.camera.range, DEFAULT_CAM.range),
       tilt: num(f.camera.tilt, DEFAULT_CAM.tilt),
       heading: num(f.camera.heading, DEFAULT_CAM.heading),
@@ -1744,18 +2379,21 @@ async function savePotw() {
     quiz: f.quiz.filter((q) => q.q || q.a),
   };
   if (presentation) profile.presentation = presentation;
-  const videoUrl = normalizeVideoUrl(f.videoUrl);
-  if (videoUrl) profile.videoUrl = videoUrl;
+  // A legacy free-text videoUrl is preserved only while the teacher hasn't picked
+  // a preset; picking one clears it so the preset actually takes effect.
+  const presetChanged = f.introVideoId && f.introVideoId !== f.legacyPresetAtOpen;
+  if (f.legacyVideoUrl && !presetChanged) profile.videoUrl = f.legacyVideoUrl;
   const links = (f.links || []).filter((l) => l.title || l.url).map((l) => ({ title: l.title, url: l.url }));
   if (links.length) profile.links = links;
+
   const ok = ctxRef.store.savePotwProfile(finalKey, profile);
-  if (!ok) { toast('Save failed — check the title.'); return; }
-  upsertPotwEvent(finalKey, title, date);
+  if (!ok) { toast('Save failed — check the place name.'); return; }
+  upsertPotwEvent(finalKey, title, weekOf);
   revokePresUrls();
   potwForm = null;
   closeModal();
   renderBody();
-  toast('Destination saved.');
+  toast(weekOf ? 'Saved — plays the week of ' + fmtDayShort(weekOf) + '.' : "Saved. This place won't play automatically until you set a week.");
 }
 
 // Keep the calendar 'potw' marker in sync with a profile's week-of date.
@@ -1860,6 +2498,7 @@ function onClick(e) {
     case 'quest-complete-confirm': confirmQuestComplete(Number(btn.dataset.core)); break;
 
     // shop
+    case 'shop-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-guide'); if (d) shopGuideOpen = d.open; }, 0); break;
     case 'shop-new': openShopForm(null); break;
     case 'shop-edit': openShopForm(btn.dataset.id); break;
     case 'shop-save': saveShopItem(); break;
@@ -1907,6 +2546,31 @@ function onClick(e) {
       const v = el('admin-maps-key') ? el('admin-maps-key').value.trim() : '';
       store.updateSettings({ mapsApiKeyOverride: v });
       toast(v ? 'Maps key saved — refresh to apply.' : 'Maps key cleared — using bundled key.');
+      renderBody({ force: true });
+      break;
+    }
+    case 'shield-clear': {
+      const hid = Number(btn.dataset.house);
+      const house = store.HOUSES[hid];
+      openConfirm(`Clear ${house ? house.name : ''}'s shield?`,
+        'Their shield ends immediately and attacks can land again. The points they spent are not refunded.',
+        () => {
+          const ok = store.clearShield(hid);
+          renderBody({ force: true });
+          toast(ok ? `${house.name}'s shield cleared.` : 'That shield had already expired.');
+        }, { yesLabel: 'Clear shield' });
+      break;
+    }
+    case 'reduction-clear': {
+      const hid = Number(btn.dataset.house);
+      const house = store.HOUSES[hid];
+      openConfirm(`Clear ${house ? house.name : ''}'s damage reduction?`,
+        'Incoming attacks hit them at full strength again. This was most likely a Mythic reward.',
+        () => {
+          const ok = store.clearReduction(hid);
+          renderBody({ force: true });
+          toast(ok ? `${house.name}'s damage reduction cleared.` : 'That reduction had already expired.');
+        }, { yesLabel: 'Clear reduction' });
       break;
     }
     case 'danger-toggle': dangerOpen = !dangerOpen; renderBody(); break;
@@ -1916,6 +2580,8 @@ function onClick(e) {
     // potw
     case 'potw-new': openPotwEditor(null); break;
     case 'potw-edit': openPotwEditor(btn.dataset.key); break;
+    case 'potw-testflight': runTestFlight(store.getPotwProfiles()[btn.dataset.key]); break;
+    case 'potw-testflight-form': runTestFlightFromForm(); break;
     case 'potw-active': if (store.setActivePotw(btn.dataset.key)) { renderBody(); toast('Active destination set.'); } break;
     case 'potw-delete': {
       const k = btn.dataset.key;
@@ -1949,12 +2615,37 @@ function onClick(e) {
       media.delete(mkey).then(() => { toast('Resource removed.'); refreshPotwMedia(); });
       break;
     }
+    case 'asset-promote': promoteAssetToPresentation(btn.dataset.key, btn.dataset.mkey); break;
+    case 'pdf-intent-presentation': {
+      const p = pendingPdf; pendingPdf = null; closeModal();
+      if (p) setPdfAsPresentation(p.key, p.file).then(() => storeAssets(p.key, p.rest));
+      break;
+    }
+    case 'pdf-intent-resource': {
+      const p = pendingPdf; pendingPdf = null; closeModal();
+      if (p) storeAssets(p.key, [p.file, ...p.rest]);
+      break;
+    }
     case 'potw-src-add': syncPotwFromDom(); potwForm.sources.push({ emoji: '', name: '', desc: '' }); renderPotwModal(); break;
     case 'potw-src-del': syncPotwFromDom(); potwForm.sources.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-quiz-add': syncPotwFromDom(); potwForm.quiz.push({ q: '', a: '' }); renderPotwModal(); break;
     case 'potw-quiz-del': syncPotwFromDom(); potwForm.quiz.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-link-add': syncPotwFromDom(); potwForm.links.push({ title: '', url: '' }); renderPotwModal(); break;
     case 'potw-link-del': syncPotwFromDom(); potwForm.links.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
+    case 'potw-parse-maps': {
+      syncPotwFromDom();
+      const res = parseMapsLink(potwForm.mapsLink);
+      if (res.ok) {
+        potwForm.mapsState = res;
+        potwForm.camera.lat = res.lat; potwForm.camera.lng = res.lng;
+        potwForm.manualCoords = false;
+      } else {
+        potwForm.mapsState = res;
+      }
+      renderPotwModal();
+      break;
+    }
+    case 'potw-manual-coords': syncPotwFromDom(); potwForm.manualCoords = true; renderPotwModal(); break;
     case 'potw-save': savePotw(); break;
     case 'potw-close': revokePresUrls(); potwForm = null; closeModal(); break;
 
@@ -2014,6 +2705,10 @@ function injectStyles() {
   .admin-btn-primary:hover:not(:disabled){background:#fbbf24;border-color:#fbbf24;}
   .admin-btn-accent{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.5);color:#f59e0b;}
   .admin-btn-accent:hover:not(:disabled){background:rgba(245,158,11,.22);}
+  .admin-btn-secondary{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.5);color:#60a5fa;}
+  .admin-btn-secondary:hover:not(:disabled){background:rgba(59,130,246,.22);border-color:#3b82f6;}
+  .admin-testflight-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;}
+  .admin-testflight-row .admin-mini{margin:0;}
   .admin-btn-danger{color:#f87171;}
   .admin-btn-danger:hover:not(:disabled){background:rgba(239,68,68,.18);border-color:#ef4444;}
   .admin-btn-nuke{background:#ef4444;border-color:#ef4444;color:#fff;font-weight:800;}
@@ -2295,11 +2990,97 @@ function injectStyles() {
   .admin-va-title{font-weight:700;font-size:.95rem;color:var(--color-text);margin-bottom:8px;}
   .admin-assets-label{font-weight:600;font-size:.85rem;color:var(--color-text);margin:6px 0;}
   .admin-assets-drop{min-height:64px;}
+  .admin-pres-block{border:1px solid rgba(6,182,212,.4);background:rgba(6,182,212,.06);border-radius:.85rem;padding:14px;margin-bottom:6px;}
+  .admin-pres-drop{border-color:#06b6d4;background:var(--color-page);}
+  .admin-arrival{margin-bottom:10px;}
+  .admin-arrival-badge{display:inline-block;font-size:.82rem;font-weight:700;padding:6px 12px;border-radius:.5rem;}
+  .admin-arrival-badge.ok{background:rgba(34,197,94,.15);border:1px solid #22c55e;color:#22c55e;}
+  .admin-arrival-badge.none{background:var(--color-card2);border:1px solid var(--color-line);color:var(--color-text-soft);}
+  .admin-arrival-badge.warn{background:rgba(239,68,68,.16);border:1px solid #ef4444;color:#fca5a5;
+    animation:admin-warn-pulse 2.4s ease-in-out infinite;}
+  @keyframes admin-warn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.35);}50%{box-shadow:0 0 0 5px rgba(239,68,68,0);}}
+  html[data-mode="light"] .admin-arrival-badge.warn{color:#b91c1c;background:rgba(239,68,68,.1);}
+  .admin-secondary{opacity:.92;}
+
+  /* guided form steps (POTW) */
+  .admin-step{padding:16px 0;border-bottom:1px solid var(--color-line);}
+  .admin-step:last-child{border-bottom:none;}
+  .admin-step-title{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1rem;color:var(--color-text);margin-bottom:4px;}
+  .admin-step-num{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#f59e0b;color:#0b0f19;
+    font-size:.85rem;font-weight:800;display:inline-flex;align-items:center;justify-content:center;}
+  .admin-step-hint{font-size:.83rem;color:var(--color-text-soft);line-height:1.5;margin-bottom:10px;}
+  .admin-input-sm{font-size:.88rem;}
+  .admin-ok-line{margin-top:8px;padding:8px 12px;border-radius:.5rem;background:rgba(34,197,94,.12);
+    border:1px solid rgba(34,197,94,.45);color:#22c55e;font-size:.85rem;font-weight:600;}
+  .admin-warn-line{margin-top:8px;padding:8px 12px;border-radius:.5rem;background:rgba(245,158,11,.1);
+    border:1px solid rgba(245,158,11,.4);color:var(--color-text);font-size:.83rem;line-height:1.5;}
+  .admin-linkbtn{background:none;border:none;padding:0;color:#22d3ee;font:inherit;text-decoration:underline;cursor:pointer;}
+  .admin-extras > summary{font-weight:800;font-size:1rem;color:var(--color-text);gap:10px;}
+  .admin-potw-week{margin-top:6px;}
+  .admin-week-line{font-size:.85rem;font-weight:700;color:var(--color-text);}
+  .admin-week-line.none{color:var(--color-text-soft);font-weight:600;font-style:italic;}
+  .admin-playing-badge{font-size:.68rem;font-weight:800;letter-spacing:.04em;background:#22c55e;color:#04220f;
+    padding:3px 9px;border-radius:.4rem;white-space:nowrap;}
+  html[data-mode="light"] .admin-ok-line{color:#15803d;}
+  html[data-mode="light"] .admin-linkbtn{color:#0e7490;}
   .admin-assets{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
   .admin-asset-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--color-card2);border:1px solid var(--color-line);border-radius:.6rem;}
   .admin-asset-icon{font-size:1.2rem;flex-shrink:0;}
   .admin-asset-name{flex:1;min-width:0;font-size:.85rem;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .admin-asset-size{font-size:.72rem;color:var(--color-text-soft);flex-shrink:0;}
+
+  /* defenses (shields + damage reduction) */
+  .admin-shield-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+  .admin-shield-row{display:flex;flex-direction:column;gap:8px;padding:12px 14px;background:var(--color-page);
+    border:1px solid var(--color-line);border-left:4px solid var(--house,var(--color-line));border-radius:.85rem;}
+  .admin-shield-emoji{font-size:1.4rem;flex-shrink:0;}
+  .admin-def-house{font-weight:800;font-size:1rem;}
+  .admin-def-lines{display:flex;flex-direction:column;gap:6px;}
+  .admin-def-line{display:flex;align-items:center;gap:12px;}
+  .admin-def-name{font-weight:700;font-size:.9rem;color:var(--color-text);}
+
+  /* shop groups + mythic */
+  .admin-shop-group{margin-top:16px;}
+  .admin-shop-group-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    padding-bottom:6px;border-bottom:1px solid var(--color-line);}
+  .admin-shop-group-title{font-weight:800;font-size:.95rem;color:var(--color-text);}
+  .admin-shop-row.mythic{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.05);}
+  .admin-mythic-badge{font-size:.62rem;font-weight:800;letter-spacing:.06em;background:#f59e0b;color:#0b0f19;
+    padding:2px 7px;border-radius:.4rem;white-space:nowrap;}
+  .admin-shop-free{font-size:1.1rem;color:var(--color-text-soft);}
+  .admin-mythic-note{font-size:.78rem;color:var(--color-text-soft);line-height:1.45;padding:8px 10px;
+    background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:.5rem;}
+  .admin-mythic-check{margin-top:14px;width:100%;justify-content:flex-start;}
+  .admin-shop-plain{font-size:.8rem;color:var(--color-text-soft);margin-top:4px;line-height:1.45;}
+
+  /* "How magic items work" guide */
+  .admin-guide > summary{font-weight:800;font-size:1rem;color:var(--color-text);}
+  .admin-guide-body{padding-bottom:12px;}
+  .admin-guide-p{font-size:.86rem;color:var(--color-text-soft);line-height:1.55;margin:0 0 8px;}
+  .admin-guide-p b{color:var(--color-text);}
+  .admin-guide-callout{margin:12px 0;padding:12px 14px;border-radius:.6rem;font-size:.84rem;line-height:1.55;
+    background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.4);color:var(--color-text);}
+  .admin-guide-tablewrap{margin-top:14px;overflow-x:auto;}
+  .admin-guide-tabletitle{font-weight:700;font-size:.85rem;color:var(--color-text);margin-bottom:6px;}
+  .admin-matchup{border-collapse:collapse;width:100%;min-width:420px;font-size:.84rem;}
+  .admin-matchup th,.admin-matchup td{border:1px solid var(--color-line);padding:8px 12px;text-align:center;}
+  .admin-matchup th{background:var(--color-card2);color:var(--color-text);font-weight:700;}
+  .admin-matchup td{color:var(--color-text);}
+  .admin-mu-row{text-align:left !important;font-weight:600;color:var(--color-text-soft) !important;}
+  .admin-mu-block{color:#22c55e !important;font-weight:700;}
+  html[data-mode="light"] .admin-mu-block{color:#15803d !important;}
+
+  /* per-kind guidance + live preview in the editor */
+  .admin-kind-guide{margin-top:10px;padding:12px 14px;border-radius:.7rem;background:var(--color-page);
+    border:1px solid var(--color-line);display:flex;flex-direction:column;gap:7px;}
+  .admin-kind-guide-row{display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:baseline;font-size:.84rem;
+    color:var(--color-text);line-height:1.5;}
+  @media (max-width:600px){.admin-kind-guide-row{grid-template-columns:1fr;gap:2px;}}
+  .admin-kind-tag{font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-soft);}
+  .admin-kind-example{font-style:italic;color:var(--color-text-soft);}
+  .admin-shop-preview{flex-direction:column;align-items:flex-start;gap:6px;}
+  .admin-shop-preview-text{font-size:.9rem;font-weight:600;color:var(--color-text);line-height:1.55;}
+  .admin-save-err{border-color:#ef4444;background:rgba(239,68,68,.12);}
 
   /* backup */
   .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;}
@@ -2334,6 +3115,7 @@ function injectStyles() {
   html[data-mode="light"] .admin-pres-tag,
   html[data-mode="light"] .admin-feat-chip,
   html[data-mode="light"] .admin-details summary{color:#0e7490;}
+  html[data-mode="light"] .admin-arrival-badge.ok{color:#15803d;border-color:#15803d;}
 
   @media (prefers-reduced-motion:reduce){
     .admin-panel,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
@@ -2370,12 +3152,14 @@ export default {
     // input change: effect radios, import-file picker, media/shop/asset file inputs
     changeHandler = (e) => {
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
+      if (e.target.id === 'admin-shop-mythic') { syncShopFromDom(); shopForm.mythicOnly = e.target.checked; renderShopModal(); return; }
       if (e.target.id === 'admin-import-file') { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ''; return; }
       const inp = e.target.closest('input.admin-file');
       if (!inp) return;
       const files = inp.files;
       if (files && files.length) {
         if (inp.dataset.shopimg) stageShopImage(files[0]);
+        else if (inp.dataset.presdrop) handlePresDrop(inp.dataset.presdrop, files[0]);
         else if (inp.dataset.assets) handleAssetFiles(inp.dataset.assets, files);
         else if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
         else handleMediaFile(inp.dataset.mkey, files[0]);
@@ -2383,6 +3167,12 @@ export default {
       inp.value = ''; // allow re-picking the same file
     };
     rootEl.addEventListener('change', changeHandler);
+
+    // live plain-English preview in the shop editor as cost/amount are typed
+    inputHandler = (e) => {
+      if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
+    };
+    rootEl.addEventListener('input', inputHandler);
 
     // drag-and-drop for media drop zones
     dragOverHandler = (e) => { const z = e.target.closest('.admin-drop'); if (z) { e.preventDefault(); z.classList.add('over'); } };
@@ -2395,6 +3185,7 @@ export default {
       const files = e.dataTransfer && e.dataTransfer.files;
       if (!files || !files.length) return;
       if (z.dataset.shopimg) stageShopImage(files[0]);
+      else if (z.dataset.presdrop) handlePresDrop(z.dataset.presdrop, files[0]);
       else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
       else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
       else handleMediaFile(z.dataset.mkey, files[0]);
@@ -2404,7 +3195,11 @@ export default {
     rootEl.addEventListener('drop', dropHandler);
 
     // keep the auto-backup "last saved …" line live (writes don't emit store changes)
-    backupStatusTimer = setInterval(() => { if (activeTab === 'settings') updateBackupStatusLine(); }, 5000);
+    backupStatusTimer = setInterval(() => {
+      if (activeTab !== 'settings') return;
+      updateBackupStatusLine();
+      updateShieldTimes();
+    }, 5000);
 
     unsub = ctx.store.subscribe(() => { renderBody(); });
   },
@@ -2415,6 +3210,7 @@ export default {
     if (rootEl) {
       if (clickHandler) rootEl.removeEventListener('click', clickHandler);
       if (changeHandler) rootEl.removeEventListener('change', changeHandler);
+      if (inputHandler) rootEl.removeEventListener('input', inputHandler);
       if (dragOverHandler) rootEl.removeEventListener('dragover', dragOverHandler);
       if (dragLeaveHandler) rootEl.removeEventListener('dragleave', dragLeaveHandler);
       if (dropHandler) rootEl.removeEventListener('drop', dropHandler);
@@ -2427,7 +3223,7 @@ export default {
     // stray fixed-position panels/modals/toasts live inside rootEl; registry clears
     // #module-root on navigate, but null our refs so nothing dangles.
     rootEl = null; ctxRef = null;
-    clickHandler = changeHandler = dragOverHandler = dragLeaveHandler = dropHandler = null;
+    clickHandler = changeHandler = dragOverHandler = dragLeaveHandler = dropHandler = inputHandler = null;
     panelView = null; form = null; potwForm = null; shopForm = null;
   },
 };

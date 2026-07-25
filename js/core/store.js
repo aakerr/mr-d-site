@@ -14,24 +14,24 @@ const HOUSES = {
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
-    { id: 'q-school-event',   points: 20, title: 'School Event Squad',       desc: 'Attend a school event together. Proof: photos showing at least half the class there.' },
-    { id: 'q-library',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.' },
-    { id: 'q-cleanup',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.' },
-    { id: 'q-kindness',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.' },
-    { id: 'q-tutors',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).' },
-    { id: 'q-attendance',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.' },
-    { id: 'q-homework',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.' },
+    { id: 'q-school-event',   points: 20, title: 'School Event Squad',       desc: 'Attend a school event together. Proof: photos showing at least half the class there.', repeatable: true },
+    { id: 'q-library',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.', repeatable: true },
+    { id: 'q-cleanup',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.', repeatable: true },
+    { id: 'q-kindness',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.', repeatable: true },
+    { id: 'q-tutors',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).', repeatable: true },
+    { id: 'q-attendance',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.', repeatable: true },
+    { id: 'q-homework',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.', repeatable: true },
     { id: 'q-food-drive',     points: 40, title: 'Food Drive Forces',        desc: 'Bring in 50+ items for the school food drive.' },
-    { id: 'q-recycling',      points: 20, title: 'Recycling Rangers',        desc: 'Collect and sort recycling from all 7th-grade rooms for one week.' },
-    { id: 'q-thank-you',      points: 15, title: 'Teacher Appreciation Op',  desc: 'Write and deliver thank-you cards to five teachers or staff members.' },
-    { id: 'q-greeters',       points: 20, title: 'Morning Ambassadors',      desc: 'Greet students at the front doors for three mornings with school-approved signs.' },
+    { id: 'q-recycling',      points: 20, title: 'Recycling Rangers',        desc: 'Collect and sort recycling from all 7th-grade rooms for one week.', repeatable: true },
+    { id: 'q-thank-you',      points: 15, title: 'Teacher Appreciation Op',  desc: 'Write and deliver thank-you cards to five teachers or staff members.', repeatable: true },
+    { id: 'q-greeters',       points: 20, title: 'Morning Ambassadors',      desc: 'Greet students at the front doors for three mornings with school-approved signs.', repeatable: true },
     { id: 'q-spirit',         points: 25, title: 'Spirit Week Sweep',        desc: 'At least 75% of the class participates in every day of Spirit Week.' },
     { id: 'q-welcome',        points: 15, title: 'New Student Welcome',      desc: 'Build a welcome guide and buddy system for students who join mid-year.' },
     { id: 'q-garden',         points: 30, title: 'School Garden Guardians',  desc: 'Plant or maintain the school garden for two weeks. Proof: photo log.' },
     { id: 'q-history-fair',   points: 50, title: 'History Fair Heroes',      desc: 'Every student completes and presents a history fair entry.' },
-    { id: 'q-current-events', points: 20, title: 'Current Events Council',   desc: 'Deliver five student-led current-events briefings to the class.' },
+    { id: 'q-current-events', points: 20, title: 'Current Events Council',   desc: 'Deliver five student-led current-events briefings to the class.', repeatable: true },
     { id: 'q-book-drive',     points: 35, title: 'Book Drive Battalion',     desc: 'Collect 40 gently used books to donate to the school library.' },
-    { id: 'q-transitions',    points: 10, title: 'Silent Transition Masters',desc: 'One full week of fast, silent transitions between activities.' },
+    { id: 'q-transitions',    points: 10, title: 'Silent Transition Masters',desc: 'One full week of fast, silent transitions between activities.', repeatable: true },
     { id: 'q-fundraiser',     points: 45, title: 'Fundraiser Front Line',    desc: 'Hit the class goal in a school fundraiser (or raise the most of any class).' },
     { id: 'q-museum',         points: 40, title: 'Museum of Us',             desc: 'Build a classroom museum exhibit and host another class for a guided tour.' },
   ];
@@ -55,21 +55,51 @@ function defaultState() {
     },
     shop: {
       // Magic Shop items, teacher-editable in Admin.
-      // effect.kind: 'attack' (deduct amount from a chosen target)
-      //            | 'steal'  (take amount from the leading house)
-      //            | 'shield' (block incoming attacks; amount = hours)
+      // effect.kind:
+      //   'attack'  — deduct amount from a chosen house
+      //   'steal'   — take amount from the leading house
+      //   'shield'  — block incoming attacks for `amount` hours
+      //   'reduce'  — halve incoming damage for `amount` hours (Mythic rewards)
+      //   'pierce'  — attack for `amount` that ignores shields AND reductions
+      //   'wild'    — random swing of ±amount, resolved at purchase
+      // mythicOnly items can't be bought; a Nat 20 grants them.
       catalog: [
-        { id: 'trojan',   name: 'Trojan Horse',   emoji: '🐴', image: '', cost: 50, desc: 'Steal 25 pts from the leading house.',   effect: { kind: 'steal',  amount: 25 } },
-        { id: 'catapult', name: 'Catapult Volley', emoji: '🪨', image: '', cost: 35, desc: 'Deduct 20 pts from a target house.',     effect: { kind: 'attack', amount: 20 } },
-        { id: 'aegis',    name: 'Aegis Shield',    emoji: '🛡️', image: '', cost: 30, desc: 'Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
+        // ---- Offensive ----
+        { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 35, desc: 'Roman siege engines hurl stones over the walls. Deduct 20 pts from a house you choose.', effect: { kind: 'attack', amount: 20 } },
+        { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 45, desc: 'The Byzantine secret weapon that burned on water. Deduct 25 pts from a house you choose.', effect: { kind: 'attack', amount: 25 } },
+        { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 55, desc: 'Over the Alps and into Roman territory. Deduct 30 pts from a house you choose.', effect: { kind: 'attack', amount: 30 } },
+        { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 65, desc: 'Mirrors focus the sun on enemy ships at Syracuse. Deduct 35 pts from a house you choose.', effect: { kind: 'attack', amount: 35 } },
+        { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 50, desc: 'A gift hiding an army. Steal 25 pts from whichever house is leading.', effect: { kind: 'steal', amount: 25 } },
+        // ---- Offensive: pierce (ignores defenses) ----
+        { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 60, desc: 'Strike unseen — ignores shields AND damage reduction. Deduct 20 pts.', effect: { kind: 'pierce', amount: 20 } },
+        { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 70, desc: 'Advance under cover — ignores shields AND damage reduction. Deduct 25 pts.', effect: { kind: 'pierce', amount: 25 } },
+        // ---- Defensive ----
+        { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 25, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
+        { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 30, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
+        { id: 'shieldwall',name: 'Shield Wall',            emoji: '🪵', image: '', cost: 35, desc: 'The Viking skjaldborg — no gap for a blade. Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
+        { id: 'moat',      name: 'Moat & Drawbridge',      emoji: '🏰', image: '', cost: 45, desc: 'Raise the bridge and hold the keep. Blocks incoming attacks for 36 hours.', effect: { kind: 'shield', amount: 36 } },
+        { id: 'greatwall', name: 'The Great Wall',         emoji: '🧱', image: '', cost: 60, desc: 'Thousands of miles of stone and watchtowers. Blocks incoming attacks for 48 hours.', effect: { kind: 'shield', amount: 48 } },
+        // ---- Wildcards ----
+        { id: 'pandora',   name: "Pandora's Box",          emoji: '📦', image: '', cost: 40, desc: 'Every evil escapes — but hope remains. Random swing of up to 30 pts, for you or against you.', effect: { kind: 'wild', amount: 30 } },
+        { id: 'fortuna',   name: "Fortuna's Wheel",        emoji: '🎡', image: '', cost: 30, desc: 'The Roman goddess of luck spins the wheel. Random swing of up to 20 pts, either way.', effect: { kind: 'wild', amount: 20 } },
+        // ---- Mythic rewards (granted by a natural 20, never purchasable) ----
+        { id: 'spynetwork',name: 'Spy Network',            emoji: '🕵️', image: '', cost: 0, mythicOnly: true, desc: 'Your agents hear the plan before it happens. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
+        { id: 'lookout',   name: 'Lookout Tower',          emoji: '🗼', image: '', cost: 0, mythicOnly: true, desc: 'See the dust of an army on the horizon. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
+        { id: 'oracle',    name: 'Oracle of Delphi',       emoji: '🔮', image: '', cost: 0, mythicOnly: true, desc: 'The Pythia foretells the coming blow. Incoming damage is HALVED for 72 hours.', effect: { kind: 'reduce', amount: 72 } },
       ],
+      seeded: ['catapult','greekfire','elephants','heatray','trojan','cloak','fogbank','phalanx','aegis','shieldwall','moat','greatwall','pandora','fortuna','spynetwork','lookout','oracle'],
     },
     // Planner events (admin panel). One record per calendar item:
     // { id, date:'YYYY-MM-DD', endDate?, type:'term-start'|'term-end'|'vacation'|'test'|'quiz'|'homework'|'itinerary'|'note',
     //   core: 1|2|3|4|'all', title, items?: [{time,text}] }
     planner: { events: [] },
+    // Paid POTW quiz bounties, keyed '<profileKey>|<weekOf>|<questionIndex>'
+    // so relaunching the same voyage can't pay the same bounty twice.
+    potwBounties: {},
     transactions: [],           // { id, ts, houseId, delta, reason, tag }
-    shields: {},                // houseId -> expiry epoch ms
+    shields: {},                // houseId -> expiry epoch ms (full block; legacy key)
+    // houseId -> { reduce: expiryMs } — halved incoming damage (Mythic rewards)
+    defenses: {},
     itineraries: {
       1: [{ time: '8:05',  text: 'Bell Ringer: Map of the Fertile Crescent' },
           { time: '8:20',  text: 'Lesson: Rivers & Early Civilizations' },
@@ -96,7 +126,8 @@ function defaultState() {
         mesopotamia: {
           title: 'Ancient Mesopotamia',
           subtitle: 'Modern Day Iraq • The Fertile Crescent',
-          videoUrl: 'https://www.youtube.com/embed/hdM9z3pdJBQ',
+          weekOf: '',            // 'YYYY-MM-DD' Monday — launches during that week
+          introVideoId: 'rock',  // preset from CONFIG.POTW_INTRO_VIDEOS
           camera: { center: { lat: 32.5363, lng: 44.4223, altitude: 150 }, range: 2000, tilt: 60, heading: 45 },
           quickFacts: [
             'The "Land Between Two Rivers" — the Tigris and the Euphrates.',
@@ -116,6 +147,30 @@ function defaultState() {
             { q: 'What curved region of rich farmland includes Mesopotamia?', a: 'The Fertile Crescent' },
           ],
         },
+        egypt: {
+          title: 'Ancient Egypt',
+          subtitle: 'Modern Day Egypt • The Gift of the Nile',
+          weekOf: '2026-07-27',      // plays the week of Mon Jul 27
+          introVideoId: 'classic',
+          camera: { center: { lat: 29.9792, lng: 31.1342, altitude: 150 }, range: 2200, tilt: 60, heading: 45 },
+          quickFacts: [
+            'The Nile flooded every year, leaving rich black soil the Egyptians called "kemet".',
+            'The Great Pyramid of Giza was built for Pharaoh Khufu around 2560 BCE.',
+            'Hieroglyphics combined pictures and sounds — over 700 symbols.',
+            'Pharaohs were both kings and gods on earth.',
+            'Mummification preserved the body for the afterlife; it took about 70 days.',
+          ],
+          primarySources: [
+            { name: 'Rosetta Stone', emoji: '🪨', desc: 'One decree in three scripts — the key that let scholars finally read hieroglyphics.' },
+            { name: 'Book of the Dead', emoji: '📜', desc: 'Spells and maps written on papyrus to guide the dead safely through the afterlife.' },
+            { name: 'Tutankhamun\'s Mask', emoji: '⚱️', desc: 'Solid gold burial mask of a boy king, found nearly untouched in 1922.' },
+          ],
+          quiz: [
+            { q: 'Which river made Egyptian farming possible?', a: 'The Nile' },
+            { q: 'What was the Egyptian writing system called?', a: 'Hieroglyphics' },
+            { q: 'What artifact allowed scholars to decode hieroglyphics?', a: 'The Rosetta Stone' },
+          ],
+        },
       },
     },
   };
@@ -129,16 +184,76 @@ function load() {
     const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
     if (raw) {
       const def = defaultState();
-      const merged = { ...def, ...JSON.parse(raw) };
-      // Migration: saved POTW profiles from older versions may lack fields that
-      // newer defaults carry (e.g. videoUrl). Fill gaps without clobbering edits.
+      const saved = JSON.parse(raw);
+      const merged = { ...def, ...saved };
+      // Migration: fill gaps in saved POTW profiles from newer defaults without
+      // clobbering the teacher's edits, and add default destinations that were
+      // seeded after this browser last saved (e.g. a newly shipped place).
+      merged.potw = merged.potw || def.potw;
+      merged.potw.profiles = merged.potw.profiles || {};
       for (const [key, defProfile] of Object.entries(def.potw.profiles)) {
-        if (merged.potw?.profiles?.[key]) {
-          merged.potw.profiles[key] = { ...defProfile, ...merged.potw.profiles[key] };
-        }
+        merged.potw.profiles[key] = merged.potw.profiles[key]
+          ? { ...defProfile, ...merged.potw.profiles[key] }
+          : { ...defProfile };
+      }
+      // A saved videoUrl that is really one of our presets should show up as
+      // that preset in the dropdown, not as an opaque "custom link".
+      const presets = CONFIG.POTW_INTRO_VIDEOS || [];
+      for (const p of Object.values(merged.potw.profiles)) {
+        const match = p.videoUrl && presets.find((v) => v.url === p.videoUrl);
+        if (match) { p.introVideoId = match.id; delete p.videoUrl; }
       }
       // Same for settings (new keys like theme/mapsApiKeyOverride).
       merged.settings = { ...def.settings, ...(merged.settings || {}) };
+      merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
+      // Deep-merge the other sub-trees too: a state saved before a feature
+      // existed (or restored from an old backup) would otherwise be missing
+      // keys the modules dereference unguarded — e.g. quests.completed.push().
+      merged.quests = { ...def.quests, ...(merged.quests || {}) };
+      if (!Array.isArray(merged.quests.catalog) || !merged.quests.catalog.length) merged.quests.catalog = def.quests.catalog;
+      // Backfill quest fields added after this browser last saved: pick up the
+      // shipped `repeatable` flag by id, and give every quest a fail penalty.
+      const defQuestById = Object.fromEntries(def.quests.catalog.map((q) => [q.id, q]));
+      merged.quests.catalog = merged.quests.catalog.map((q) => {
+        const d = defQuestById[q.id];
+        return {
+          ...q,
+          repeatable: q.repeatable ?? (d ? !!d.repeatable : false),
+          penalty: Number.isFinite(Number(q.penalty)) ? Number(q.penalty)
+            : (d && Number.isFinite(Number(d.penalty)) ? Number(d.penalty) : Math.round(Number(q.points || 0) / 2)),
+        };
+      });
+      if (!merged.quests.active || typeof merged.quests.active !== 'object') merged.quests.active = {};
+      if (!Array.isArray(merged.quests.completed)) merged.quests.completed = [];
+      merged.shop = { ...def.shop, ...(merged.shop || {}) };
+      if (!Array.isArray(merged.shop.catalog)) merged.shop.catalog = def.shop.catalog;
+      // Introduce newly-shipped shop items exactly once. `seeded` records every
+      // default id this browser has already seen, so an item the teacher chose
+      // to delete stays deleted instead of reappearing on every reload.
+      // NOTE: read this off the SAVED object — `merged` would have inherited the
+      // default's full seeded list via the spread and suppressed every new item.
+      merged.shop.seeded = Array.isArray(saved.shop?.seeded)
+        ? saved.shop.seeded
+        : (Array.isArray(saved.shop?.catalog) ? saved.shop.catalog.map((i) => i.id) : []);
+      for (const item of def.shop.catalog) {
+        if (!merged.shop.seeded.includes(item.id)) {
+          merged.shop.catalog.push({ ...item });
+          merged.shop.seeded.push(item.id);
+        }
+      }
+      merged.planner = { ...def.planner, ...(merged.planner || {}) };
+      if (!Array.isArray(merged.planner.events)) merged.planner.events = [];
+      if (!Array.isArray(merged.transactions)) merged.transactions = [];
+      if (!merged.shields || typeof merged.shields !== 'object') merged.shields = {};
+      // Drop expired shields so they can't be revived by an old backup.
+      for (const [id, exp] of Object.entries(merged.shields)) {
+        if (!(Number(exp) > Date.now())) delete merged.shields[id];
+      }
+      merged.potwBounties = merged.potwBounties && typeof merged.potwBounties === 'object' ? merged.potwBounties : {};
+      merged.defenses = merged.defenses && typeof merged.defenses === 'object' ? merged.defenses : {};
+      for (const [id, d] of Object.entries(merged.defenses)) {
+        if (!d || !(Number(d.reduce) > Date.now())) delete merged.defenses[id];
+      }
       return merged;
     }
   } catch (e) { console.warn('store: failed to load, using defaults', e); }
@@ -159,6 +274,12 @@ function startOfWeek(d = new Date()) {
 
 function todayStr() {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -228,13 +349,23 @@ export const store = {
     return state.shop.catalog;
   },
 
+  // Kinds the combat engine actually implements. Anything else is rejected so
+  // the Admin form can never save an item the app won't honour.
+  SHOP_KINDS: ['attack', 'steal', 'shield', 'pierce', 'reduce', 'wild'],
+
   saveShopItem(item) {
-    if (!item?.name || !(Number(item.cost) > 0) || !item?.effect?.kind) return null;
+    const kind = item?.effect?.kind;
+    if (!item?.name || !store.SHOP_KINDS.includes(kind)) return null;
+    const mythicOnly = !!item.mythicOnly;
+    // Mythic relics are granted by a natural 20, never bought — force cost 0.
+    // Everything else needs a real price.
+    const cost = mythicOnly ? 0 : Math.round(Number(item.cost) || 0);
+    if (!mythicOnly && !(cost > 0)) return null;
     const it = {
       id: item.id || `si-${Date.now()}`,
       name: item.name, desc: item.desc || '', emoji: item.emoji || '✨', image: item.image || '',
-      cost: Math.round(Number(item.cost)),
-      effect: { kind: item.effect.kind, amount: Math.max(1, Math.round(Number(item.effect.amount) || 1)) },
+      cost, mythicOnly,
+      effect: { kind, amount: Math.max(1, Math.round(Number(item.effect.amount) || 1)) },
     };
     const i = state.shop.catalog.findIndex((x) => x.id === it.id);
     if (i >= 0) state.shop.catalog[i] = it; else state.shop.catalog.push(it);
@@ -249,6 +380,76 @@ export const store = {
 
   isShielded(houseId) {
     return (state.shields[houseId] || 0) > Date.now();
+  },
+
+  // Remaining shield time in ms (0 when not shielded) — for consistent
+  // "3h 12m left" display wherever the badge appears.
+  shieldRemainingMs(houseId) {
+    return Math.max(0, (state.shields[houseId] || 0) - Date.now());
+  },
+
+  clearShield(houseId) {
+    if (!state.shields[houseId]) return false;
+    delete state.shields[houseId];
+    emit();
+    return true;
+  },
+
+  // ----- damage reduction (Mythic rewards: Spy Network, Lookout Tower…) -----
+
+  activateReduction(houseId, hours = 48) {
+    state.defenses[houseId] = { ...(state.defenses[houseId] || {}), reduce: Date.now() + Math.max(1, Number(hours) || 48) * 3600000 };
+    emit();
+  },
+
+  hasReduction(houseId) {
+    return (state.defenses[houseId]?.reduce || 0) > Date.now();
+  },
+
+  reductionRemainingMs(houseId) {
+    return Math.max(0, (state.defenses[houseId]?.reduce || 0) - Date.now());
+  },
+
+  clearReduction(houseId) {
+    if (!state.defenses[houseId]?.reduce) return false;
+    delete state.defenses[houseId];
+    emit();
+    return true;
+  },
+
+  // ----- THE combat rule: every attack in the app resolves here -----
+  // Order: a full shield blocks outright; otherwise a reduction halves the hit;
+  // a `pierce` attack ignores both. Returns what happened so the UI can play
+  // the right effect. Positive scoring never routes through here.
+  applyAttack({ fromId = null, toId, amount, pierce = false, label = 'Attack' }) {
+    const dmg = Math.max(0, Math.round(Number(amount) || 0));
+    if (!HOUSES[toId] || !dmg) return { outcome: 'none', applied: 0 };
+    const shielded = store.isShielded(toId);
+    const reduced = store.hasReduction(toId);
+
+    if (shielded && !pierce) {
+      return { outcome: 'blocked', applied: 0, shielded, reduced };
+    }
+    const applied = (reduced && !pierce) ? Math.max(1, Math.round(dmg / 2)) : dmg;
+    const fromName = fromId && HOUSES[fromId] ? ` from ${HOUSES[fromId].name}` : '';
+    store.addPoints(toId, -applied, { reason: `${label}${fromName}`, tag: 'attack' });
+    return {
+      outcome: pierce && (shielded || reduced) ? 'pierced' : (reduced ? 'reduced' : 'full'),
+      applied, shielded, reduced, blocked: dmg - applied,
+    };
+  },
+
+  // Mythic Triumph (natural 20) grants a defensive relic rather than points alone.
+  getMythicRewards() {
+    return state.shop.catalog.filter((i) => i.mythicOnly);
+  },
+
+  grantMythicItem(houseId, itemId) {
+    const item = state.shop.catalog.find((i) => i.id === itemId && i.mythicOnly);
+    if (!item || !HOUSES[houseId]) return null;
+    if (item.effect.kind === 'reduce') store.activateReduction(houseId, item.effect.amount);
+    else if (item.effect.kind === 'shield') store.activateShield(houseId, item.effect.amount);
+    return item;
   },
 
   // ----- settings (teacher admin) -----
@@ -334,11 +535,42 @@ export const store = {
 
   saveQuest(quest) {
     if (!quest?.title || !(Number(quest.points) > 0)) return null;
-    const q = { id: quest.id || `q-${Date.now()}`, title: quest.title, desc: quest.desc || '', points: Math.round(Number(quest.points)) };
+    const points = Math.round(Number(quest.points));
+    const q = {
+      id: quest.id || `q-${Date.now()}`,
+      title: quest.title,
+      desc: quest.desc || '',
+      points,
+      // repeatable: any house may take it again after someone finishes it
+      // (e.g. "attend a school event"). One-shots leave the board for good.
+      repeatable: !!quest.repeatable,
+      // Deducted when a house gives up on a quest it accepted. Defaults to
+      // half the reward — failing should sting without erasing a week's work.
+      penalty: Number.isFinite(Number(quest.penalty)) ? Math.max(0, Math.round(Number(quest.penalty))) : Math.round(points / 2),
+    };
     const i = state.quests.catalog.findIndex((x) => x.id === q.id);
     if (i >= 0) state.quests.catalog[i] = q; else state.quests.catalog.push(q);
     emit();
     return q;
+  },
+
+  // Quests a house can accept right now: not already taken by someone, and —
+  // unless the quest repeats — not already finished by any house.
+  getAvailableQuests() {
+    const takenIds = Object.values(state.quests.active).map((a) => a.questId);
+    const doneIds = state.quests.completed.map((c) => c.questId);
+    return state.quests.catalog.filter((q) =>
+      !takenIds.includes(q.id) && (q.repeatable || !doneIds.includes(q.id)));
+  },
+
+  isQuestTaken(questId) {
+    return Object.values(state.quests.active).some((a) => a.questId === questId);
+  },
+
+  // Which house holds this quest right now (null if nobody).
+  questHolder(questId) {
+    const entry = Object.entries(state.quests.active).find(([, a]) => a.questId === questId);
+    return entry ? Number(entry[0]) : null;
   },
 
   deleteQuest(id) {
@@ -359,12 +591,27 @@ export const store = {
 
   startQuest(core, questId) {
     if (core === 'all' || state.quests.active[core]) return false;
-    if (!state.quests.catalog.find((q) => q.id === questId)) return false;
+    // Only quests that are actually on the board can be accepted.
+    if (!store.getAvailableQuests().some((q) => q.id === questId)) return false;
     state.quests.active[core] = { questId, startedTs: Date.now() };
     emit();
     return true;
   },
 
+  // Teacher marks a house as having given up: the penalty is deducted and the
+  // quest returns to the board for another house to steal.
+  failQuest(core) {
+    const quest = store.getActiveQuest(core);
+    if (!quest) return null;
+    delete state.quests.active[core];
+    const penalty = Number.isFinite(quest.penalty) ? quest.penalty : Math.round(quest.points / 2);
+    if (penalty > 0) store.addPoints(core, -penalty, { reason: `Quest abandoned: ${quest.title}`, tag: 'quest' });
+    else emit();
+    return { quest, penalty };
+  },
+
+  // Quietly return a quest to the board with no penalty (teacher correction,
+  // e.g. it was accepted by mistake).
   abandonQuest(core) {
     if (!state.quests.active[core]) return false;
     delete state.quests.active[core];
@@ -390,8 +637,60 @@ export const store = {
 
   // ----- Place of the Week profiles (teacher admin) -----
 
+  // Intro-video presets the teacher chooses from (Admin dropdown).
+  getPotwVideoOptions() {
+    return CONFIG.POTW_INTRO_VIDEOS || [];
+  },
+
+  // Which destination launches today? A profile scheduled for the week that
+  // contains `date` wins; otherwise the manually-set active one.
+  resolvePotwKey(date = todayStr()) {
+    const scheduled = Object.entries(state.potw.profiles)
+      .filter(([, p]) => p.weekOf)
+      .map(([key, p]) => ({ key, start: p.weekOf, end: addDays(p.weekOf, 6) }))
+      .filter((x) => x.start <= date && date <= x.end)
+      .sort((a, b) => b.start.localeCompare(a.start));
+    return scheduled.length ? scheduled[0].key : state.potw.active;
+  },
+
+  // Profile for launch — video URL resolved from the chosen preset so the
+  // POTW module never has to know about presets.
   getPotwProfile() {
-    return state.potw.profiles[state.potw.active];
+    const key = store.resolvePotwKey();
+    const p = state.potw.profiles[key];
+    if (!p) return p;
+    return { ...p, videoUrl: store.getPotwVideoUrl(p) };
+  },
+
+  getPotwVideoUrl(profile) {
+    if (profile?.videoUrl) return profile.videoUrl;           // custom/legacy URL wins
+    const opts = store.getPotwVideoOptions();
+    const pick = opts.find((v) => v.id === (profile?.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID));
+    return pick ? pick.url : '';
+  },
+
+  // ----- POTW quiz bounty ledger (prevents double-paying on relaunch) -----
+
+  bountyKey(profileKey, index) {
+    const p = state.potw.profiles[profileKey];
+    return `${profileKey}|${p?.weekOf || 'nodate'}|${index}`;
+  },
+
+  isBountyPaid(profileKey, index) {
+    return !!state.potwBounties[store.bountyKey(profileKey, index)];
+  },
+
+  getPaidBounty(profileKey, index) {
+    return state.potwBounties[store.bountyKey(profileKey, index)] || null;
+  },
+
+  payBounty(profileKey, index, houseId, points, label = '') {
+    if (store.isBountyPaid(profileKey, index)) return false;
+    const tx = store.addPoints(houseId, points, { reason: `POTW Bounty: ${label}`.slice(0, 80), tag: 'potw' });
+    if (!tx) return false;
+    state.potwBounties[store.bountyKey(profileKey, index)] = { houseId: Number(houseId), ts: Date.now(), points };
+    emit();
+    return true;
   },
 
   getPotwProfiles() {
@@ -399,6 +698,11 @@ export const store = {
   },
 
   getActivePotwKey() {
+    return store.resolvePotwKey();
+  },
+
+  // The manual selection, ignoring scheduling (for Admin UI state).
+  getManualPotwKey() {
     return state.potw.active;
   },
 
@@ -417,7 +721,7 @@ export const store = {
   },
 
   deletePotwProfile(key) {
-    if (key === state.potw.active || !state.potw.profiles[key]) return false;
+    if (key === state.potw.active || !state.potw.profiles[key]) return false; // can't delete the manual fallback
     delete state.potw.profiles[key];
     emit();
     return true;

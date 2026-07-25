@@ -15,6 +15,14 @@ export const CONFIG = {
   POTW_SONG: 'potw-songs/place-of-the-week-rock-01.mp3',
   POTW_SONG_DURATION_S: 37,
 
+  // Intro videos the teacher picks from (dropdown in Admin → Place of the Week).
+  // Add more here and they appear in the dropdown automatically.
+  POTW_INTRO_VIDEOS: [
+    { id: 'rock',    label: 'Rock',    url: 'https://www.youtube.com/embed/hdM9z3pdJBQ' },
+    { id: 'classic', label: 'Classic', url: 'https://www.youtube.com/embed/3LU6vgJJNZE' },
+  ],
+  POTW_DEFAULT_VIDEO_ID: 'rock',
+
   HOME_CAMERA: { lat: 40.8653, lng: -81.8604, altitude: 500 }, // Smithville, OH
 
   STORAGE_KEY: 'mrd-classroom-os-v1',

@@ -1,9 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Mr. D's Classroom OS — Persisted State",
-  "description": "Schema for the app state stored in localStorage under key 'mrd-classroom-os-v1'. Mirrors the structure written by js/core/store.js.",
+  "description": "Schema for the app state stored in localStorage under key 'mrd-classroom-os-v1'. Mirrors the complete structure written by js/core/store.js defaultState().",
   "type": "object",
-  "required": ["version", "activeCore", "transactions", "shields", "itineraries", "homework", "potw"],
+  "required": [
+    "version", "activeCore", "settings", "quests", "shop", "planner",
+    "transactions", "shields", "itineraries", "homework", "potw"
+  ],
   "properties": {
     "version": {
       "type": "integer",
@@ -17,6 +20,291 @@
       ],
       "description": "Currently active house core (1–4 or 'all' for dashboard view)."
     },
+    "settings": {
+      "type": "object",
+      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings).",
+      "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride"],
+      "properties": {
+        "termStart": {
+          "type": "string",
+          "description": "Monday date marking term start (YYYY-MM-DD).",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "example": "2026-06-29"
+        },
+        "termWeeks": {
+          "type": "integer",
+          "description": "Total weeks in the term.",
+          "minimum": 1,
+          "maximum": 52,
+          "example": 9
+        },
+        "theme": {
+          "type": "object",
+          "description": "Display theme settings.",
+          "required": ["mode", "seasonal"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["dark", "light"],
+              "description": "Color scheme (light not fully implemented)."
+            },
+            "seasonal": {
+              "type": "boolean",
+              "description": "Enable seasonal ambient effects (falling leaves, snow, etc.)."
+            }
+          }
+        },
+        "mapsApiKeyOverride": {
+          "type": "string",
+          "description": "Teacher's own Google Maps API key (blank = use bundled default).",
+          "example": ""
+        }
+      }
+    },
+    "quests": {
+      "type": "object",
+      "description": "Class Quests system (one active per core, completion teacher-confirmed).",
+      "required": ["catalog", "active", "completed"],
+      "properties": {
+        "catalog": {
+          "type": "array",
+          "description": "Available quests (pre-seeded + teacher-edited in Admin).",
+          "items": {
+            "type": "object",
+            "required": ["id", "points", "title", "desc"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique quest ID (e.g., 'q-cleanup')."
+              },
+              "points": {
+                "type": "integer",
+                "description": "Points awarded on completion.",
+                "minimum": 1
+              },
+              "title": {
+                "type": "string",
+                "description": "Quest name (e.g., 'Campus Cleanup Crew')."
+              },
+              "desc": {
+                "type": "string",
+                "description": "Quest description and completion criteria."
+              }
+            }
+          },
+          "example": [
+            {
+              "id": "q-cleanup",
+              "points": 30,
+              "title": "Campus Cleanup Crew",
+              "desc": "Clean a shared school space during recess or lunch. Proof: before & after photos."
+            }
+          ]
+        },
+        "active": {
+          "type": "object",
+          "description": "Currently active quest per core: core -> { questId, startedTs }.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["questId", "startedTs"],
+            "properties": {
+              "questId": {
+                "type": "string",
+                "description": "ID of the active quest for this core."
+              },
+              "startedTs": {
+                "type": "integer",
+                "description": "Timestamp when students accepted the quest (Date.now())."
+              }
+            }
+          },
+          "example": { "1": { "questId": "q-cleanup", "startedTs": 1719705600000 } }
+        },
+        "completed": {
+          "type": "array",
+          "description": "Quests that have been completed (teacher-confirmed).",
+          "items": {
+            "type": "object",
+            "required": ["id", "questId", "title", "core", "ts", "points"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique completion record ID."
+              },
+              "questId": {
+                "type": "string",
+                "description": "ID of the completed quest."
+              },
+              "title": {
+                "type": "string",
+                "description": "Quest title at time of completion."
+              },
+              "core": {
+                "type": "integer",
+                "enum": [1, 2, 3, 4],
+                "description": "Which house completed the quest."
+              },
+              "ts": {
+                "type": "integer",
+                "description": "Timestamp when teacher confirmed completion."
+              },
+              "points": {
+                "type": "integer",
+                "description": "Points awarded."
+              }
+            }
+          }
+        }
+      }
+    },
+    "shop": {
+      "type": "object",
+      "description": "Magic Shop catalog (teacher-edited in Admin → 🔮 Shop).",
+      "required": ["catalog"],
+      "properties": {
+        "catalog": {
+          "type": "array",
+          "description": "Purchasable items (houses spend TERM points).",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "cost", "effect"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique item ID (auto-generated or teacher-set)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Item name (e.g., 'Trojan Horse')."
+              },
+              "emoji": {
+                "type": "string",
+                "description": "Visual emoji (e.g., '🐴').",
+                "default": "✨"
+              },
+              "image": {
+                "type": "string",
+                "description": "Optional custom image (media key or empty for emoji-only).",
+                "default": ""
+              },
+              "cost": {
+                "type": "integer",
+                "description": "TERM points required to purchase.",
+                "minimum": 1
+              },
+              "desc": {
+                "type": "string",
+                "description": "Item description and effect summary.",
+                "default": ""
+              },
+              "effect": {
+                "type": "object",
+                "description": "What the item does when purchased.",
+                "required": ["kind", "amount"],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["attack", "steal", "shield"],
+                    "description": "Effect type: 'attack' (deduct from target), 'steal' (from leader), 'shield' (block attacks)."
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "description": "Effect magnitude: points for attack/steal, hours for shield.",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "example": [
+            {
+              "id": "trojan",
+              "name": "Trojan Horse",
+              "emoji": "🐴",
+              "image": "",
+              "cost": 50,
+              "desc": "Steal 25 pts from the leading house.",
+              "effect": { "kind": "steal", "amount": 25 }
+            },
+            {
+              "id": "aegis",
+              "name": "Aegis Shield",
+              "emoji": "🛡️",
+              "image": "",
+              "cost": 30,
+              "desc": "Blocks incoming attacks for 24 hours.",
+              "effect": { "kind": "shield", "amount": 24 }
+            }
+          ]
+        }
+      }
+    },
+    "planner": {
+      "type": "object",
+      "description": "Term calendar (edited in Admin → 📅 Planner).",
+      "required": ["events"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "description": "All calendar events for the term.",
+          "items": {
+            "type": "object",
+            "required": ["id", "date", "type", "core", "title"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique event ID (auto-generated)."
+              },
+              "date": {
+                "type": "string",
+                "description": "Event start date (YYYY-MM-DD).",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "endDate": {
+                "type": "string",
+                "description": "Event end date (YYYY-MM-DD), optional for multi-day events.",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["itinerary", "homework", "test", "quiz", "vacation", "potw", "note", "term-start", "term-end"],
+                "description": "Event category (affects color & display)."
+              },
+              "core": {
+                "oneOf": [
+                  { "type": "integer", "enum": [1, 2, 3, 4] },
+                  { "type": "string", "enum": ["all"] }
+                ],
+                "description": "Which core(s) this event applies to."
+              },
+              "title": {
+                "type": "string",
+                "description": "Event name (e.g., 'Mesopotamia Quiz')."
+              },
+              "items": {
+                "type": "array",
+                "description": "Timed activities (for 'itinerary' type).",
+                "items": {
+                  "type": "object",
+                  "required": ["time", "text"],
+                  "properties": {
+                    "time": {
+                      "type": "string",
+                      "description": "Time in HH:MM format.",
+                      "pattern": "^\\d{1,2}:\\d{2}$"
+                    },
+                    "text": {
+                      "type": "string",
+                      "description": "Activity description."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "transactions": {
       "type": "array",
       "description": "Immutable log of all point changes (additions/deductions).",
@@ -26,7 +314,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Unique transaction ID, format: 'tx-{timestamp}-{index}'.",
+            "description": "Unique transaction ID (format: 'tx-{timestamp}-{index}').",
             "pattern": "^tx-\\d+-\\d+$"
           },
           "ts": {
@@ -46,19 +334,21 @@
           },
           "reason": {
             "type": "string",
-            "description": "Human-readable description of why points changed (e.g., 'Correct bell ringer answer', 'Bought: Healing Potion')."
+            "description": "Human-readable description (e.g., 'Correct bell ringer answer', 'Bought: Aegis Shield').",
+            "default": ""
           },
           "tag": {
             "type": "string",
-            "description": "Machine-readable category: 'shop', 'challenge', 'daily', 'event', etc.",
-            "enum": ["shop", "challenge", "daily", "event", "manual", ""]
+            "description": "Machine-readable category for filtering.",
+            "enum": ["challenge", "manual", "daily", "event", "shop", ""],
+            "default": ""
           }
         }
       }
     },
     "shields": {
       "type": "object",
-      "description": "Active Aegis shields: maps houseId → expiry epoch (milliseconds). Shield lasts 24 hours once activated.",
+      "description": "Active Aegis shields: houseId -> expiry epoch (milliseconds). Lasts 24h once activated.",
       "additionalProperties": {
         "type": "integer",
         "description": "Expiry timestamp in milliseconds; if > Date.now(), shield is active."
@@ -67,7 +357,7 @@
     },
     "itineraries": {
       "type": "object",
-      "description": "Daily schedule for each core (1–4), displayed on the dashboard.",
+      "description": "Daily schedule for each core (1–4), displayed on the Morning Dashboard.",
       "properties": {
         "1": { "$ref": "#/definitions/itinerary" },
         "2": { "$ref": "#/definitions/itinerary" },
@@ -87,16 +377,17 @@
     },
     "potw": {
       "type": "object",
+      "description": "Place of the Week voyages (cinematic geography lessons with 3D maps).",
       "required": ["active", "profiles"],
       "properties": {
         "active": {
           "type": "string",
-          "description": "Key of the active Place of the Week profile (e.g., 'mesopotamia').",
+          "description": "Key of the currently-active POTW destination (e.g., 'mesopotamia').",
           "example": "mesopotamia"
         },
         "profiles": {
           "type": "object",
-          "description": "Collection of available POTW profiles.",
+          "description": "Collection of POTW destinations. Added/edited in Admin → 🌍 Place of the Week.",
           "additionalProperties": {
             "$ref": "#/definitions/potwProfile"
           }
@@ -107,30 +398,14 @@
   "definitions": {
     "house": {
       "type": "object",
-      "description": "A house/core representation.",
-      "required": ["id", "core", "name", "motto", "color", "accent", "accentSoft", "image"],
+      "description": "A house/core representation (canonical, do not edit directly).",
+      "required": ["id", "core", "name", "motto", "color", "accent", "accentSoft", "image", "heroImage"],
       "properties": {
-        "id": {
-          "type": "integer",
-          "enum": [1, 2, 3, 4]
-        },
-        "core": {
-          "type": "integer",
-          "enum": [1, 2, 3, 4],
-          "description": "Class period / time slot."
-        },
-        "name": {
-          "type": "string",
-          "enum": ["Camelot", "Atlantis", "Valhalla", "Rivendell"]
-        },
-        "motto": {
-          "type": "string",
-          "example": "Honor Above All"
-        },
-        "color": {
-          "type": "string",
-          "enum": ["red", "blue", "gold", "green"]
-        },
+        "id": { "type": "integer", "enum": [1, 2, 3, 4] },
+        "core": { "type": "integer", "enum": [1, 2, 3, 4], "description": "Class period / time slot." },
+        "name": { "type": "string", "enum": ["Camelot", "Atlantis", "Valhalla", "Rivendell"] },
+        "motto": { "type": "string", "example": "Honor Above All" },
+        "color": { "type": "string", "enum": ["red", "blue", "gold", "green"] },
         "accent": {
           "type": "string",
           "description": "Hex color code for UI accents.",
@@ -144,21 +419,26 @@
         },
         "image": {
           "type": "string",
-          "description": "Path to house artwork image.",
-          "example": "images/camelot.jpg"
+          "description": "Path to house shield crest image.",
+          "example": "images/camelot-shield.png"
+        },
+        "heroImage": {
+          "type": "string",
+          "description": "Path to house hero banner (wide artwork for overlays).",
+          "example": "images/header-camelot.jpg"
         }
       }
     },
     "itinerary": {
       "type": "array",
-      "description": "List of timed activities for a single core.",
+      "description": "List of timed activities for a single core (bell ringer, lessons, challenges).",
       "items": {
         "type": "object",
         "required": ["time", "text"],
         "properties": {
           "time": {
             "type": "string",
-            "description": "Clock time in 12h format (e.g., '8:05').",
+            "description": "Clock time in HH:MM format.",
             "pattern": "^\\d{1,2}:\\d{2}$"
           },
           "text": {
@@ -181,7 +461,7 @@
         "properties": {
           "due": {
             "type": "string",
-            "description": "Due date (e.g., 'Fri', 'Next Monday').",
+            "description": "Due date label (e.g., 'Fri', 'Next Monday', or a date string).",
             "example": "Fri"
           },
           "text": {
@@ -196,11 +476,12 @@
     },
     "potwProfile": {
       "type": "object",
-      "description": "A Place of the Week educational profile with media and quiz.",
-      "required": ["title", "subtitle", "camera", "quickFacts", "primarySources", "quiz"],
+      "description": "A Place of the Week destination with cinematic intro, map, and lesson deck.",
+      "required": ["title", "subtitle", "weekOf", "introVideoId", "camera", "quickFacts", "primarySources", "quiz"],
       "properties": {
         "title": {
           "type": "string",
+          "description": "Destination name (e.g., 'Ancient Mesopotamia').",
           "example": "Ancient Mesopotamia"
         },
         "subtitle": {
@@ -208,17 +489,44 @@
           "description": "Geographic or contextual details.",
           "example": "Modern Day Iraq • The Fertile Crescent"
         },
+        "weekOf": {
+          "type": "string",
+          "description": "Which week this destination plays (YYYY-MM-DD Monday date). Blank = inactive until teacher schedules it.",
+          "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$",
+          "example": ""
+        },
+        "introVideoId": {
+          "type": "string",
+          "description": "Intro video preset ID ('rock'/'classic') or custom YouTube embed URL.",
+          "example": "rock"
+        },
+        "presentation": {
+          "type": "string",
+          "description": "Media key for the PDF presentation deck (if uploaded).",
+          "example": "potw:mesopotamia:presentation"
+        },
+        "links": {
+          "type": "array",
+          "description": "Optional external resource links (URLs, descriptions).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            }
+          }
+        },
         "camera": {
           "type": "object",
-          "description": "Google Maps 3D camera position.",
+          "description": "Google Maps 3D camera position for the destination.",
           "required": ["center", "range", "tilt", "heading"],
           "properties": {
             "center": {
               "type": "object",
               "required": ["lat", "lng", "altitude"],
               "properties": {
-                "lat": { "type": "number" },
-                "lng": { "type": "number" },
+                "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+                "lng": { "type": "number", "minimum": -180, "maximum": 180 },
                 "altitude": { "type": "number", "description": "Altitude in meters." }
               }
             },
@@ -238,7 +546,7 @@
         },
         "quickFacts": {
           "type": "array",
-          "description": "Bullet-point facts about the place.",
+          "description": "Bullet-point facts about the destination.",
           "items": { "type": "string" },
           "example": [
             "The 'Land Between Two Rivers' — the Tigris and the Euphrates.",
@@ -252,24 +560,28 @@
             "type": "object",
             "required": ["name", "emoji", "desc"],
             "properties": {
-              "name": { "type": "string" },
-              "emoji": { "type": "string" },
-              "desc": { "type": "string" }
+              "name": { "type": "string", "description": "Artifact name." },
+              "emoji": { "type": "string", "description": "Visual emoji." },
+              "desc": { "type": "string", "description": "Description and historical context." }
             }
           },
           "example": [
-            { "name": "Cuneiform Tablet", "emoji": "𒀭", "desc": "Clay tablets recorded trades, taxes, and stories." }
+            {
+              "name": "Cuneiform Tablet",
+              "emoji": "𒀭",
+              "desc": "Clay tablets recorded trades, taxes, and stories — including the Epic of Gilgamesh."
+            }
           ]
         },
         "quiz": {
           "type": "array",
-          "description": "Multiple-choice or short-answer quiz questions.",
+          "description": "Learning check questions (students answer on the dashboard).",
           "items": {
             "type": "object",
             "required": ["q", "a"],
             "properties": {
               "q": { "type": "string", "description": "Question text." },
-              "a": { "type": "string", "description": "Answer text." }
+              "a": { "type": "string", "description": "Expected answer." }
             }
           },
           "example": [

@@ -62,8 +62,15 @@ function pngWithEmojiFallback(src, emoji, cls, wrapCls) {
   </div>`;
 }
 
+// Time alone is ambiguous once the log spans days — show the day too, except
+// for today's entries where the time is what the teacher is scanning for.
 function fmtTime(ts) {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  if (sameDay) return time;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;
 }
 
 // ---- module instance state (survives store re-renders, not module reloads) ----
@@ -353,7 +360,14 @@ export default {
     };
     el.addEventListener('click', clickHandler);
 
-    const unsub = ctx.store.subscribe(doRender);
+    // Keep the award/deduct target in step with the top-bar core switcher.
+    // Without this the panel keeps targeting the house that was active at mount
+    // (and offers no chips to change it), so points land on the wrong house.
+    const unsub = ctx.store.subscribe(() => {
+      const active = ctx.store.getActiveHouse();
+      if (active && s.selectedHouseId !== active.id) s.selectedHouseId = active.id;
+      doRender();
+    });
 
     this._el = el;
     this._clickHandler = clickHandler;

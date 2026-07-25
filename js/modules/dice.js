@@ -11,6 +11,8 @@ let storeUnsub = null;    // store subscription (recolors dice on core change)
 let rollInProgress = false;
 let currentMode = '1d6';
 let celebrateTimer = null;
+let awardedThisRoll = false;      // one award per roll; a new roll re-enables awarding
+let relicClaimedThisRoll = false; // one Mythic relic per natural 20
 let history = [];         // [{ mode, value1, value2?, total, outcome? }] — kept, not rendered
 const MAX_HISTORY = 8;
 
@@ -21,7 +23,7 @@ const PROPHECY = [
   { min: 6,  max: 9,  emoji: '😐', title: 'Fate is Neutral', desc: 'Nothing happens',                              points: 0,   hasButton: false },
   { min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: 'Move your token / +2 class points',            points: 2,   hasButton: true },
   { min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
-  { min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a free Magic Shop item!',       points: 20,  hasButton: true },
+  { min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a Mythic Relic to defend your house!', points: 20, hasButton: true, mythic: true },
 ];
 
 function getProphecy(num) {
@@ -140,6 +142,59 @@ function createStyles() {
       .dice-point-btn:active { transform: scale(0.95); }
       .dice-point-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+      /* Award controls: house chips (All Cores, or the "other house" path). */
+      .dice-award-row {
+        display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; margin-top: 0.5rem;
+      }
+      .dice-award-hint { font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.6rem; }
+      .dice-house-btn {
+        min-height: 48px; padding: 0.7rem 1.1rem; border-radius: 0.5rem;
+        border: 2px solid var(--h, #6b7280); background: rgba(255,255,255,0.05);
+        color: #f9fafb; font-size: 1rem; font-weight: 700; cursor: pointer;
+        transition: all 150ms ease; touch-action: manipulation;
+      }
+      .dice-house-btn:hover { background: color-mix(in srgb, var(--h) 22%, transparent); }
+      .dice-house-btn:active { transform: scale(0.95); }
+      .dice-house-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .dice-other-toggle {
+        margin-top: 0.9rem; padding: 0.5rem 1rem; min-height: 44px; background: transparent;
+        border: 1px dashed #4b5563; color: #9ca3af; border-radius: 0.375rem;
+        font-size: 0.85rem; cursor: pointer; transition: all 150ms ease; touch-action: manipulation;
+      }
+      .dice-other-toggle:active { transform: scale(0.95); }
+      .dice-other-wrap { display: none; }
+      .dice-other-wrap.open { display: block; }
+      /* Obvious confirmation once a roll's points have been awarded. */
+      .dice-awarded {
+        margin-top: 0.5rem; padding: 0.85rem 1rem; border-radius: 0.5rem;
+        background: rgba(34,197,94,0.14); border: 2px solid #22c55e; color: #bbf7d0;
+        font-size: 1.05rem; font-weight: 700;
+      }
+
+      /* Mythic Triumph: relic chooser (natural 20 only). */
+      .dice-relic-heading {
+        margin-top: 0.9rem; margin-bottom: 0.7rem; font-size: 1.15rem;
+        font-weight: 800; color: #fcd34d;
+      }
+      .dice-relic-row { display: flex; flex-wrap: wrap; gap: 0.55rem; justify-content: center; }
+      .dice-relic-card {
+        flex: 1 1 128px; max-width: 165px; min-height: 128px;
+        padding: 0.75rem 0.55rem; border-radius: 0.75rem;
+        border: 2px solid rgba(245,158,11,0.55); background: rgba(245,158,11,0.08);
+        color: #f9fafb; cursor: pointer; text-align: center;
+        transition: all 150ms ease; touch-action: manipulation;
+      }
+      .dice-relic-card:hover { background: rgba(245,158,11,0.2); border-color: #fcd34d; }
+      .dice-relic-card:active { transform: scale(0.96); }
+      .dice-relic-emoji { font-size: 1.9rem; line-height: 1.1; }
+      .dice-relic-name { font-size: 0.95rem; font-weight: 800; color: #fcd34d; margin: 0.25rem 0 0.2rem; }
+      .dice-relic-effect { font-size: 0.76rem; color: #cbd5e1; line-height: 1.3; }
+      .dice-relic-claimed {
+        margin-top: 0.6rem; padding: 0.9rem 1rem; border-radius: 0.5rem;
+        background: rgba(252,211,77,0.15); border: 2px solid #fcd34d; color: #fde68a;
+        font-size: 1.05rem; font-weight: 700; line-height: 1.4;
+      }
+
       /* Prophecy table (rendered inside a plaque). */
       .dice-plaque-heading { font-size: 1.5rem; font-weight: bold; color: #fcd34d; margin-bottom: 1rem; }
       .dice-prophecy-row {
@@ -237,9 +292,12 @@ async function performRoll(el) {
   rollInProgress = true;
   setRollEnabled(el, false);
 
-  // A new roll clears any lingering suspense timer / plaque.
+  // A new roll clears any lingering suspense timer / plaque and re-enables the
+  // one-award-per-roll lock.
   clearTimeout(celebrateTimer);
   closePlaque(el);
+  awardedThisRoll = false;
+  relicClaimedThisRoll = false;
 
   const mode = currentMode;
   let results;
@@ -285,36 +343,130 @@ function showD20Result(el, value) {
   if (history.length > MAX_HISTORY) history.pop();
 }
 
+const ptsLabel = (pts) => (pts > 0 ? `+${pts}` : `${pts}`);
+
+function houseChipHtml(house, pts) {
+  return `<button class="dice-house-btn" style="--h:${house.accent}"
+    data-house="${house.id}" data-points="${pts}">${ptsLabel(pts)} to ${house.name}</button>`;
+}
+
+/** Plain-words description of what a mythic relic actually does. */
+function relicEffectText(item) {
+  const hours = Number(item?.effect?.amount) || 48;
+  return item?.effect?.kind === 'shield'
+    ? `Attacks are blocked for ${hours} hours`
+    : `Incoming damage is halved for ${hours} hours`;
+}
+
+function relicCardHtml(item) {
+  return `<button class="dice-relic-card" data-relic="${item.id}">
+      <div class="dice-relic-emoji">${item.emoji || '✨'}</div>
+      <div class="dice-relic-name">${item.name}</div>
+      <div class="dice-relic-effect">${relicEffectText(item)}</div>
+    </button>`;
+}
+
 function showOutcomePlaque(el, prophecy, variant) {
+  const pts = prophecy.points;
+  const active = store.getActiveHouse();   // null when 'All Cores' is selected
+  const allHouses = Object.values(store.HOUSES);
+
   let inner = `
     <div class="dice-outcome-emoji">${prophecy.emoji}</div>
     <div class="dice-outcome-title">${prophecy.title}</div>
     <div class="dice-outcome-desc">${prophecy.desc}</div>`;
 
-  const house = store.getActiveHouse();
-  if (prophecy.hasButton && house) {
-    const pts = prophecy.points;
-    const ptsText = pts > 0 ? `+${pts}` : `${pts}`;
-    inner += `<button class="dice-point-btn" data-house="${house.id}" data-points="${pts}">Apply ${ptsText} to ${house.name}</button>`;
+  if (prophecy.hasButton) {
+    inner += '<div class="dice-award-area">';
+    if (active) {
+      // Single core active: keep the one-tap default, plus an "other house"
+      // affordance because the rolling house isn't always the active core.
+      inner += `<button class="dice-point-btn" data-house="${active.id}" data-points="${pts}">Apply ${ptsLabel(pts)} to ${active.name}</button>`;
+      const others = allHouses.filter((h) => h.id !== active.id);
+      inner += `
+        <div>
+          <button class="dice-other-toggle" id="dice-other-toggle">Award to a different house ▾</button>
+          <div class="dice-other-wrap" id="dice-other-wrap">
+            <div class="dice-award-row">${others.map((h) => houseChipHtml(h, pts)).join('')}</div>
+          </div>
+        </div>`;
+    } else {
+      // 'All Cores': no active house — offer all four so the award is never lost.
+      inner += `
+        <div class="dice-award-hint">Award ${ptsLabel(pts)} to which house?</div>
+        <div class="dice-award-row">${allHouses.map((h) => houseChipHtml(h, pts)).join('')}</div>`;
+    }
+    inner += '</div>';
   }
 
   const plaque = showPlaque(el, inner, variant);
   if (!plaque) return;
 
-  const pointBtn = plaque.querySelector('.dice-point-btn');
-  if (pointBtn) {
-    pointBtn.addEventListener('click', (e) => {
-      const houseId = Number(e.currentTarget.dataset.house);
-      const points = Number(e.currentTarget.dataset.points);
-      store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
-      e.currentTarget.disabled = true;
-      e.currentTarget.textContent = 'Applied!';
-      setTimeout(() => {
-        const h = store.getActiveHouse();
-        if (h) e.currentTarget.textContent = `Apply ${points > 0 ? '+' : ''}${points} to ${h.name}`;
-        e.currentTarget.disabled = false;
-      }, 2000);
+  const area = plaque.querySelector('.dice-award-area');
+
+  function award(houseId, points) {
+    if (awardedThisRoll) return;              // one award per roll
+    const h = store.HOUSES[houseId];
+    if (!h) return;
+    store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
+    awardedThisRoll = true;
+    audio?.sfx?.('coin');
+    if (!area) return;
+
+    const awarded = `<div class="dice-awarded">✓ Awarded ${ptsLabel(points)} to ${h.name}</div>`;
+
+    // MYTHIC TRIUMPH: the winning house now claims a relic. If a teacher has
+    // deleted the mythic items in Admin, skip the step and just keep the points.
+    const relics = prophecy.mythic ? (store.getMythicRewards?.() || []) : [];
+    if (!relics.length) { area.innerHTML = awarded; return; }
+
+    area.innerHTML = `
+      ${awarded}
+      <div class="dice-relic-heading">👑 Choose your Mythic Relic</div>
+      <div class="dice-relic-row">${relics.map(relicCardHtml).join('')}</div>`;
+
+    area.querySelectorAll('.dice-relic-card').forEach((card) => {
+      card.addEventListener('click', (e) => claimRelic(h, e.currentTarget.dataset.relic, awarded));
     });
+  }
+
+  function claimRelic(house, itemId, awardedHtml) {
+    if (relicClaimedThisRoll) return;         // one relic per natural 20
+    const item = store.grantMythicItem(house.id, itemId);
+    if (!item) return;
+    relicClaimedThisRoll = true;
+    audio?.sfx?.('fanfare');
+    if (!area) return;
+    area.innerHTML = `
+      ${awardedHtml}
+      <div class="dice-relic-claimed">
+        ${item.emoji || '✨'} ${house.name} claims the ${item.name} —
+        ${relicEffectText(item).toLowerCase()}
+      </div>`;
+  }
+
+  plaque.querySelectorAll('.dice-point-btn, .dice-house-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const t = e.currentTarget;
+      award(Number(t.dataset.house), Number(t.dataset.points));
+    });
+  });
+
+  const toggle = plaque.querySelector('#dice-other-toggle');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const wrap = plaque.querySelector('#dice-other-wrap');
+      if (!wrap) return;
+      wrap.classList.toggle('open');
+      toggle.textContent = wrap.classList.contains('open')
+        ? 'Award to a different house ▴' : 'Award to a different house ▾';
+    });
+  }
+
+  // If this roll's points were already awarded, reflect that immediately (e.g.
+  // the teacher closed and re-opened nothing — defensive, keeps state honest).
+  if (awardedThisRoll && area) {
+    area.innerHTML = '<div class="dice-awarded">✓ Points already awarded for this roll</div>';
   }
 }
 
@@ -451,6 +603,8 @@ export default {
     sim = null;
     audio?.stopAll?.();
     rollInProgress = false;
+    awardedThisRoll = false;
+    relicClaimedThisRoll = false;
     history = [];
   },
 };

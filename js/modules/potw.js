@@ -26,8 +26,16 @@ let advanced = false;         // reached the reveal (intro handed off to map)
 let usingFallback = false;    // intro fell back to the song
 let cardShown = false;        // reveal card is visible (may be over live video)
 let presLayerEl = null;       // full-screen presentation layer (over the map)
-let presState = null;         // { type, count, idx, url, imgCache, pdfjs, pdfDoc, pageCache, token }
+let presState = null;         // { type, count, idx, url, pdfKey, imgCache, pdfjs, pdfDoc, pageCache, token }
 let presKeyHandler = null;    // keydown handler while presenting
+let presResizeHandler = null; // debounced resize -> re-render at new viewport size
+let presIdleTimer = null;     // hides the nav chrome after PRES_IDLE_MS
+let deckInfo = null;          // resolved deck for this voyage (null = no presentation)
+let deckPromise = null;       // memoizes resolveDeck() for the current voyage
+let previewMode = false;      // TEST FLIGHT: fly + orbit only, no intro/reveal/deck/lesson
+let previewOnClose = null;    // callback so the admin panel can restore itself
+let previewFlyMs = 0;         // shorter fly-to while previewing
+let previewKeyHandler = null; // Esc-to-close while previewing
 const timers = new Set();     // all pending setTimeout ids, cleared on teardown
 
 // ---- tunable timing (one-line tweaks for the teacher) ------------------------
@@ -40,6 +48,10 @@ const YT_CROP_PX = 120;       // overscan: player is this much taller than the 1
                               // centered, so YouTube's title bar + watermark sit outside the crop
 const YT_API_TIMEOUT_MS = 5000;   // if the IFrame API doesn't load in time, use a plain iframe
 const YT_PLAIN_FALLBACK_S = 600;  // generous auto-advance for the plain-iframe fallback (Skip is primary)
+const PRES_IDLE_MS = 3000;        // hide presentation nav chrome after this idle time
+const PRES_CACHE_MAX = 8;         // max rendered PDF page canvases kept in memory
+const PRES_DPR_CAP = 2;           // devicePixelRatio cap for crisp-but-cheap rendering
+const TEST_FLY_MS = 8000;         // TEST FLIGHT fly-to (short — the teacher reruns it while planning)
 
 // ---- tiny helpers ------------------------------------------------------------
 function later(fn, ms) {
@@ -279,6 +291,7 @@ async function openOverlay() {
   usingFallback = false;
   cardShown = false;
   ytIntroEl = null; ytPlayer = null; ytPollTimer = null; ytSafetyArmed = false;
+  deckInfo = null; deckPromise = null;   // re-resolve the deck for this voyage
   const shortName = profile.title.split(/\s+/).pop();
 
   overlayEl = document.createElement('div');
@@ -304,30 +317,17 @@ async function openOverlay() {
 
     <div class="potw-lesson">${buildLessonHTML()}</div>
 
+    <button type="button" class="potw-lesson-btn">📋 Lesson</button>
     <button type="button" class="potw-end">✕ End Voyage</button>`;
   host.appendChild(overlayEl);
 
   // --- create the 3D map now so it can load during the ~37s intro -----------
-  mapEl = document.createElement('gmp-map-3d');
-  mapEl.setAttribute('mode', 'hybrid');
-  mapEl.setAttribute('center', '40.8653,-81.8604,500'); // Smithville, OH
-  mapEl.setAttribute('range', '3000');
-  mapEl.setAttribute('tilt', '45');
-  mapEl.setAttribute('heading', '0');
-  mapEl.setAttribute('default-ui-hidden', '');
-  overlayEl.querySelector('.potw-map-layer').appendChild(mapEl);
-
-  // Resolve true when the custom element is usable, false if Maps never loads.
-  mapReadyPromise = ('customElements' in window)
-    ? Promise.race([
-        customElements.whenDefined('gmp-map-3d').then(() => true),
-        new Promise((r) => later(() => r(false), 4000)),
-      ]).catch(() => false)
-    : Promise.resolve(false);
+  createMap3d();
 
   // --- wire controls --------------------------------------------------------
   overlayEl.querySelector('.potw-skip').addEventListener('click', advanceToReveal);
   overlayEl.querySelector('.potw-fly-btn').addEventListener('click', gotoFlight);
+  overlayEl.querySelector('.potw-lesson-btn').addEventListener('click', toggleLessonCard);
   overlayEl.querySelector('.potw-end').addEventListener('click', closeOverlay);
   wireLesson();
 
@@ -588,23 +588,50 @@ function advanceToReveal() {
   later(() => { if (intro) intro.style.display = 'none'; }, INTRO_FADE_MS);
 }
 
+// Build the <gmp-map-3d> parked at the Smithville start camera, plus the
+// readiness promise (true = usable, false = Maps never loaded). Shared by the
+// full voyage and TEST FLIGHT so there is one copy of the map setup.
+function createMap3d() {
+  mapEl = document.createElement('gmp-map-3d');
+  mapEl.setAttribute('mode', 'hybrid');
+  mapEl.setAttribute('center', '40.8653,-81.8604,500'); // Smithville, OH
+  mapEl.setAttribute('range', '3000');
+  mapEl.setAttribute('tilt', '45');
+  mapEl.setAttribute('heading', '0');
+  mapEl.setAttribute('default-ui-hidden', '');
+  overlayEl.querySelector('.potw-map-layer').appendChild(mapEl);
+
+  // Resolve true when the custom element is usable, false if Maps never loads.
+  mapReadyPromise = ('customElements' in window)
+    ? Promise.race([
+        customElements.whenDefined('gmp-map-3d').then(() => true),
+        new Promise((r) => later(() => r(false), 4000)),
+      ]).catch(() => false)
+    : Promise.resolve(false);
+}
+
 // =============================================================================
 // STAGE 3 — 3D flight (graceful fallback if Maps is unavailable)
+// Shared by the classroom voyage and TEST FLIGHT; `previewMode` suppresses the
+// reveal card, the presentation auto-launch and the lesson card.
 // =============================================================================
 function gotoFlight() {
   if (!overlayEl) return;
   const reveal = overlayEl.querySelector('.potw-reveal');
-  reveal.style.transition = 'opacity .6s ease';
-  reveal.style.opacity = '0';
-  reveal.style.pointerEvents = 'none';
-  later(() => { if (reveal) reveal.style.display = 'none'; }, 650);
+  if (reveal) {                       // absent in preview mode
+    reveal.style.transition = 'opacity .6s ease';
+    reveal.style.opacity = '0';
+    reveal.style.pointerEvents = 'none';
+    later(() => { if (reveal) reveal.style.display = 'none'; }, 650);
+  }
+  const flyMs = previewMode ? previewFlyMs : FLY_TO_MS;
 
   mapReadyPromise.then((ready) => {
     if (!overlayEl) return; // torn down mid-flight
     let flying = false;
     if (ready && mapEl && typeof mapEl.flyCameraTo === 'function') {
       try {
-        mapEl.flyCameraTo({ endCamera: destCamera(), durationMillis: FLY_TO_MS });
+        mapEl.flyCameraTo({ endCamera: destCamera(), durationMillis: flyMs });
         flying = true;
       } catch (e) {
         console.warn('potw: flyCameraTo failed, using fallback', e);
@@ -612,15 +639,22 @@ function gotoFlight() {
     }
     if (!flying) showMapFallback();
 
-    // After landing (~7.7s): reveal the lesson card and begin the slow orbit.
+    // After landing: start the slow orbit, then either auto-launch the
+    // presentation (if this destination has one) or slide the lesson card up.
     later(() => {
-      slideLesson();
       if (flying && typeof mapEl.flyCameraAround === 'function') {
         try {
           mapEl.flyCameraAround({ camera: destCamera(), durationMillis: ORBIT_MS, repeatCount: 10 });
         } catch (e) { console.warn('potw: flyCameraAround failed', e); }
       }
-    }, flying ? FLY_TO_MS + LAND_SETTLE_MS : 700);
+      if (previewMode) return;   // TEST FLIGHT ends here: fly + orbit only
+      // The lesson card is no longer the gatekeeper: a deck opens on arrival.
+      resolveDeck().then((deck) => {
+        if (!overlayEl) return;
+        if (deck) openPresentation();
+        else slideLesson();
+      });
+    }, flying ? flyMs + LAND_SETTLE_MS : 700);
   });
 }
 
@@ -644,6 +678,8 @@ function showMapFallback() {
 function slideLesson() {
   if (!overlayEl) return;
   overlayEl.querySelector('.potw-lesson').classList.add('show');
+  const btn = overlayEl.querySelector('.potw-lesson-btn');
+  if (btn) { btn.style.display = 'block'; btn.textContent = '📋 Hide Lesson'; }
 }
 
 function buildLessonHTML() {
@@ -660,22 +696,37 @@ function buildLessonHTML() {
      </button>`).join('');
 
   const houses = Object.values(ctxRef.store.HOUSES);
+  const points = bountyPoints();
   const quiz = profile.quiz.map((q, qi) => {
-    const awards = houses.map((h) =>
-      `<button type="button" class="potw-award" data-q="${qi}" data-house="${h.id}" style="--acc:${h.accent}">
-         ${esc(h.name)}<small>+50</small>
-       </button>`).join('');
+    // The store ledger is the source of truth: a bounty already paid for this
+    // profile+week stays locked across relaunches and across class periods.
+    const paid = ctxRef.store.getPaidBounty(activeKey, qi);
+    const winner = paid ? ctxRef.store.HOUSES[paid.houseId] : null;
+    const awards = houses.map((h) => {
+      const isWinner = !!winner && winner.id === h.id;
+      const cls = `potw-award${paid ? (isWinner ? ' won' : ' awarded') : ''}`;
+      return `<button type="button" class="${cls}" data-q="${qi}" data-house="${h.id}"
+        style="--acc:${h.accent}"${paid ? ' disabled' : ''}>
+         ${esc(h.name)}<small>+${points}</small>
+       </button>`;
+    }).join('');
+    const paidNote = winner
+      ? `<div class="potw-bounty-paid" data-paid="${qi}">✓ ${esc(winner.name)} won this bounty</div>`
+      : `<div class="potw-bounty-paid" data-paid="${qi}" hidden></div>`;
     return `<div class="potw-quiz">
        <div class="potw-q">${esc(q.q)}</div>
        <button type="button" class="potw-reveal-ans" data-q="${qi}">Tap to reveal answer</button>
        <div class="potw-ans" data-q="${qi}">${esc(q.a)}</div>
        <div class="potw-awards">${awards}</div>
+       ${paidNote}
      </div>`;
   }).join('');
 
-  const presBtn = profile.presentation && profile.presentation.type
-    ? `<button type="button" class="potw-pres-launch font-display">📽️ Launch Presentation</button>`
-    : '';
+  // Shown when a deck exists — including a PDF discovered among stored assets,
+  // which resolves asynchronously (wireLesson reveals the button when ready).
+  const hasPres = !!(profile.presentation && profile.presentation.type);
+  const presBtn =
+    `<button type="button" class="potw-pres-launch font-display"${hasPres ? '' : ' style="display:none"'}>📽️ Launch Presentation</button>`;
 
   // "Resources" tab: URL links (from profile.links) + stored assets (async via
   // media.list). The tab is provisional — shown immediately if links exist, and
@@ -720,11 +771,12 @@ function assetIcon(type) {
 }
 function assetCardHTML(a) {
   const isImage = String(a.type || '').startsWith('image/');
-  return `<button type="button" class="potw-asset" data-key="${esc(a.key)}" data-image="${isImage ? '1' : '0'}" data-name="${esc(a.name || '')}">
+  const isPdf = isPdfAsset(a);
+  return `<button type="button" class="potw-asset" data-key="${esc(a.key)}" data-image="${isImage ? '1' : '0'}" data-pdf="${isPdf ? '1' : '0'}" data-name="${esc(a.name || '')}">
     <span class="potw-asset-ico" aria-hidden="true">${assetIcon(a.type)}</span>
     <span class="potw-asset-body">
       <span class="potw-asset-name">${esc(a.name || a.key)}</span>
-      <span class="potw-asset-type">${esc(a.type || 'file')}</span>
+      <span class="potw-asset-type">${isPdf ? 'Presentation • opens in app' : esc(a.type || 'file')}</span>
     </span>
   </button>`;
 }
@@ -757,10 +809,15 @@ async function loadResources() {
 function wireAssetCards(scope) {
   scope.querySelectorAll('.potw-asset').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      // A PDF is ALWAYS a presentation — open the in-app viewer, never a new tab.
+      if (btn.dataset.pdf === '1') {
+        openPresentation({ type: 'pdf', pdfKey: btn.dataset.key, url: '', count: 0 });
+        return;
+      }
       const url = await media.url(btn.dataset.key);
       if (!url) { btn.classList.add('potw-asset-missing'); return; }
       if (btn.dataset.image === '1') openLightbox(url, btn.dataset.name);
-      else window.open(url, '_blank', 'noopener'); // pdf / text / other → new tab
+      else window.open(url, '_blank', 'noopener'); // non-PDF, non-image → new tab
     });
   });
 }
@@ -778,9 +835,15 @@ function openLightbox(url, name) {
 }
 
 function wireLesson() {
-  // Presentation launcher (present only when the profile has a deck)
+  // Presentation launcher — reveal once a deck is known (configured or a PDF asset)
   const presBtn = overlayEl.querySelector('.potw-pres-launch');
-  if (presBtn) presBtn.addEventListener('click', openPresentation);
+  if (presBtn) {
+    presBtn.addEventListener('click', () => openPresentation());
+    resolveDeck().then((deck) => {
+      if (!overlayEl || !presBtn.isConnected) return;
+      presBtn.style.display = deck ? '' : 'none';
+    });
+  }
 
   // Resources: async-load stored assets and finalize the tab
   loadResources();
@@ -814,30 +877,49 @@ function wireLesson() {
     });
   });
 
-  // Quiz: award bounties (one house per question)
+  // Quiz: award bounties — ONE payout per question per profile+week, enforced by
+  // the store ledger (not just the DOM), so relaunching cannot pay twice.
   overlayEl.querySelectorAll('.potw-award').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
-      const qi = btn.dataset.q;
+      const qi = Number(btn.dataset.q);
       const houseId = Number(btn.dataset.house);
       const q = profile.quiz[qi];
-      ctxRef.store.addPoints(houseId, 50, { reason: `POTW Bounty: ${q.q.slice(0, 40)}`, tag: 'potw' });
-      ctxRef.audio.sfx('coin');
+      const points = bountyPoints();
 
-      // +50 float-up
+      // payBounty awards the points AND records the payment; false = already paid.
+      const paid = ctxRef.store.payBounty(activeKey, qi, houseId, points, q.q.slice(0, 40));
+      lockBounty(qi, paid ? btn : null);
+      if (!paid) return;   // someone already claimed it — UI is now in sync
+
+      ctxRef.audio.sfx('coin');
       const f = document.createElement('span');
       f.className = 'potw-float';
-      f.textContent = '+50';
+      f.textContent = `+${points}`;
       btn.appendChild(f);
       later(() => f.remove(), 1000);
-
-      // lock this question's four buttons; keep the winner lit
-      overlayEl.querySelectorAll(`.potw-award[data-q="${qi}"]`).forEach((b) => {
-        b.disabled = true;
-        b.classList.add(b === btn ? 'won' : 'awarded');
-      });
     });
   });
+}
+
+// Points per bounty — teacher-configurable per destination later.
+function bountyPoints() {
+  const n = Number(profile && profile.bountyPoints);
+  return Number.isFinite(n) && n > 0 ? n : 50;
+}
+
+// Lock a question's four buttons and show who won, from the ledger.
+function lockBounty(qi, winnerBtn) {
+  if (!overlayEl) return;
+  const rec = ctxRef.store.getPaidBounty(activeKey, qi);
+  const winnerId = rec ? Number(rec.houseId) : (winnerBtn ? Number(winnerBtn.dataset.house) : null);
+  overlayEl.querySelectorAll(`.potw-award[data-q="${qi}"]`).forEach((b) => {
+    b.disabled = true;
+    b.classList.add(Number(b.dataset.house) === winnerId ? 'won' : 'awarded');
+  });
+  const note = overlayEl.querySelector(`.potw-bounty-paid[data-paid="${qi}"]`);
+  const house = winnerId ? ctxRef.store.HOUSES[winnerId] : null;
+  if (note && house) { note.textContent = `✓ ${house.name} won this bounty`; note.hidden = false; }
 }
 
 // =============================================================================
@@ -847,16 +929,54 @@ function wireLesson() {
 //   pdf:    media key  potw:<key>:slides.pdf
 //   gslides: presentation.url is a docs.google.com /embed URL
 // =============================================================================
-const PDFJS_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.mjs';
-const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs';
+// Vendored locally so the viewer works on school networks that block CDNs.
+// NOTE: a dynamic import() resolves against THIS MODULE's url (js/modules/),
+// not the page, so './vendor/…' would look in js/modules/vendor/. Resolving
+// against import.meta.url yields absolute URLs that are correct for both the
+// import and the worker, on localhost and on the Pages subpath (/mr-d-site/).
+const PDFJS_URL = new URL('../../vendor/pdf.min.mjs', import.meta.url).href;
+const PDFJS_WORKER = new URL('../../vendor/pdf.worker.min.mjs', import.meta.url).href;
 const pad3 = (n) => String(n).padStart(3, '0');
 const presErrorHTML = (msg) =>
   `<div class="potw-pres-error"><div class="big" aria-hidden="true">⚠️</div><div>${esc(msg)}</div></div>`;
 
-async function openPresentation() {
+function isPdfAsset(a) {
+  const t = String((a && a.type) || ''), n = String((a && a.name) || '');
+  return t === 'application/pdf' || t.endsWith('/pdf') || /\.pdf$/i.test(n);
+}
+
+// Resolve a presentable deck for this destination (memoized per voyage):
+//   (a) profile.presentation exactly as configured by the teacher, else
+//   (b) FALLBACK: any stored asset that is a PDF becomes the deck automatically.
+// Returns { type, url, count, pdfKey } or null when there is nothing to present.
+function resolveDeck() {
+  if (deckPromise) return deckPromise;
+  deckPromise = (async () => {
+    const pres = profile && profile.presentation;
+    if (pres && pres.type) {
+      deckInfo = {
+        type: pres.type,
+        url: pres.url || '',
+        count: Number(pres.count) || 0,
+        pdfKey: pres.type === 'pdf' ? `potw:${activeKey}:slides.pdf` : '',
+      };
+      return deckInfo;
+    }
+    let assets = [];
+    try { assets = await media.list(`potw:${activeKey}:asset:`); } catch (e) { assets = []; }
+    const pdf = (assets || []).filter(Boolean).sort((a, b) => (a.key < b.key ? -1 : 1)).find(isPdfAsset);
+    deckInfo = pdf ? { type: 'pdf', url: '', count: 0, pdfKey: pdf.key } : null;
+    return deckInfo;
+  })();
+  return deckPromise;
+}
+
+// Open the in-app viewer. `deck` defaults to the resolved deck for this voyage;
+// callers may pass an explicit deck (e.g. tapping a PDF in the Resources tab).
+async function openPresentation(deck) {
   if (!overlayEl || presLayerEl) return;
-  const pres = profile.presentation;
-  if (!pres || !pres.type) return;
+  const d = deck || deckInfo || (await resolveDeck());
+  if (!overlayEl || presLayerEl || !d || !d.type) return;
   try { ctxRef.audio.sfx('coin'); } catch (e) {}
 
   // Hide the lesson card while presenting (ambient orbit keeps running).
@@ -864,62 +984,166 @@ async function openPresentation() {
   if (lesson) lesson.classList.remove('show');
 
   presState = {
-    type: pres.type, count: Number(pres.count) || 0, idx: 1, url: pres.url || '',
+    type: d.type, count: Number(d.count) || 0, idx: 1, url: d.url || '',
+    pdfKey: d.pdfKey || `potw:${activeKey}:slides.pdf`,
     imgCache: {}, pdfjs: null, pdfDoc: null, pageCache: new Map(), token: 0,
   };
 
-  const isGslides = pres.type === 'gslides';
+  const isGslides = d.type === 'gslides';
   const nav = isGslides ? '' : `
-    <button type="button" class="potw-pres-arrow potw-pres-prev" aria-label="Previous slide">&#8249;</button>
-    <button type="button" class="potw-pres-arrow potw-pres-next" aria-label="Next slide">&#8250;</button>
-    <div class="potw-pres-counter">&mdash;</div>`;
+    <button type="button" class="potw-pres-arrow potw-pres-prev potw-chrome" aria-label="Previous slide">&#8249;</button>
+    <button type="button" class="potw-pres-arrow potw-pres-next potw-chrome" aria-label="Next slide">&#8250;</button>
+    <div class="potw-pres-counter potw-chrome">&mdash;</div>
+    <button type="button" class="potw-pres-grid potw-chrome" aria-label="Slide overview (G)">▦</button>
+    <div class="potw-pres-progress"><div class="potw-pres-bar"></div></div>
+    <div class="potw-pres-overview"><div class="potw-pres-thumbs"></div></div>`;
   presLayerEl = document.createElement('div');
   presLayerEl.className = 'potw-pres';
   presLayerEl.innerHTML = `
     <div class="potw-pres-stage"></div>
     ${nav}
-    <button type="button" class="potw-pres-close">✕ Back to ${esc(profile.title)}</button>`;
+    <button type="button" class="potw-pres-close potw-chrome">✕ Back to ${esc(profile.title)}</button>`;
   overlayEl.appendChild(presLayerEl);
 
   presLayerEl.querySelector('.potw-pres-close').addEventListener('click', closePresentation);
   if (!isGslides) {
     presLayerEl.querySelector('.potw-pres-prev').addEventListener('click', (e) => { e.stopPropagation(); presGo(-1); });
     presLayerEl.querySelector('.potw-pres-next').addEventListener('click', (e) => { e.stopPropagation(); presGo(1); });
+    presLayerEl.querySelector('.potw-pres-grid').addEventListener('click', (e) => { e.stopPropagation(); toggleOverview(); });
     const stage = presLayerEl.querySelector('.potw-pres-stage');
     stage.addEventListener('click', (e) => { // tap right-half = next, left-half = back
+      if (isOverviewOpen()) return;
       const r = stage.getBoundingClientRect();
       presGo(e.clientX - r.left < r.width / 2 ? -1 : 1);
     });
+    // Nav chrome fades when idle and returns on any pointer/tap activity.
+    ['mousemove', 'pointerdown', 'touchstart'].forEach((evt) =>
+      presLayerEl.addEventListener(evt, pokeChrome, { passive: true }));
+    pokeChrome();
+
+    // Re-render at the new viewport size (debounced) so slides stay crisp.
+    let rzTimer = 0;
+    presResizeHandler = () => {
+      clearTimeout(rzTimer);
+      rzTimer = setTimeout(() => {
+        if (!presState || !presLayerEl) return;
+        if (presState.type === 'pdf') { presState.pageCache.clear(); presShowPdfPage(); }
+      }, 200);
+    };
+    window.addEventListener('resize', presResizeHandler);
   }
+
   presKeyHandler = (e) => {
     if (!presLayerEl) return;
-    if (e.key === 'Escape') { closePresentation(); return; }
-    if (presState && presState.type !== 'gslides') {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); presGo(1); }
-      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); presGo(-1); }
+    pokeChrome();
+    if (e.key === 'Escape') {
+      if (isOverviewOpen()) { toggleOverview(false); return; }
+      closePresentation(); return;
     }
+    if (!presState || presState.type === 'gslides') return;
+    const k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Spacebar') { e.preventDefault(); presGo(1); }
+    else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); presGo(-1); }
+    else if (k === 'Home') { e.preventDefault(); presGoTo(1); }
+    else if (k === 'End') { e.preventDefault(); presGoTo(presState.count); }
+    else if (k === 'g' || k === 'G') { e.preventDefault(); toggleOverview(); }
   };
   window.addEventListener('keydown', presKeyHandler);
 
-  if (pres.type === 'images') { presUpdateCounter(); await presShowImage(); }
-  else if (pres.type === 'pdf') { await presInitPdf(); }
+  if (d.type === 'images') { presUpdateCounter(); await presShowImage(); }
+  else if (d.type === 'pdf') { await presInitPdf(); }
   else { presRenderGslides(); }
+}
+
+// ---- nav chrome idle fade ----
+function pokeChrome() {
+  if (!presLayerEl) return;
+  presLayerEl.classList.remove('idle');
+  clearTimeout(presIdleTimer);
+  presIdleTimer = setTimeout(() => {
+    if (presLayerEl && !isOverviewOpen()) presLayerEl.classList.add('idle');
+  }, PRES_IDLE_MS);
 }
 
 function presUpdateCounter() {
   if (!presLayerEl || !presState) return;
   const c = presLayerEl.querySelector('.potw-pres-counter');
   if (c) c.textContent = `${presState.idx} / ${presState.count}`;
+  const bar = presLayerEl.querySelector('.potw-pres-bar');
+  if (bar) bar.style.width = presState.count > 0 ? `${(presState.idx / presState.count) * 100}%` : '0%';
+  presLayerEl.querySelectorAll('.potw-thumb').forEach((t) =>
+    t.classList.toggle('active', Number(t.dataset.i) === presState.idx));
 }
 
-function presGo(delta) {
+function presGoTo(n) {
   if (!presState || presState.count <= 0) return;
-  const next = Math.min(presState.count, Math.max(1, presState.idx + delta));
+  const next = Math.min(presState.count, Math.max(1, n));
   if (next === presState.idx) return;
   presState.idx = next;
   presUpdateCounter();
+  pokeChrome();
   if (presState.type === 'images') presShowImage();
   else if (presState.type === 'pdf') presShowPdfPage();
+}
+
+function presGo(delta) {
+  if (!presState) return;
+  presGoTo(presState.idx + delta);
+}
+
+// ---- slide overview (thumbnail grid) ----
+function isOverviewOpen() {
+  const ov = presLayerEl && presLayerEl.querySelector('.potw-pres-overview');
+  return !!(ov && ov.classList.contains('show'));
+}
+
+function toggleOverview(force) {
+  const ov = presLayerEl && presLayerEl.querySelector('.potw-pres-overview');
+  if (!ov || !presState) return;
+  const open = force === undefined ? !ov.classList.contains('show') : !!force;
+  ov.classList.toggle('show', open);
+  if (open) { presLayerEl.classList.remove('idle'); buildThumbs(); }
+  else pokeChrome();
+}
+
+function buildThumbs() {
+  const wrap = presLayerEl && presLayerEl.querySelector('.potw-pres-thumbs');
+  const st = presState;
+  if (!wrap || !st || wrap.childElementCount) return; // build once
+  for (let i = 1; i <= st.count; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'potw-thumb' + (i === st.idx ? ' active' : '');
+    b.dataset.i = String(i);
+    b.innerHTML = `<span class="potw-thumb-box"></span><span class="potw-thumb-n">${i}</span>`;
+    b.addEventListener('click', (e) => { e.stopPropagation(); presGoTo(i); toggleOverview(false); });
+    wrap.appendChild(b);
+    renderThumb(b, i);
+  }
+}
+
+async function renderThumb(btn, i) {
+  const st = presState;
+  const box = btn.querySelector('.potw-thumb-box');
+  if (!box || !st) return;
+  try {
+    if (st.type === 'images') {
+      const u = await presResolveImg(i);
+      if (presState !== st || !u) return;
+      const im = new Image(); im.src = u; im.alt = '';
+      box.appendChild(im);
+    } else if (st.type === 'pdf' && st.pdfDoc) {
+      const page = await st.pdfDoc.getPage(i);
+      if (presState !== st) return;
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: 200 / base.width });
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.floor(vp.width)); cv.height = Math.max(1, Math.floor(vp.height));
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      if (presState !== st) return;
+      box.appendChild(cv);
+    }
+  } catch (e) { /* thumbnail is decorative — ignore failures */ }
 }
 
 // ---- images ----
@@ -957,7 +1181,7 @@ async function presInitPdf() {
     if (presState !== st || !presLayerEl) return;
     pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
     st.pdfjs = pdfjs;
-    const url = await media.url(`potw:${activeKey}:slides.pdf`);
+    const url = await media.url(st.pdfKey);
     if (presState !== st || !presLayerEl) return;
     if (!url) { stage.innerHTML = presErrorHTML('No PDF found for this destination'); return; }
     const buf = await (await fetch(url)).arrayBuffer();
@@ -974,35 +1198,66 @@ async function presInitPdf() {
     if (presState === st && presLayerEl) stage.innerHTML = presErrorHTML('Could not open the PDF');
   }
 }
+// Render one page to a canvas sized to the current stage (letterboxed, never
+// scrolling), at capped devicePixelRatio so it stays crisp on the smartboard.
+async function renderPdfCanvas(st, idx, stage) {
+  const page = await st.pdfDoc.getPage(idx);
+  if (presState !== st || !presLayerEl) return null;
+  const dpr = Math.min(window.devicePixelRatio || 1, PRES_DPR_CAP);
+  const base = page.getViewport({ scale: 1 });
+  const rect = stage.getBoundingClientRect();
+  const fit = Math.min(rect.width / base.width, rect.height / base.height) || 1;
+  const vp = page.getViewport({ scale: fit * dpr });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(vp.width));
+  canvas.height = Math.max(1, Math.floor(vp.height));
+  canvas.style.width = Math.floor(vp.width / dpr) + 'px';
+  canvas.style.height = Math.floor(vp.height / dpr) + 'px';
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  if (presState !== st || !presLayerEl) return null;
+  return canvas;
+}
+
+// Keep memory bounded: drop the oldest cached pages that aren't nearby.
+function trimPageCache(st) {
+  if (!st || !st.pageCache) return;
+  for (const k of [...st.pageCache.keys()]) {
+    if (st.pageCache.size <= PRES_CACHE_MAX) break;
+    if (Math.abs(k - st.idx) <= 1) continue;
+    st.pageCache.delete(k);
+  }
+}
+
 async function presShowPdfPage() {
   const st = presState;
   const stage = presLayerEl && presLayerEl.querySelector('.potw-pres-stage');
   if (!stage || !st || !st.pdfDoc) return;
   const idx = st.idx;
   const cached = st.pageCache.get(idx);
-  if (cached) { stage.innerHTML = ''; stage.appendChild(cached); return; }
+  if (cached) { stage.innerHTML = ''; stage.appendChild(cached); presPreloadPdf(st, idx, stage); return; }
   const token = ++st.token;
   try {
-    const page = await st.pdfDoc.getPage(idx);
-    if (presState !== st || token !== st.token || !presLayerEl) return;
-    const dpr = window.devicePixelRatio || 1;
-    const base = page.getViewport({ scale: 1 });
-    const rect = stage.getBoundingClientRect();
-    const fit = Math.min(rect.width / base.width, rect.height / base.height) || 1;
-    const vp = page.getViewport({ scale: fit * dpr });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.floor(vp.width));
-    canvas.height = Math.max(1, Math.floor(vp.height));
-    canvas.style.width = Math.floor(vp.width / dpr) + 'px';
-    canvas.style.height = Math.floor(vp.height / dpr) + 'px';
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-    if (presState !== st || token !== st.token || !presLayerEl) return;
+    const canvas = await renderPdfCanvas(st, idx, stage);
+    if (!canvas || presState !== st || token !== st.token || !presLayerEl) return;
     st.pageCache.set(idx, canvas);
+    trimPageCache(st);
     stage.innerHTML = ''; stage.appendChild(canvas);
+    presPreloadPdf(st, idx, stage);
   } catch (e) {
     console.warn('potw: PDF render failed', e);
     if (presState === st && token === st.token && presLayerEl) stage.innerHTML = presErrorHTML(`Could not render page ${idx}`);
   }
+}
+
+// Pre-render the next and previous pages so advancing is instant.
+function presPreloadPdf(st, idx, stage) {
+  [idx + 1, idx - 1].forEach(async (j) => {
+    if (j < 1 || j > st.count || st.pageCache.has(j)) return;
+    try {
+      const cv = await renderPdfCanvas(st, j, stage);
+      if (cv && presState === st && !st.pageCache.has(j)) { st.pageCache.set(j, cv); trimPageCache(st); }
+    } catch (e) { /* preload is best-effort */ }
+  });
 }
 
 // ---- google slides ----
@@ -1025,6 +1280,8 @@ function presRenderGslides() {
 // Does NOT revoke media object URLs — media.js owns their lifecycle.
 function destroyPresentation() {
   if (presKeyHandler) { try { window.removeEventListener('keydown', presKeyHandler); } catch (e) {} presKeyHandler = null; }
+  if (presResizeHandler) { try { window.removeEventListener('resize', presResizeHandler); } catch (e) {} presResizeHandler = null; }
+  clearTimeout(presIdleTimer); presIdleTimer = null;
   if (presState) {
     if (presState.pdfDoc) { try { presState.pdfDoc.destroy(); } catch (e) {} }
     if (presState.pageCache) presState.pageCache.clear();
@@ -1033,10 +1290,25 @@ function destroyPresentation() {
   presState = null;
 }
 
-// ✕ Back: destroy the layer and bring the lesson card back over the orbiting map.
+// ✕ Back: destroy the layer and return to the orbiting map. The lesson card is
+// NOT forced back into view — a subtle "📋 Lesson" control offers it on demand.
 function closePresentation() {
   destroyPresentation();
-  if (overlayEl) { const l = overlayEl.querySelector('.potw-lesson'); if (l) l.classList.add('show'); }
+  if (!overlayEl) return;
+  const btn = overlayEl.querySelector('.potw-lesson-btn');
+  if (btn) btn.style.display = 'block';
+}
+
+// Toggle the lesson card over the orbiting map (opt-in, never automatic when a
+// deck exists). Keeps the card and all its tabs/quiz behaviour intact.
+function toggleLessonCard() {
+  if (!overlayEl) return;
+  const card = overlayEl.querySelector('.potw-lesson');
+  const btn = overlayEl.querySelector('.potw-lesson-btn');
+  if (!card) return;
+  const open = !card.classList.contains('show');
+  card.classList.toggle('show', open);
+  if (btn) btn.textContent = open ? '📋 Hide Lesson' : '📋 Lesson';
 }
 
 // =============================================================================
@@ -1052,6 +1324,7 @@ function closeOverlay() {
   if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
   videoEl = null; songEl = null; mapReadyPromise = null;
   advanced = false; usingFallback = false; cardShown = false;
+  deckInfo = null; deckPromise = null;
   // Stage 0 launch screen remains mounted in #module-root underneath.
 }
 
@@ -1149,6 +1422,25 @@ function injectStyles() {
   .potw-fly-btn:active{transform:scale(.97);}
 
   /* ---- End Voyage ---- */
+  /* ---- TEST FLIGHT (admin preview) ---- */
+  .potw-preview-label{position:absolute;top:18px;left:18px;z-index:57;display:flex;align-items:center;gap:10px;
+    padding:12px 18px;border-radius:.75rem;background:rgba(11,15,25,.82);border:1px solid rgba(245,158,11,.6);
+    backdrop-filter:blur(8px);color:#f9fafb;font-weight:800;font-size:clamp(1rem,2vw,1.25rem);
+    box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:70vw;}
+  .potw-preview-label .tag{background:#f59e0b;color:#0b0f19;border-radius:.4rem;padding:3px 9px;
+    font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;}
+  .potw-preview-close{position:absolute;top:18px;right:18px;z-index:57;min-height:48px;padding:12px 20px;
+    border-radius:.6rem;background:rgba(17,24,39,.9);border:1px solid #374151;color:#e5e7eb;
+    font-weight:700;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
+  .potw-preview-close:hover{background:rgba(239,68,68,.3);border-color:#ef4444;}
+  .potw-preview .potw-map-fallback{z-index:5;}
+
+  /* subtle opt-in access to the lesson card once the deck has been shown */
+  .potw-lesson-btn{position:absolute;left:18px;bottom:18px;z-index:56;display:none;min-height:44px;
+    padding:10px 16px;border-radius:.6rem;background:rgba(17,24,39,.7);border:1px solid #374151;
+    color:#9ca3af;font-weight:600;cursor:pointer;transition:background .2s ease,color .2s ease,border-color .2s ease;}
+  .potw-lesson-btn:hover{background:rgba(17,24,39,.95);color:#f9fafb;border-color:#f59e0b;}
+
   .potw-end{position:absolute;top:18px;right:18px;z-index:55;display:none;min-height:44px;
     padding:10px 18px;border-radius:.6rem;background:rgba(17,24,39,.85);border:1px solid #374151;
     color:#e5e7eb;font-weight:600;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
@@ -1204,6 +1496,9 @@ function injectStyles() {
   .potw-award.awarded{opacity:.35;}
   .potw-award.won{opacity:1;background:var(--acc);color:#0b0f19;}
   .potw-award.won small{color:#0b0f19;}
+  .potw-bounty-paid{margin-top:10px;color:#34d399;font-weight:700;font-size:.95rem;
+    display:flex;align-items:center;gap:6px;}
+  .potw-bounty-paid[hidden]{display:none;}
   .potw-float{position:absolute;top:-6px;left:50%;color:#f59e0b;font-weight:800;font-size:1.35rem;
     pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.6);animation:potw-float 1s ease-out forwards;}
 
@@ -1237,9 +1532,33 @@ function injectStyles() {
   .potw-pres-arrow:hover{background:rgba(245,158,11,.35);}
   .potw-pres-arrow:active{transform:translateY(-50%) scale(.94);}
   .potw-pres-prev{left:20px;} .potw-pres-next{right:20px;}
-  .potw-pres-counter{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:60;
+  .potw-pres-counter{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;
     background:rgba(0,0,0,.55);border:1px solid #374151;border-radius:999px;padding:8px 18px;
     color:#e5e7eb;font-weight:700;letter-spacing:.06em;font-size:1.05rem;}
+  /* idle fade: chrome disappears while presenting, returns on move/tap/key */
+  .potw-chrome{transition:opacity .3s ease;}
+  .potw-pres.idle .potw-chrome{opacity:0;pointer-events:none;}
+  .potw-pres-grid{position:absolute;top:18px;left:18px;z-index:61;min-width:56px;min-height:56px;
+    border-radius:.75rem;background:rgba(17,24,39,.85);border:1px solid #374151;color:#e5e7eb;
+    font-size:1.5rem;line-height:1;cursor:pointer;transition:background .2s ease,border-color .2s ease;}
+  .potw-pres-grid:hover{background:rgba(245,158,11,.3);border-color:#f59e0b;}
+  .potw-pres-progress{position:absolute;left:0;right:0;bottom:0;height:5px;z-index:60;
+    background:rgba(255,255,255,.12);}
+  .potw-pres-bar{height:100%;width:0;background:linear-gradient(90deg,#f59e0b,#fbbf24);
+    transition:width .25s ease;}
+  .potw-pres-overview{position:absolute;inset:0;z-index:62;display:none;overflow-y:auto;
+    background:rgba(11,15,25,.96);padding:24px;}
+  .potw-pres-overview.show{display:block;}
+  .potw-pres-thumbs{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}
+  .potw-thumb{position:relative;padding:0;border:2px solid #374151;border-radius:.6rem;overflow:hidden;
+    background:#111827;cursor:pointer;aspect-ratio:4 / 3;display:flex;align-items:center;justify-content:center;
+    transition:border-color .2s ease,transform .15s ease;}
+  .potw-thumb:hover{border-color:#9ca3af;transform:scale(1.03);}
+  .potw-thumb.active{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.35);}
+  .potw-thumb-box{width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+  .potw-thumb-box img,.potw-thumb-box canvas{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+  .potw-thumb-n{position:absolute;bottom:4px;right:6px;background:rgba(0,0,0,.7);color:#e5e7eb;
+    font-size:.8rem;font-weight:700;border-radius:.3rem;padding:1px 6px;}
   .potw-pres-close{position:absolute;top:18px;right:18px;z-index:61;min-height:48px;padding:12px 18px;
     border-radius:.6rem;background:rgba(17,24,39,.85);border:1px solid #374151;color:#e5e7eb;font-weight:700;cursor:pointer;
     transition:background .2s ease,border-color .2s ease;}
@@ -1291,6 +1610,111 @@ function injectStyles() {
 }
 
 // =============================================================================
+// TEST FLIGHT (admin preview) — reuses the same overlay/map/flight machinery in
+// a 'preview' mode: no intro video, no reveal card, no presentation, no lesson
+// card, and no change to which destination is scheduled/active.
+// =============================================================================
+
+// A camera is usable only with real finite coordinates in range. Null island
+// (0,0) is treated as "not set" — it is the classic unparsed-link result.
+function validCamera(c) {
+  const lat = c && c.center && Number(c.center.lat);
+  const lng = c && c.center && Number(c.center.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return false;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+  if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) return false;
+  return true;
+}
+
+function previewNoCoords(host, name) {
+  overlayEl = document.createElement('div');
+  overlayEl.className = 'potw-overlay potw-preview';
+  overlayEl.innerHTML = `
+    <div class="potw-map-layer"></div>
+    <div class="potw-preview-label"><span class="tag">Test Flight</span>${esc(name)}</div>
+    <div class="potw-map-fallback">
+      <div class="potw-fb-globe" aria-hidden="true">🧭</div>
+      <div class="font-display potw-fb-title">No location set</div>
+      <div class="potw-fb-sub">Paste a Google Maps link with coordinates, then test the flight.</div>
+      <div class="potw-fb-note">Nothing was changed — close to go back to editing.</div>
+    </div>
+    <button type="button" class="potw-preview-close">✕ Close</button>`;
+  host.appendChild(overlayEl);
+  overlayEl.querySelector('.potw-preview-close').addEventListener('click', closePreview);
+}
+
+/**
+ * Open an immediate 3D preview flight for a destination.
+ * @param {object}   opts
+ * @param {object}   opts.profile  destination-like { title, subtitle?, camera }
+ *                                 (may be UNSAVED editor values)
+ * @param {function} [opts.onClose] called after teardown so the caller can restore itself
+ * @param {number}   [opts.flyMs]   fly-to duration (default TEST_FLY_MS ≈ 8s)
+ * @returns {boolean} false if a POTW overlay is already open
+ */
+export function testFlight({ profile: p, onClose, flyMs } = {}) {
+  const host = document.getElementById('overlay-root');
+  if (!host || overlayEl) return false;   // never stack over a live voyage
+  injectStyles();
+
+  previewMode = true;
+  previewOnClose = typeof onClose === 'function' ? onClose : null;
+  previewFlyMs = Number(flyMs) > 0 ? Number(flyMs) : TEST_FLY_MS;
+  const name = (p && p.title) || 'Untitled destination';
+
+  if (!p || !validCamera(p.camera)) { previewNoCoords(host, name); return true; }
+
+  // Preview profile drives destCamera()/showMapFallback(); the store is untouched.
+  const c = p.camera;
+  profile = {
+    title: name,
+    subtitle: p.subtitle || `${Number(c.center.lat).toFixed(4)}, ${Number(c.center.lng).toFixed(4)}`,
+    camera: {
+      center: {
+        lat: Number(c.center.lat), lng: Number(c.center.lng),
+        altitude: Number(c.center.altitude) || 0,
+      },
+      tilt: Number(c.tilt) || 45,
+      heading: Number(c.heading) || 0,
+      range: Number(c.range) || 2000,
+    },
+  };
+
+  overlayEl = document.createElement('div');
+  overlayEl.className = 'potw-overlay potw-preview';
+  overlayEl.innerHTML = `
+    <div class="potw-map-layer"></div>
+    <div class="potw-preview-label"><span class="tag">Test Flight</span>${esc(name)}</div>
+    <button type="button" class="potw-preview-close">✕ Close</button>`;
+  host.appendChild(overlayEl);
+  overlayEl.querySelector('.potw-preview-close').addEventListener('click', closePreview);
+
+  previewKeyHandler = (e) => { if (e.key === 'Escape') closePreview(); };
+  window.addEventListener('keydown', previewKeyHandler);
+
+  createMap3d();   // same map setup as the classroom voyage
+  gotoFlight();    // same flight code, short duration, preview suppressions
+  return true;
+}
+
+// Tear the preview down completely and hand control back to the caller.
+function closePreview() {
+  const cb = previewOnClose;
+  previewOnClose = null;
+  if (previewKeyHandler) {
+    try { window.removeEventListener('keydown', previewKeyHandler); } catch (e) {}
+    previewKeyHandler = null;
+  }
+  closeOverlay();          // timers, map element, overlay, audio
+  previewMode = false;
+  previewFlyMs = 0;
+  profile = null;
+  // If the POTW module itself isn't mounted, don't leave its styles behind.
+  if (!rootEl) { const st = document.getElementById('potw-styles'); if (st) st.remove(); }
+  if (cb) { try { cb(); } catch (e) { console.warn('potw: testFlight onClose failed', e); } }
+}
+
+// =============================================================================
 // Module contract
 // =============================================================================
 export default {
@@ -1312,6 +1736,11 @@ export default {
     clearTimers();
     disposeGlobe();
     destroyPresentation();
+    if (previewKeyHandler) {
+      try { window.removeEventListener('keydown', previewKeyHandler); } catch (e) {}
+      previewKeyHandler = null;
+    }
+    previewMode = false; previewOnClose = null; previewFlyMs = 0;
     try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
     if (videoEl) { try { videoEl.pause(); } catch (e) {} }
     destroyYtIntro();
@@ -1322,5 +1751,6 @@ export default {
     rootEl = null; profile = null;
     videoEl = null; songEl = null; mapReadyPromise = null;
     advanced = false; usingFallback = false; cardShown = false;
+  deckInfo = null; deckPromise = null;
   },
 };
