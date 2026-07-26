@@ -1585,6 +1585,49 @@ function openHouseResetConfirm(id) {
     }, { yesLabel: 'Reset house' });
 }
 
+// ---- Screen colours (a screen's own colour vs. following the active house) ----
+// Iterates store.MODULE_THEMES rather than naming dashboard/quests/houses by
+// hand, so a fourth screen the store adds later shows up here with no changes.
+function renderScreenColoursCard() {
+  const store = ctxRef.store;
+  const activeHouse = store.getActiveHouse();
+  const rows = Object.keys(store.MODULE_THEMES).map((id) => {
+    const t = store.getModuleTheme(id);   // { configurable, label, color, matchHouse }
+    // What the screen actually shows right now, for the preview swatch.
+    const usedNow = t.matchHouse ? (activeHouse ? activeHouse.accent : t.color) : t.color;
+    const followingNote = t.matchHouse
+      ? (activeHouse ? `following ${esc(activeHouse.name)} right now` : 'no house is up right now — showing its own colour')
+      : 'using its own colour';
+    return `
+      <div class="admin-shop-row">
+        <div class="admin-q-main">
+          <div class="admin-q-title">${esc(t.label)}</div>
+          <div class="admin-toggle-row" style="margin-top:6px">
+            <button class="admin-toggle${t.matchHouse ? ' on' : ''}" data-action="mct-match" data-module="${esc(id)}"
+              role="switch" aria-checked="${t.matchHouse}"><span class="admin-toggle-knob"></span></button>
+            <span class="admin-mini" style="margin:0">Match house colour <span class="admin-faint">— ${followingNote}</span></span>
+          </div>
+        </div>
+        <input type="color" class="admin-color-swatch-input admin-mct-color" data-module="${esc(id)}"
+          value="${esc(t.color)}" ${t.matchHouse ? 'disabled' : ''}
+          title="${t.matchHouse ? 'Turn off Match house colour to pick your own' : "Pick this screen's colour"}"
+          style="${t.matchHouse ? 'opacity:.4;cursor:not-allowed' : ''}" />
+        <span class="admin-house-swatch" id="admin-mct-swatch-${esc(id)}" style="background:${esc(usedNow)}" title="What this screen uses right now"></span>
+        <div class="admin-q-row-actions">
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="mct-reset" data-module="${esc(id)}">Reset</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎨 Screen colours</div>
+      <div class="admin-mini">Each screen below normally follows whichever house is up — the board glows red for Camelot, blue for Atlantis, gold for Valhalla, green for Rivendell. Turn <b>Match house colour</b> off to lock a screen to one colour all the time instead. That's handy because a screen cycling through four different colours every period can end up feeling like a different app each time — which is exactly why Quests already ships with its own bronze rather than borrowing whichever house happens to be up.</div>
+      <div class="admin-mct-list" style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${rows}</div>
+      <div class="admin-mini" style="margin-top:12px">🔒 <b>This only covers the screens listed above.</b> The Magic Shop, Battle Day, the Die of Destiny, the Council of Four and Place of the Week each have their own built-in colours baked into the app, and nothing here changes them.</div>
+    </div>`;
+}
+
 // ---- Quick award presets (one-tap buttons on the Records screen) ----------
 // Order here IS the button order on Records — the teacher builds muscle memory
 // around it, so reordering is a first-class action, not an afterthought.
@@ -1775,6 +1818,8 @@ function renderSettings() {
       </div>
 
       ${renderHousesCard()}
+
+      ${renderScreenColoursCard()}
 
       ${renderAwardPresetsCard()}
 
@@ -3975,6 +4020,24 @@ function onClick(e) {
     case 'house-save': saveHouseForm(); break;
     case 'house-close': houseForm = null; closeModal(); break;
 
+    // screen colours (own colour vs. following the active house)
+    case 'mct-match': {
+      const id = btn.dataset.module;
+      const cur = store.getModuleTheme(id);
+      store.setModuleTheme(id, { matchHouse: !cur.matchHouse });
+      renderBody({ force: true });
+      toast(`${cur.label} ${!cur.matchHouse ? 'now follows the active house.' : 'now keeps its own colour.'}`);
+      break;
+    }
+    case 'mct-reset': {
+      const id = btn.dataset.module;
+      const label = store.getModuleTheme(id).label;
+      store.resetModuleTheme(id);
+      renderBody({ force: true });
+      toast(`${label} colour reset to its shipped default.`);
+      break;
+    }
+
     // quick award presets (Records one-tap buttons)
     case 'award-new': openAwardForm(null); break;
     case 'award-edit': openAwardForm(btn.dataset.id); break;
@@ -4722,6 +4785,18 @@ export default {
           if (el('admin-house-accent-color')) el('admin-house-accent-color').value = norm;
           updateHouseAccentPreview(norm);
         }
+      }
+      else if (e.target.classList && e.target.classList.contains('admin-mct-color')) {
+        // Writes straight to the store — shell.js re-reads the accent on the
+        // next store change, so no local CSS-variable trick is needed here.
+        const id = e.target.dataset.module;
+        const hex = e.target.value;
+        ctxRef.store.setModuleTheme(id, { color: hex });
+        // Update the "used right now" swatch directly rather than waiting on a
+        // full renderBody(), which the mid-typing guard would skip anyway
+        // while this color input still has focus.
+        const sw = el(`admin-mct-swatch-${id}`);
+        if (sw) sw.style.background = hex;
       }
     };
     rootEl.addEventListener('input', inputHandler);

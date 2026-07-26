@@ -164,7 +164,12 @@ function injectStyles() {
   .quest-hero.quest-pop{animation:quest-pop-kf .6s cubic-bezier(.34,1.56,.64,1) both;}
   @keyframes quest-pop-kf{0%{transform:scale(1);}35%{transform:scale(1.02);}100%{transform:scale(1);}}
   .quest-hero-main{flex:1 1 min(560px,100%);min-width:0;display:flex;flex-direction:column;
-    gap:clamp(4px,.9vh,10px);}
+    gap:clamp(7px,1vh,10px);justify-content:center;}
+  /* The quest's own mark, same idea as on the cards — sized off the title so
+     the two read as one line rather than an icon parked beside a heading. */
+  .quest-hero-head{display:flex;align-items:baseline;gap:clamp(8px,1.2vw,16px);min-width:0;}
+  .quest-hero-icon{flex:0 0 auto;line-height:1;font-size:clamp(1.5rem,3.6vh,2.4rem);
+    filter:drop-shadow(0 4px 12px var(--hs,rgba(245,158,11,.5)));}
   .quest-hero-eyebrow{display:flex;align-items:center;gap:clamp(6px,1vw,12px);flex-wrap:wrap;
     font-size:clamp(1rem,1.8vh,1.25rem);font-weight:800;letter-spacing:.1em;text-transform:uppercase;
     color:var(--h,#f59e0b);}
@@ -479,21 +484,21 @@ function injectStyles() {
     .quest-head-icon,.quest-head-spacer{width:clamp(1.4rem,3.2vw,1.9rem);}
     .quest-head-title{font-size:clamp(1rem,2.2vw,1.4rem);}
 
-    /* active-quest hero: tighter padding/gaps and smaller type; the two
-       teacher buttons stay pinned at the 48px touch minimum */
-    .quest-hero{padding:clamp(6px,1vh,10px) clamp(10px,1.4vw,16px);gap:clamp(8px,1.2vw,14px);}
-    .quest-hero-main{gap:3px;}
+    /* Active-quest hero. Padding matches the CARDS exactly so the field reads
+       as the same family, and the row gaps are the card's gaps — the panel was
+       using its own tighter values, which is what made it look unrelated. The
+       two teacher buttons stay at the 48px touch minimum. */
+    .quest-hero{padding:clamp(16px,2.2vh,22px) clamp(16px,1.5vw,20px);gap:clamp(16px,1.5vw,20px);}
+    .quest-hero-main{gap:clamp(7px,1vh,10px);}
     .quest-hero-eyebrow{font-size:.875rem;}
     .quest-hero-crest{height:1.15rem;}
+    .quest-hero-icon{font-size:1.4rem;}
     .quest-hero-title{font-size:clamp(1.1rem,2.6vh,1.5rem);line-height:1.05;}
     .quest-hero-desc{font-size:.9rem;line-height:1.25;}
-    .quest-chip-row{padding-top:2px;}
-    .quest-chip{font-size:.875rem;padding:.2em .6em;}
-    .quest-hero-side{flex:0 0 180px;gap:4px;}
-    .quest-hero-points{font-size:1.4rem;}
-    .quest-hero-points small{font-size:.875rem;margin-top:0;}
-    .quest-teacher-bar{font-size:.875rem;}
-    .quest-act{min-height:48px;font-size:.9rem;}
+    .quest-chip{font-size:.875rem;}
+    /* Just the two buttons now, so the column is only as wide as they need. */
+    .quest-hero-side{flex:0 0 clamp(170px,16vw,210px);gap:clamp(7px,1vh,10px);justify-content:center;}
+    .quest-act{min-height:48px;font-size:.95rem;}
 
     /* "No quest yet" is the NORMAL state every Monday, so at 720p it earns a
        slim line, not a 104px dashed panel. It grows back into the full hero
@@ -583,9 +588,7 @@ function heroHtml(store, core) {
       </section>`;
   }
 
-  const penalty = penaltyOf(q);
   const pop = ui.celebrateCore === core ? ' quest-pop' : '';
-  const stillLocked = lock.isEnabled() && !lock.isUnlocked();
   return `
     <section class="quest-hero${pop}" style="--h:${screenAccent(store, house).color};--hs:${screenAccent(store, house).soft}">
       <div class="quest-hero-main">
@@ -594,21 +597,18 @@ function heroHtml(store, core) {
           <span>${esc(house.name)} · Quest in progress</span>
           <span class="quest-hero-timer">⏱ accepted ${esc(activeFor(q.startedTs))} ago</span>
         </div>
-        <h2 class="quest-hero-title">${esc(q.title)}</h2>
-        <p class="quest-hero-desc">${esc(q.desc || 'No description — ask Mr. D what this one takes.')}</p>
-        <div class="quest-chip-row">
-          ${repeatChip(q)}
-          <span class="quest-chip quest-chip-penalty">✗ Giving up costs ${penalty} pts</span>
+        <div class="quest-hero-head">
+          <span class="quest-hero-icon">${store.questIcon(q)}</span>
+          <h2 class="quest-hero-title">${esc(q.title)}</h2>
         </div>
+        <p class="quest-hero-desc">${esc(q.desc || 'No description — ask Mr. D what this one takes.')}</p>
       </div>
       <div class="quest-hero-side">
-        <div class="quest-hero-points">${q.points}<small>points</small></div>
-        <div class="quest-teacher-bar">${stillLocked ? '🔒' : '🗝️'} Teacher only</div>
         <button type="button" class="quest-act quest-act-done" data-q="complete" data-core="${core}">
-          ✓ Mark Complete
+          ✓ Complete +${q.points}
         </button>
         <button type="button" class="quest-act quest-act-fail" data-q="fail" data-core="${core}">
-          ✗ Give Up <small>−${penalty} pts</small>
+          ✗ Give Up
         </button>
       </div>
     </section>`;
