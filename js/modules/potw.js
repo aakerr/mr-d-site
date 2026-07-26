@@ -477,10 +477,22 @@ function createYtPlayer(YT, videoId) {
       onReady: (e) => {
         killYtCaptions(e.target);        // keep sound; captions off (best-effort)
         try { e.target.playVideo(); } catch (x) {}
+        // Backstop: if PLAYING never arrives (blocked autoplay the teacher then
+        // resolves, or a dropped event), show the player anyway rather than
+        // leaving a black box for the whole intro.
+        later(revealYtPlayer, 2500);
       },
       onStateChange: onYtStateChange,
     },
   });
+}
+
+// Fade the player in once it is genuinely playing. A safety timer also reveals
+// it regardless, so a missed PLAYING event can never leave a black rectangle
+// where the intro should be — better a visible glyph than no video at all.
+function revealYtPlayer() {
+  const box = ytIntroEl && ytIntroEl.querySelector('.potw-yt-box');
+  if (box) box.classList.add('is-live');
 }
 
 function onYtStateChange(e) {
@@ -488,6 +500,7 @@ function onYtStateChange(e) {
   if (!YT || !YT.PlayerState) return;
   if (e.data === YT.PlayerState.PLAYING) {
     killYtCaptions(ytPlayer);            // captions load with playback — kill them now
+    revealYtPlayer();                    // now it's really playing, fade it up
     armYtSafety();   // safety auto-advance once real duration is known
     startYtPoll();   // last-2s card poll + continuous caption suppression
   } else if (e.data === YT.PlayerState.ENDED) {
@@ -532,6 +545,9 @@ function startYouTubePlainFallback(url) {
   ifr.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
   ifr.src = src;
   box.appendChild(ifr);
+  // No API here, so no PLAYING event will ever arrive — reveal it directly or
+  // the hide-until-playing rule would leave this path permanently black.
+  revealYtPlayer();
   later(advanceToReveal, YT_PLAIN_FALLBACK_S * 1000);
 }
 
@@ -1649,7 +1665,12 @@ function injectStyles() {
     overflow:hidden;background:#000;}
   .potw-yt-box iframe,.potw-yt-box .potw-yt-player{position:absolute !important;top:50% !important;
     left:50% !important;transform:translate(-50%,-50%) !important;height:calc(100% + var(--yt-crop,120px)) !important;
-    width:auto !important;aspect-ratio:16 / 9 !important;border:0 !important;background:#000;pointer-events:none;}
+    width:auto !important;aspect-ratio:16 / 9 !important;border:0 !important;background:#000;pointer-events:none;
+    /* Held invisible until the player reports PLAYING (.is-live below). The box
+       behind is already black, so the buffering frames — and any paused glyph
+       YouTube draws before playback truly starts — happen out of sight. */
+    opacity:0;transition:opacity .45s ease;}
+  .potw-yt-box.is-live iframe,.potw-yt-box.is-live .potw-yt-player{opacity:1;}
   .potw-song{position:absolute;inset:0;display:none;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;
     background:radial-gradient(ellipse at 50% 40%,#111827,#000 72%);}
@@ -2069,6 +2090,15 @@ export default {
     rootEl = el;
     injectStyles();
     renderLaunch();
+    // Warm the YouTube IFrame API now, while the teacher is still looking at
+    // the launch button. Fetching it on the launch CLICK meant the player was
+    // built in a promise callback a second or more later — by then the click's
+    // transient activation can be gone, unmuted autoplay is refused, and the
+    // player renders its paused state until our playVideo() kicks it. That is
+    // the pause glyph. Pre-warming makes the promise resolve instantly, so the
+    // player is created while the gesture still counts. Failure is harmless:
+    // startYouTubeIntro re-requests it and falls back to a plain iframe.
+    try { loadYouTubeApi().catch(() => {}); } catch (e) { /* never block mount */ }
   },
 
   unmount() {
