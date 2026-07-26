@@ -7,6 +7,7 @@ import { media } from '../core/media.js';
 import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
 import { lock } from '../core/lock.js';
+import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
 
 const STYLE_ID = 'shop-styles';
 const PURPLE = '#a78bfa';
@@ -22,6 +23,7 @@ let clickHandler = null;
 let currentRenderFn = null; // set while mounted; lets async media loads trigger a re-render
 let activeWildRollDispose = null; // dispose fn for an in-flight dice3d roll, cleared on settle/unmount
 let wildRollActive = false; // true from purchase-confirm through overlay teardown — blocks a second concurrent roll
+let carouselTeardown = null; // teardown fn from wireCarousel — torn down before every re-render and on unmount
 const timers = new Set();
 const fxNodes = new Set();  // transient combat-effect DOM nodes, force-cleaned on unmount
 
@@ -284,6 +286,35 @@ function injectStyles() {
   .shop-target-thumb img{width:100%;height:100%;object-fit:cover;}
   .shop-target-cancel{min-height:44px;padding:0 .9rem;border-radius:.75rem;background:transparent;
     border:1px solid #4b5563;color:#9ca3af;font-weight:600;cursor:pointer;}
+
+  /* ---- carousel layout — opt-in alternative to .shop-grid above, toggled via
+     store.getLayout('shop'); the grid itself is untouched by any of this.
+     ONE strip across every buyable item (offensive+defensive+wildcards+
+     broken), not one strip per section: stacking a carousel per section would
+     just trade the page's one vertical scroll for three or four, which is
+     exactly what this layout exists to remove for a teacher standing at the
+     board. Each card still prints its own kind-tag (Attack/Defense/Wildcard/
+     Unavailable), so the category read survives without a section header. */
+  .shop-carousel-outer{max-width:1200px;margin:0 auto 1.75rem;
+    height:clamp(460px,58vh,520px);display:flex;
+    --carousel-card-w:clamp(215px,18vw,250px);--carousel-card-maxh:440px;}
+
+  /* Card content at this narrower width: .shop-card-name, .shop-kind-tag,
+     .shop-flavor and .shop-card-status (above) already reserve a fixed height
+     with flex-shrink:0 — that was already built to survive a fixed card
+     height, so none of them needed retuning to avoid the quest carousel's
+     "crushed description" bug. The one child that did NOT reserve space is
+     the attack/pierce target-picker: at 250px wide its house chips wrap to
+     multiple rows, and without flex-shrink:0 that block would get squeezed
+     instead of simply wrapping taller. It also loses its thumbnail and shrinks
+     its chips so two fit per row instead of one, keeping the tallest
+     (mid-pick) state within the same reserved card height as every other
+     card in the strip. */
+  .shop-carousel-outer .shop-target-picker,
+  .shop-carousel-outer .shop-target-cancel{flex-shrink:0;}
+  .shop-carousel-outer .shop-target-thumb{display:none;}
+  .shop-carousel-outer .shop-target-chip{min-height:40px;padding:0 .5rem;font-size:.72rem;white-space:nowrap;}
+  .shop-carousel-outer .shop-target-cancel{min-height:38px;font-size:.85rem;}
 
   /* confirm modal */
   .shop-modal-backdrop{position:fixed;inset:0;z-index:65;background:rgba(0,0,0,.72);
@@ -751,6 +782,16 @@ function sectionHtml(title, items, store, s, buyerId) {
     </div>`;
 }
 
+// Carousel layout — see the rationale comment above .shop-carousel-outer in
+// injectStyles(): ONE strip across every buyable item, in the same
+// offensive/defensive/wildcard/broken order the grid uses for its sections,
+// rather than one strip per section.
+function carouselBodyHtml(items, store, s, buyerId) {
+  if (!items.length) return '';
+  const cardsHtml = items.map((it) => itemCard(store, s, it, buyerId)).join('');
+  return `<div class="shop-carousel-outer">${carouselHtml(cardsHtml, { label: 'shop items' })}</div>`;
+}
+
 function mythicSectionHtml(mythicItems) {
   if (!mythicItems.length) return '';
   return `
@@ -773,6 +814,13 @@ function mythicSectionHtml(mythicItems) {
 function render(s) {
   if (!rootEl) return;
   const store = ctxRef.store;
+  const layout = store.getLayout('shop'); // 'grid' (default, untouched) | 'carousel'
+  // Capture scroll position (if a strip is currently mounted) and tear down its
+  // listeners BEFORE the DOM underneath them is replaced — re-wired below,
+  // after the new strip exists, so the wireCarousel scroll/click listeners
+  // never accumulate across renders (a purchase re-renders this screen).
+  const prevCarouselScrollLeft = carouselScrollLeft(rootEl);
+  if (carouselTeardown) { carouselTeardown(); carouselTeardown = null; }
   const buyer = store.getActiveHouse();
   const items = store.getShopItems();
   const mythic = items.filter((it) => it.mythicOnly && !itemIssues(it).length);
@@ -816,12 +864,14 @@ function render(s) {
           onerror="this.style.visibility='hidden'" />
       </div>
 
-      ${anyBuyable ? `
-        ${sectionHtml('⚔️ Offensive', offensive, store, s, buyerId)}
-        ${sectionHtml('🛡️ Defensive', defensive, store, s, buyerId)}
-        ${sectionHtml('🎲 Wildcards', wildcards, store, s, buyerId)}
-        ${sectionHtml('⚠️ Needs Attention', broken, store, s, buyerId)}
-      ` : '<div class="shop-empty">The shop shelves are empty — check back after your teacher stocks it in Admin.</div>'}
+      ${anyBuyable ? (layout === 'carousel'
+        ? carouselBodyHtml([...offensive, ...defensive, ...wildcards, ...broken], store, s, buyerId)
+        : `
+          ${sectionHtml('⚔️ Offensive', offensive, store, s, buyerId)}
+          ${sectionHtml('🛡️ Defensive', defensive, store, s, buyerId)}
+          ${sectionHtml('🎲 Wildcards', wildcards, store, s, buyerId)}
+          ${sectionHtml('⚠️ Needs Attention', broken, store, s, buyerId)}
+        `) : '<div class="shop-empty">The shop shelves are empty — check back after your teacher stocks it in Admin.</div>'}
 
       ${mythicSectionHtml(mythic)}
     `;
@@ -841,6 +891,9 @@ function render(s) {
     headings: rootEl.querySelector('.shop-headings'),
     pill: rootEl.querySelector('.shop-treasury'),
   });
+  if (layout === 'carousel') {
+    carouselTeardown = wireCarousel(rootEl, { restoreLeft: prevCarouselScrollLeft });
+  }
 }
 
 // =============================================================================
@@ -1292,6 +1345,7 @@ export default {
     ctxRef = ctx;
     rootEl = el;
     injectStyles();
+    injectCarouselStyles();
     const store = ctx.store;
     const s = initState();
 
@@ -1373,6 +1427,7 @@ export default {
     if (unsub) { unsub(); unsub = null; }
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     clickHandler = null;
+    if (carouselTeardown) { carouselTeardown(); carouselTeardown = null; }
     rootEl = null;
     ctxRef = null;
     currentRenderFn = null;

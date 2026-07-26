@@ -720,7 +720,7 @@ const TOPICS = [
   },
   {
     id: 'admin-settings', cat: 'admin', title: 'Settings',
-    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets',
+    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets layout carousel grid',
     body: () => `
       <ul class="help-list">
         <li><b>Term Timeline</b> — the Monday your term starts and how many weeks it runs. This drives "Week N of M" in the top bar and the term totals. ${termLine()}</li>
@@ -728,6 +728,7 @@ const TOPICS = [
         <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
         <li><b>⚡ Quick award buttons</b> — the one-tap awards that appear on the Records screen. Edit the labels and point values to match what you actually say in class.</li>
         <li><b>🎨 Screen colours</b> — lock the Home screen, Quests or Records to one fixed colour instead of following whichever house is active. <a href="#" data-help-go="screen-colours">More →</a></li>
+        <li><b>🗂️ Screen layout</b> — show Quests and the Magic Shop as a scrolling grid or a one-card-at-a-time carousel. Purely visual. <a href="#" data-help-go="screen-layout">More →</a></li>
         <li><b>Maps API key</b> — leave blank unless you have your own. <a href="#" data-help-go="maps-key">More →</a></li>
         <li><b>Backup &amp; Restore</b> — connect a folder, save now, restore the latest backup. <a href="#" data-help-go="data-backup">More →</a></li>
         <li><b>⚠️ Danger Zone</b> — wipes everything and starts over. You have to type <b>RESET</b> to confirm, and there is no undo.</li>
@@ -879,6 +880,31 @@ const TOPICS = [
         <p class="help-callout">Why bother switching it off? A screen that recolours itself every single period can start to feel like four different apps rather than one. That is exactly why the <b>Quests</b> board ships already locked to its own bronze, instead of cycling through the house colours the way the Home screen and Records do.</p>
         <p class="help-warn"><b>This only covers the three screens above.</b> The Magic Shop, Battle Day, the Die of Destiny, the Council of Four and Place of the Week each have their own colours built into the app — nothing in Screen colours changes any of those.</p>
         <p><b>Reset</b> next to a screen puts it back the way it shipped.</p>
+      `;
+    },
+  },
+  {
+    id: 'screen-layout', cat: 'setup', title: 'Grid or carousel: how Quests and the Magic Shop are shown',
+    keywords: 'layout carousel grid scroll swipe view quests shop cards smartboard arrows one at a time board',
+    body: () => {
+      let rows = '';
+      try {
+        rows = Object.entries(store.LAYOUT_SCREENS || {}).map(([id, def]) => {
+          const layout = store.getLayout(id);
+          return `<li><b>${esc(def.label)}</b> — <span class="help-muted">set to ${layout === 'carousel' ? 'Carousel' : 'Grid'} right now</span></li>`;
+        }).join('');
+      } catch (e) { rows = ''; }
+      return `
+        <p><b>🗝️ Admin → ⚙️ Settings → 🗂️ Screen layout.</b></p>
+        <p>Two screens read this setting:</p>
+        <ul class="help-list">${rows || '<li class="help-muted">Not available right now.</li>'}</ul>
+        <p>Each one has a two-button switch:</p>
+        <ul class="help-list">
+          <li><b>▦ Grid (the default)</b> — several cards on screen at once. Best for scanning a longer list of quests or shop items.</li>
+          <li><b>◗ Carousel</b> — one big card at a time with arrows on either side to move through the rest. Nothing to scroll up and down, which is the whole point at a smartboard — you're standing at the front of the room, not holding a mouse.</li>
+        </ul>
+        <p class="help-callout">This is a pure look-and-feel switch. Point values, quest catalogues, shop costs and everything they do stay exactly the same either way — you're only choosing how the cards are arranged on screen.</p>
+        <p>Switching takes effect the moment you tap it; there's nothing else to save.</p>
       `;
     },
   },

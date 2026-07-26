@@ -1628,6 +1628,33 @@ function renderScreenColoursCard() {
     </div>`;
 }
 
+// ---- Screen layout (grid vs. carousel) ------------------------------------
+// Iterates store.LAYOUT_SCREENS rather than naming Quests/Shop by hand, so a
+// third screen the store adds later shows up here with no changes.
+function renderScreenLayoutCard() {
+  const store = ctxRef.store;
+  const rows = Object.entries(store.LAYOUT_SCREENS).map(([id, def]) => {
+    const layout = store.getLayout(id);
+    return `
+      <div class="admin-shop-row">
+        <div class="admin-q-main">
+          <div class="admin-q-title">${esc(def.label)}</div>
+        </div>
+        <div class="admin-seg admin-theme-seg" style="margin:0">
+          <button class="admin-theme-opt${layout === 'grid' ? ' on' : ''}" data-action="screen-layout" data-screen="${esc(id)}" data-layout="grid">▦ Grid</button>
+          <button class="admin-theme-opt${layout === 'carousel' ? ' on' : ''}" data-action="screen-layout" data-screen="${esc(id)}" data-layout="carousel">◗ Carousel</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🗂️ Screen layout</div>
+      <div class="admin-mini">A grid shows several cards at once, which is best for scanning a long list. A carousel shows one big card at a time with arrows to move through the rest — handy at a smartboard, where scrolling up and down isn't really an option. <b>Grid is the default.</b> This only changes how the screen looks — nothing about points, costs or quests changes.</div>
+      <div class="admin-mct-list" style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${rows}</div>
+    </div>`;
+}
+
 // ---- Quick award presets (one-tap buttons on the Records screen) ----------
 // Order here IS the button order on Records — the teacher builds muscle memory
 // around it, so reordering is a first-class action, not an afterthought.
@@ -1820,6 +1847,8 @@ function renderSettings() {
       ${renderHousesCard()}
 
       ${renderScreenColoursCard()}
+
+      ${renderScreenLayoutCard()}
 
       ${renderAwardPresetsCard()}
 
@@ -4035,6 +4064,17 @@ function onClick(e) {
       store.resetModuleTheme(id);
       renderBody({ force: true });
       toast(`${label} colour reset to its shipped default.`);
+      break;
+    }
+
+    // screen layout (grid vs. carousel)
+    case 'screen-layout': {
+      const id = btn.dataset.screen;
+      const layout = btn.dataset.layout;
+      const label = store.LAYOUT_SCREENS[id] ? store.LAYOUT_SCREENS[id].label : id;
+      store.setLayout(id, layout);
+      renderBody({ force: true });
+      toast(`${label} set to ${layout === 'carousel' ? 'Carousel' : 'Grid'}.`);
       break;
     }
 

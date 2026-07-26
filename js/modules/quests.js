@@ -21,6 +21,7 @@
 
 import { fitMastheadWhenReady } from '../core/masthead.js';
 import { lock } from '../core/lock.js';
+import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
 
 const STYLE_ID = 'quest-styles';
 
@@ -34,13 +35,14 @@ let lockHandler = null;
 let tickTimer = null;
 const timers = new Set();
 const fxNodes = new Set();
+let carTeardown = null;   // teardown returned by the shared wireCarousel(), re-armed every render
 
 // per-mount UI state
 let ui = null;   // { modal: null | {...}, sortAsc: bool, celebrateCore: number|null }
 let lastBoardW = 0;   // last measured grid width, reused when the carousel hides the grid
 
 function initUi() {
-  return { modal: null, sortAsc: false, celebrateCore: null, layout: 'grid' };
+  return { modal: null, sortAsc: false, celebrateCore: null };
 }
 
 function later(fn, ms) {
@@ -235,11 +237,16 @@ function injectStyles() {
   .quest-all-time{color:var(--color-text-soft,#9ca3af);font-size:clamp(.95rem,1.6vh,1.05rem);}
 
   /* ---- QUEST BOARD ---- */
-  .quest-board{--bgap:clamp(6px,1vh,12px);flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--bgap);
+  /* Sizing for the SHARED carousel engine (js/core/carousel.js) — it reads
+     these two variables off any ancestor of the strip. Same numbers the
+     prototype used, so switching a teacher over to the shared engine changes
+     nothing about how the board looks. */
+  .quest-board{--bgap:clamp(6px,1vh,12px);--carousel-card-w:clamp(215px,18vw,250px);--carousel-card-maxh:340px;
+    flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--bgap);
     /* One full card-gap between the active-quest field and the header row. */
     margin-top:calc(1.1rem - var(--rgap));}
   /* And the same again between the header row and the first row of cards. */
-  .quest-grid,.quest-carousel-wrap{margin-top:calc(1.1rem - var(--bgap));}
+  .quest-grid,.car-wrap{margin-top:calc(1.1rem - var(--bgap));}
   .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
   /* Its own class, NOT .quest-head-spacer: that one is a fixed-width mirror of
      the masthead's scroll icon and must stay fixed or the title stops being
@@ -336,73 +343,39 @@ function injectStyles() {
   .quest-deed{flex-shrink:0;display:flex;align-items:center;gap:.6em;border-radius:.8rem;
     border:1px solid var(--color-line,#374151);border-left:5px solid var(--h,#6b7280);
     background:var(--color-card2,#1f2937);padding:.4em .8em;max-width:clamp(200px,22vw,300px);}
-  /* ---- PROTOTYPE: carousel layout (see boardHtml) ----
-     scroll-snap does the work; no library, and touch swipe on the smartboard
-     comes free. The centre card is found on scroll and scaled up. */
-  .quest-layout-toggle{flex-shrink:0;border:1px solid var(--color-line,#374151);background:transparent;
-    color:var(--color-text-soft,#9ca3af);border-radius:999px;cursor:pointer;font-family:inherit;
-    font-size:.8rem;padding:.3em .8em;min-height:32px;}
-  .quest-layout-toggle:hover{color:var(--color-text,#f9fafb);border-color:var(--accent,#f59e0b);}
-  .quest-carousel-wrap{flex:1;min-height:0;position:relative;display:flex;align-items:center;}
-  .quest-carousel{flex:1;min-width:0;height:100%;display:flex;align-items:center;
-    gap:clamp(10px,1.4vw,20px);overflow-x:auto;overflow-y:hidden;
-    /* NO scroll-behavior:smooth here — with scroll-snap:mandatory it swallows
-       programmatic scrolls entirely and the arrows do nothing. The arrows pass
-       behavior:'smooth' to scrollIntoView instead, which animates correctly. */
-    scroll-snap-type:x mandatory;
-    /* Half a card, so the first and last can still reach dead centre. Must
-       track the card width above or the snap lands off-centre. */
-    /* Bottom pad is the counter's lane — without it the cards run underneath
-       "7 of 20" once an active quest shortens this band. */
-    padding:clamp(6px,1vh,12px) calc(50% - clamp(107px,9vw,125px)) clamp(20px,3vh,26px);
-    scrollbar-width:none;}
-  .quest-carousel::-webkit-scrollbar{display:none;}
-  /* Portrait, not landscape. Five cards across a 1280 board — the reference
-     mockup's proportions — instead of three wide ones, which is what made the
-     first pass look nothing like it. */
-  .quest-carousel .quest-card{flex:0 0 clamp(215px,18vw,250px);height:100%;max-height:340px;
-    scroll-snap-align:center;text-align:center;
-    transform:scale(.84);opacity:.42;filter:saturate(.6);
-    transition:transform .28s ease,opacity .28s ease,filter .28s ease,border-color .28s ease;
-    transform-origin:center center;}
-  /* The centre card has to win clearly — in the reference it is the only one
-     you read. Scale alone was too subtle at this size, so it also takes the
-     house colour and the glow while its neighbours desaturate. */
-  /* Scale 1, NOT >1: when a quest is active the hero shortens this band, and a
-     scaled-up focus card spilled past it and collided with the counter. The
-     contrast comes from the neighbours shrinking and desaturating instead. */
-  .quest-carousel .quest-card.is-focus{transform:scale(1);opacity:1;filter:none;
-    border-color:var(--h,#f59e0b);border-width:3px;
+  /* ---- carousel layout: quest-card internals only ----
+     The strip, arrows, counter and focus-scaling now live in the shared
+     js/core/carousel.js (injectCarouselStyles / carouselHtml / wireCarousel).
+     Everything below is genuinely about a QUEST CARD specifically, scoped to
+     .car-strip > .quest-card — the shared engine has no idea what a quest
+     card's internals look like, and never should. */
+  /* Quest-accent highlight on the focused card. The shared engine only does
+     scale/opacity/filter (generic to any card); the coloured glow uses this
+     card's own --h/--hs, which is quest-specific. */
+  .car-strip > .quest-card.is-focus{border-color:var(--h,#f59e0b);border-width:3px;
     box-shadow:0 0 40px var(--hs,rgba(245,158,11,.6)),0 20px 48px rgba(0,0,0,.6);}
-  /* Card contents restack into a column so the art leads, like the Magic Shop. */
-  .quest-carousel .quest-card-top{flex-direction:column;align-items:center;gap:.35em;}
-  .quest-carousel .quest-type-icon{font-size:clamp(2.6rem,7vh,3.6rem);line-height:1;
+  /* Card contents restack into a column so the art leads, like the Magic Shop —
+     needed because the carousel card is narrow and tall, unlike the grid's. */
+  .car-strip > .quest-card{text-align:center;}
+  .car-strip > .quest-card .quest-card-top{flex-direction:column;align-items:center;gap:.35em;}
+  .car-strip > .quest-card .quest-type-icon{font-size:clamp(2.6rem,7vh,3.6rem);line-height:1;
     filter:drop-shadow(0 6px 16px var(--hs,rgba(245,158,11,.45)));margin-bottom:.1em;}
-  .quest-carousel .quest-card-title{text-align:center;font-size:clamp(.95rem,2vh,1.15rem);}
+  /* Title: centred, and clamped to two lines so a long one can't push the
+     description out of the fixed-height card below. */
+  .car-strip > .quest-card .quest-card-title{text-align:center;font-size:clamp(.95rem,2vh,1.15rem);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   /* The card is a fixed-height flex column, so the description — the only
      freely shrinkable child — lost the fight and collapsed to a few pixels
      once the padding grew. Reserve exactly three lines and refuse to shrink;
      overflow:hidden clips cleanly even where -webkit-line-clamp is ignored. */
-  .quest-carousel .quest-card-desc{font-size:clamp(.8rem,1.5vh,.92rem);line-height:1.3;
+  .car-strip > .quest-card .quest-card-desc{font-size:clamp(.8rem,1.5vh,.92rem);line-height:1.3;
     flex:0 0 auto;height:3.9em;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
-  /* Title gets two lines at most, so a long one can't push the description out. */
-  .quest-carousel .quest-card-title{display:-webkit-box;-webkit-line-clamp:2;
-    -webkit-box-orient:vertical;overflow:hidden;}
-  /* Matches the grid's Accept button exactly — the carousel had its own taller
-     value, so the same control was two different sizes depending on the view. */
-  .quest-carousel .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;
+  /* Matches the grid's Accept button exactly — this used to be a separate,
+     taller value forked in the prototype's own CSS, so the same control was
+     two different heights depending on the view. */
+  .car-strip > .quest-card .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;
     min-height:clamp(32px,3.6vh,38px);}
-  .quest-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;
-    width:44px;height:44px;border-radius:999px;cursor:pointer;
-    border:1px solid var(--color-line,#374151);background:rgba(17,24,39,.9);
-    color:var(--accent,#f59e0b);font-size:1.6rem;line-height:1;
-    display:flex;align-items:center;justify-content:center;}
-  .quest-carousel-arrow:hover{border-color:var(--accent,#f59e0b);background:var(--color-card2,#1f2937);}
-  .quest-carousel-prev{left:0;}
-  .quest-carousel-next{right:0;}
-  .quest-carousel-counter{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
-    color:var(--color-text-soft,#9ca3af);font-size:.8rem;font-variant-numeric:tabular-nums;}
 
   /* Running total, sat next to the deeds it comes from. Pinned left of the
      strip so it never scrolls away with the entries. */
@@ -526,7 +499,6 @@ function injectStyles() {
     /* The board header's height is set by this control, so trimming it is what
        actually returns rows to the grid. Still a comfortable tap target. */
     .quest-sort{min-height:30px;font-size:.82rem;padding:.2em .7em;border-radius:999px;}
-    .quest-layout-toggle{min-height:30px;font-size:.76rem;}
     .quest-lockbar{font-size:.9rem;padding:.35em .7em;}
     /* Deliberately LOOSER than before (was 7px/4px). The cards read as cramped;
        the room comes from the trimmed empty hero above, not from the grid. */
@@ -685,17 +657,12 @@ function boardHtml(store, core) {
       </div>`;
   }).join('') : `<div class="quest-empty">Every quest is taken or retired. Mr. D can add more in Admin → Quests.</div>`;
 
-  // PROTOTYPE: two layouts side by side so the choice is made against the real
-  // board at 1280x720, not a mockup. Whichever loses gets deleted — this
-  // toggle is not meant to ship.
-  const carousel = ui.layout === 'carousel';
+  // Teacher-chosen layout (Admin), not a per-visit toggle. The shared engine
+  // (js/core/carousel.js) owns the strip/arrows/counter/focus; this file only
+  // supplies the cards themselves, identically to the grid.
+  const carousel = store.getLayout('quests') === 'carousel';
   const body = carousel
-    ? `<div class="quest-carousel-wrap">
-         <button type="button" class="quest-carousel-arrow quest-carousel-prev" data-q="carousel-prev" aria-label="Previous quests">‹</button>
-         <div class="quest-carousel" data-carousel>${cards}</div>
-         <button type="button" class="quest-carousel-arrow quest-carousel-next" data-q="carousel-next" aria-label="More quests">›</button>
-         <div class="quest-carousel-counter" data-carousel-counter></div>
-       </div>`
+    ? carouselHtml(cards, { label: 'quests' })
     : `<div class="quest-grid">${cards}</div>`;
 
   return `
@@ -703,7 +670,6 @@ function boardHtml(store, core) {
       <div class="quest-board-head">
         <span class="quest-board-title">📜 Quests to Choose From</span>
         <span class="quest-board-count">${quests.length} available</span>
-        <button type="button" class="quest-layout-toggle" data-q="layout" title="Prototype: switch between the grid and the carousel">${carousel ? '▦ Try grid' : '◗ Try carousel'}</button>
         <div class="quest-head-push"></div>
         <button type="button" class="quest-sort" data-q="sort">Points ${ui.sortAsc ? '▲ low first' : '▼ high first'}</button>
       </div>
@@ -834,9 +800,14 @@ function render() {
   // scroll, so a teacher reading halfway down the quest list got yanked back
   // to the top roughly once a minute. Carry the position across the rebuild.
   const prevGrid = rootEl.querySelector('.quest-grid');
-  const prevStrip = rootEl.querySelector('[data-carousel]');
   const keepTop = prevGrid ? prevGrid.scrollTop : 0;
-  const keepLeft = prevStrip ? prevStrip.scrollLeft : 0;
+  const keepLeft = carouselScrollLeft(rootEl);
+  // Tear down the previous wiring BEFORE the DOM it's attached to is replaced:
+  // wireCarousel() binds its click listener to the ROOT we pass it (so arrow
+  // clicks work no matter where in the strip they land), and that root is
+  // rootEl itself, which survives this innerHTML replace. Without an explicit
+  // teardown here the click listener would stack a new one on every render.
+  if (carTeardown) { carTeardown(); carTeardown = null; }
   rootEl.innerHTML = `
     <div class="quest-root">
       ${headerHtml(store, core)}
@@ -853,19 +824,14 @@ function render() {
     // No pill any more — the masthead fitter tolerates a null here.
   });
 
-  // Restore the board position captured above, before paint so it never flashes.
+  // Restore the grid's scroll position captured above, before paint so it
+  // never flashes. The carousel's own position is restored by wireCarousel()
+  // below via restoreLeft, using the same plain (non-smooth) assignment.
   const grid = rootEl.querySelector('.quest-grid');
   if (grid && keepTop) grid.scrollTop = keepTop;
-  const strip = rootEl.querySelector('[data-carousel]');
-  if (strip && keepLeft) {
-    // scroll-behavior:smooth would animate this restore into a visible slide.
-    const prevBehavior = strip.style.scrollBehavior;
-    strip.style.scrollBehavior = 'auto';
-    strip.scrollLeft = keepLeft;
-    strip.style.scrollBehavior = prevBehavior;
-  }
   syncBoardWidth();
-  wireCarousel();
+  // No-ops safely when this render is a grid (no [data-car-strip] to find).
+  carTeardown = wireCarousel(rootEl, { restoreLeft: keepLeft });
 }
 
 // Publish the grid's real content width so the hero, lockbar, board header and
@@ -896,37 +862,6 @@ function syncBoardWidth() {
   const w = cols.reduce((a, b) => a + b, 0) + gap * (cols.length - 1);
   lastBoardW = w;
   root.style.setProperty('--board-w', `${w}px`);
-}
-
-// PROTOTYPE (see boardHtml). Marks whichever card is nearest the centre so it
-// can scale up, and keeps the "3 of 20" counter honest. Re-wired on every
-// render because innerHTML replaces the strip each time.
-function wireCarousel() {
-  const strip = rootEl && rootEl.querySelector('[data-carousel]');
-  if (!strip) return;
-  const counter = rootEl.querySelector('[data-carousel-counter]');
-  const cards = [...strip.querySelectorAll('.quest-card')];
-  if (!cards.length) return;
-
-  const mark = () => {
-    const mid = strip.getBoundingClientRect().left + strip.clientWidth / 2;
-    let best = 0, bestD = Infinity;
-    cards.forEach((c, i) => {
-      const b = c.getBoundingClientRect();
-      const d = Math.abs((b.left + b.width / 2) - mid);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    cards.forEach((c, i) => c.classList.toggle('is-focus', i === best));
-    strip.dataset.idx = String(best);   // keep the arrows in step with a swipe
-    if (counter) counter.textContent = `${best + 1} of ${cards.length}`;
-  };
-
-  let raf = null;
-  strip.addEventListener('scroll', () => {
-    if (raf) return;
-    raf = requestAnimationFrame(() => { raf = null; mark(); });
-  });
-  mark();
 }
 
 // =============================================================================
@@ -1067,36 +1002,9 @@ function onClick(e) {
       render();
       break;
 
-    // ---- PROTOTYPE carousel controls (remove with the losing layout) ----
-    case 'layout':
-      ui.layout = ui.layout === 'carousel' ? 'grid' : 'carousel';
-      render();
-      break;
-
-    case 'carousel-prev':
-    case 'carousel-next': {
-      // scrollBy() loses an argument with scroll-snap:mandatory — the snap
-      // engine pulls a partial delta straight back to the current card, so the
-      // arrows did nothing. Move by INDEX and let scrollIntoView land on the
-      // snap point that already exists.
-      const strip = rootEl.querySelector('[data-carousel]');
-      if (!strip) break;
-      const cards = [...strip.querySelectorAll('.quest-card')];
-      if (!cards.length) break;
-      // Index lives on the element, not inferred from .is-focus: that class is
-      // set by the scroll listener a frame later, so reading it back made every
-      // click after the first compute the same "current" card and stand still.
-      const cur = Number(strip.dataset.idx || 0);
-      const next = Math.min(cards.length - 1, Math.max(0, cur + (action === 'carousel-next' ? 1 : -1)));
-      strip.dataset.idx = String(next);
-      // PLAIN assignment only. On a scroll-snap:mandatory container in this
-      // engine, ANY smooth scroll — scrollBy, scrollIntoView, or scrollTo with
-      // behavior:'smooth' — is swallowed and the strip never moves (measured:
-      // smooth left it at 0, the identical plain assignment reached 1241).
-      // The card-to-card jump is instant, which reads fine at this size.
-      strip.scrollLeft = cards[next].offsetLeft - (strip.clientWidth - cards[next].offsetWidth) / 2;
-      break;
-    }
+    // Carousel prev/next/focus-tracking clicks are handled entirely inside
+    // wireCarousel() (js/core/carousel.js), which binds its own listener to
+    // rootEl — they never reach this switch.
 
     case 'accept': {
       const core = store.getState().activeCore;
@@ -1151,6 +1059,7 @@ export default {
     rootEl = el;
     ui = initUi();
     injectStyles();
+    injectCarouselStyles();
     render();
 
     clickHandler = onClick;
@@ -1177,6 +1086,7 @@ export default {
     clearFx();
     if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
     if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
+    if (carTeardown) { carTeardown(); carTeardown = null; }
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     if (keyHandler) document.removeEventListener('keydown', keyHandler);
     if (lockHandler) window.removeEventListener('lock:changed', lockHandler);

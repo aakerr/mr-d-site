@@ -53,6 +53,18 @@ const MODULE_THEMES = {
   houses:    { label: 'Records',     color: '#f59e0b', matchHouse: true },
 };
 
+// Screens that can be shown either as a scrolling grid or as a horizontal
+// carousel. The carousel exists because a smartboard is a poor place to scroll
+// vertically — the teacher is standing at the board, not holding a mouse.
+// Grid stays the default: choosing from ~20 quests is a scanning task, and a
+// grid shows eight at once where a carousel shows one clearly.
+const LAYOUT_SCREENS = {
+  quests: { label: 'Quests board' },
+  shop:   { label: 'Magic Shop' },
+};
+const DEFAULT_LAYOUT = 'grid';
+
+
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
@@ -98,6 +110,8 @@ function defaultState() {
       // Per-screen accent colours (see MODULE_THEMES). Seeded from the defaults
       // so a teacher edit is always a diff against something concrete.
       moduleThemes: null,
+      // 'grid' | 'carousel' per screen (see LAYOUT_SCREENS).
+      layouts: null,
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
@@ -279,6 +293,15 @@ function load() {
       merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
       merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
+      {
+        const saved = merged.settings.layouts && typeof merged.settings.layouts === 'object'
+          ? merged.settings.layouts : {};
+        const out = {};
+        Object.keys(LAYOUT_SCREENS).forEach((id) => {
+          out[id] = saved[id] === 'carousel' ? 'carousel' : DEFAULT_LAYOUT;
+        });
+        merged.settings.layouts = out;
+      }
       // Per-screen colours arrived late; seed any screen the saved state has
       // never seen, without disturbing ones the teacher has already set.
       {
@@ -398,6 +421,23 @@ export const store = {
   HOUSES,
   QUEST_TYPES,
   MODULE_THEMES,
+  LAYOUT_SCREENS,
+
+  // 'grid' | 'carousel'. Unknown screens are always 'grid' — a screen that has
+  // no carousel must never be told it is in one.
+  getLayout(screenId) {
+    if (!LAYOUT_SCREENS[screenId]) return DEFAULT_LAYOUT;
+    const v = (store.getSettings().layouts || {})[screenId];
+    return v === 'carousel' ? 'carousel' : DEFAULT_LAYOUT;
+  },
+
+  setLayout(screenId, layout) {
+    if (!LAYOUT_SCREENS[screenId]) return false;
+    const all = { ...(store.getSettings().layouts || {}) };
+    all[screenId] = layout === 'carousel' ? 'carousel' : DEFAULT_LAYOUT;
+    store.updateSettings({ layouts: all });
+    return true;
+  },
 
   // Accent for a screen: the active house's colour when that screen is set to
   // follow the house, otherwise its own. Screens not listed in MODULE_THEMES
