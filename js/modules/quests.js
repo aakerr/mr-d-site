@@ -62,6 +62,27 @@ function prefersReducedMotion() {
 // The store defaults a quest's give-up penalty to half its reward; older
 // saved quests may predate the field, so mirror that default here rather than
 // showing the teacher "−undefined".
+// The colour this SCREEN is dressed in. Follows the active house unless the
+// teacher has given Quests its own colour in Admin (see store.MODULE_THEMES).
+//
+// Used for the screen's own chrome — the quest cards and the active-quest
+// frame. Things that identify a PARTICULAR house keep the house's colour:
+// the All Cores cards, the Hall of Deeds rows, and the running total. A board
+// that is entirely one colour would lose that distinction.
+function screenAccent(store, house) {
+  const fallback = {
+    color: house ? house.accent : '#f59e0b',
+    soft: house ? house.accentSoft : 'rgba(245,158,11,.35)',
+  };
+  try {
+    const t = store.getModuleTheme('quests');
+    if (!t || !t.configurable || t.matchHouse || !t.color) return fallback;
+    const n = t.color.replace('#', '');
+    const rgb = [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16)).join(',');
+    return { color: t.color, soft: `rgba(${rgb},0.35)` };
+  } catch (e) { return fallback; }
+}
+
 function penaltyOf(q) {
   const p = Number(q?.penalty);
   return Number.isFinite(p) ? Math.max(0, Math.round(p)) : Math.round(Number(q?.points || 0) / 2);
@@ -553,7 +574,7 @@ function heroHtml(store, core) {
 
   if (!q) {
     return `
-      <section class="quest-hero-empty" style="--h:${house.accent}">
+      <section class="quest-hero-empty" style="--h:${screenAccent(store, house).color}">
         <div class="quest-hero-empty-icon">🧭</div>
         <div>
           <div class="quest-hero-empty-title">${esc(house.name)} has no quest yet</div>
@@ -566,7 +587,7 @@ function heroHtml(store, core) {
   const pop = ui.celebrateCore === core ? ' quest-pop' : '';
   const stillLocked = lock.isEnabled() && !lock.isUnlocked();
   return `
-    <section class="quest-hero${pop}" style="--h:${house.accent};--hs:${house.accentSoft}">
+    <section class="quest-hero${pop}" style="--h:${screenAccent(store, house).color};--hs:${screenAccent(store, house).soft}">
       <div class="quest-hero-main">
         <div class="quest-hero-eyebrow">
           ${crest(house, 'quest-hero-crest')}
@@ -633,10 +654,11 @@ function boardHtml(store, core) {
   }
 
   const qt = (q) => ctxRef.store.questType(q);
+  const sa = screenAccent(store, house);
   const cards = quests.length ? quests.map((q) => {
     const canAccept = !isAll && !locked;
     return `
-      <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${house ? house.accent : '#f59e0b'};--hs:${house ? house.accentSoft : 'rgba(245,158,11,.35)'}">
+      <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${sa.color};--hs:${sa.soft}">
         <div class="quest-card-top">
           <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${ctxRef.store.questIcon(q)}</span>
           <div class="quest-card-title">${esc(q.title)}</div>

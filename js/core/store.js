@@ -39,6 +39,20 @@ const QUEST_TYPES = {
 };
 const DEFAULT_QUEST_TYPE = 'service';
 
+// Screens whose accent colour the teacher can set. Only these three read
+// var(--accent); the Magic Shop, Battle Day, Dice, Council and POTW have their
+// palettes baked in, so listing them here would show a control that does
+// nothing. `matchHouse` follows the active house instead of using `color`.
+//
+// Quests ships with its own colour precisely BECAUSE the house accents cover
+// red/blue/amber/green — a quest board that borrows them looks like a different
+// app every period. Bronze reads as parchment and collides with none of them.
+const MODULE_THEMES = {
+  dashboard: { label: 'Home screen', color: '#f59e0b', matchHouse: true },
+  quests:    { label: 'Quests',      color: '#b45309', matchHouse: false },
+  houses:    { label: 'Records',     color: '#f59e0b', matchHouse: true },
+};
+
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
@@ -81,6 +95,9 @@ function defaultState() {
       // the app must never lock a teacher out of a fresh install. `len` is the
       // digit count so the PIN pad knows when an entry is complete.
       lock: { pinHash: '', len: 4, minutes: 15 },
+      // Per-screen accent colours (see MODULE_THEMES). Seeded from the defaults
+      // so a teacher edit is always a diff against something concrete.
+      moduleThemes: null,
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
@@ -262,6 +279,21 @@ function load() {
       merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
       merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
+      // Per-screen colours arrived late; seed any screen the saved state has
+      // never seen, without disturbing ones the teacher has already set.
+      {
+        const saved = merged.settings.moduleThemes && typeof merged.settings.moduleThemes === 'object'
+          ? merged.settings.moduleThemes : {};
+        const out = {};
+        Object.entries(MODULE_THEMES).forEach(([id, d]) => {
+          const t = saved[id] || {};
+          out[id] = {
+            color: typeof t.color === 'string' && /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : d.color,
+            matchHouse: typeof t.matchHouse === 'boolean' ? t.matchHouse : d.matchHouse,
+          };
+        });
+        merged.settings.moduleThemes = out;
+      }
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
@@ -365,6 +397,41 @@ function fmtDue(dateStr) {
 export const store = {
   HOUSES,
   QUEST_TYPES,
+  MODULE_THEMES,
+
+  // Accent for a screen: the active house's colour when that screen is set to
+  // follow the house, otherwise its own. Screens not listed in MODULE_THEMES
+  // (their palettes are baked in) always get the house colour, which is what
+  // the app did before this setting existed.
+  getModuleTheme(moduleId) {
+    const def = MODULE_THEMES[moduleId];
+    if (!def) return { matchHouse: true, color: null, configurable: false };
+    const saved = (store.getSettings().moduleThemes || {})[moduleId] || {};
+    return {
+      configurable: true,
+      label: def.label,
+      color: /^#[0-9a-f]{6}$/i.test(saved.color || '') ? saved.color : def.color,
+      matchHouse: typeof saved.matchHouse === 'boolean' ? saved.matchHouse : def.matchHouse,
+    };
+  },
+
+  setModuleTheme(moduleId, patch) {
+    if (!MODULE_THEMES[moduleId]) return false;
+    const all = { ...(store.getSettings().moduleThemes || {}) };
+    const cur = store.getModuleTheme(moduleId);
+    all[moduleId] = {
+      color: /^#[0-9a-f]{6}$/i.test(patch.color || '') ? patch.color : cur.color,
+      matchHouse: typeof patch.matchHouse === 'boolean' ? patch.matchHouse : cur.matchHouse,
+    };
+    store.updateSettings({ moduleThemes: all });
+    return true;
+  },
+
+  resetModuleTheme(moduleId) {
+    const def = MODULE_THEMES[moduleId];
+    if (!def) return false;
+    return store.setModuleTheme(moduleId, { color: def.color, matchHouse: def.matchHouse });
+  },
   // Icon for a quest's kind, falling back rather than rendering a blank.
   questType(q) { return QUEST_TYPES[q && q.type] || QUEST_TYPES[DEFAULT_QUEST_TYPE]; },
   // The mark shown on a quest card. Each quest carries its own so a board of

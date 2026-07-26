@@ -106,11 +106,25 @@ export function initShell(ctx) {
   try { applySoundGate(audio, store); } catch (e) { console.warn('shell: sound gate failed', e); }
 
   // ---------------- shared: live accent CSS vars ----------------
+  // Reads the module-scoped `currentModuleId` declared further down, so the
+  // accent can follow the teacher's per-screen colour instead of the house.
   function applyAccentVars() {
     let house = null;
     try { house = store.getActiveHouse(); } catch (e) { house = null; }
-    const accent = house ? house.accent : NEUTRAL_ACCENT;
-    const soft = house ? house.accentSoft : NEUTRAL_ACCENT_SOFT;
+    let accent = house ? house.accent : NEUTRAL_ACCENT;
+    let soft = house ? house.accentSoft : NEUTRAL_ACCENT_SOFT;
+
+    // A screen set to its own colour keeps it whichever house is active; one
+    // set to "match house" behaves exactly as the app always did. Screens with
+    // baked-in palettes report matchHouse and fall through untouched.
+    try {
+      const t = store.getModuleTheme(currentModuleId);
+      if (t && t.configurable && !t.matchHouse && t.color) {
+        accent = t.color;
+        soft = `rgba(${hexToRgbTriplet(t.color)},0.35)`;
+      }
+    } catch (e) { /* a theme lookup must never cost us the accent */ }
+
     const root = document.documentElement;
     root.style.setProperty('--accent', accent);
     root.style.setProperty('--accent-soft', soft);
@@ -416,6 +430,7 @@ export function initShell(ctx) {
 
   window.addEventListener('module:navigate', (e) => {
     currentModuleId = e?.detail?.id ?? null;
+    applyAccentVars();          // the new screen may carry its own colour
     renderTopbar();
     setFabAdminHidden(currentModuleId === 'admin');
   });
