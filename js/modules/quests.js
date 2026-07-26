@@ -256,10 +256,27 @@ function injectStyles() {
      lands 3 across at 1280 instead of four narrower ones. */
   .quest-grid{flex:1;min-height:0;overflow-y:auto;display:grid;gap:1.1rem;
     grid-template-columns:repeat(auto-fit,minmax(240px,300px));align-content:start;
-    justify-content:center;padding-right:4px;padding-bottom:4px;}
+    /* Padding SYMMETRIC on purpose: the tracks are centred inside this box, so
+       a one-sided pad would shift them off the --board-w axis below by half of
+       it and the hero would no longer line up with the cards. */
+    /* The scrollbar eats from ONE side, which narrows the content box and drags
+       the centred tracks half a scrollbar to the left — the cards then sat 5.5px
+       off the hero above them. Reserving the gutter on both edges keeps the
+       tracks centred on the same axis whether the grid scrolls or not. */
+    scrollbar-gutter:stable both-edges;
+    justify-content:center;padding:0 4px 4px;}
+
+  /* Everything above the grid is pinned to the width of the cards themselves,
+     so the hero's left edge meets the left card's and the sort control lands
+     on the right card's edge. --board-w is measured from the live column
+     tracks in syncBoardWidth() (auto-fit means the count changes with width);
+     the 100% fallback keeps this sane before the first measurement and in
+     carousel mode, where there is no grid to match. */
+  .quest-hero,.quest-hero-empty,.quest-lockbar,.quest-board-head,.quest-deeds{
+    width:var(--board-w,100%);margin-left:auto;margin-right:auto;}
   .quest-card{display:flex;flex-direction:column;gap:clamp(4px,.7vh,10px);border-radius:1.1rem;
     border:2px solid var(--color-line,#374151);background:linear-gradient(160deg,rgba(31,41,55,.92),rgba(17,24,39,.96));
-    padding:clamp(10px,1.5vh,18px) clamp(12px,1vw,18px);
+    padding:clamp(16px,2.2vh,24px) clamp(16px,1.5vw,22px);
     transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;}
   .quest-card:not(.quest-card-locked):hover{transform:translateY(-3px);border-color:var(--accent,#f59e0b);
     box-shadow:0 12px 30px rgba(0,0,0,.45);}
@@ -464,11 +481,16 @@ function injectStyles() {
     .quest-board{gap:clamp(4px,.7vh,8px);}
     .quest-board-title{font-size:1rem;}
     .quest-board-count{font-size:.875rem;}
-    .quest-sort{min-height:36px;font-size:.9rem;padding:.3em .8em;}
+    /* The board header's height is set by this control, so trimming it is what
+       actually returns rows to the grid. Still a comfortable tap target. */
+    .quest-sort{min-height:30px;font-size:.82rem;padding:.2em .7em;border-radius:999px;}
+    .quest-layout-toggle{min-height:30px;font-size:.76rem;}
     .quest-lockbar{font-size:.9rem;padding:.35em .7em;}
     /* Deliberately LOOSER than before (was 7px/4px). The cards read as cramped;
        the room comes from the trimmed empty hero above, not from the grid. */
-    .quest-card{padding:clamp(11px,1.5vh,15px) clamp(12px,1.1vw,16px);gap:clamp(7px,1vh,10px);}
+    /* Roughly the Magic Shop's interior (1.4rem/1.2rem). The text was sitting
+       almost on the border, which is what made the cards look sloppy. */
+    .quest-card{padding:clamp(16px,2.2vh,22px) clamp(16px,1.5vw,20px);gap:clamp(7px,1vh,10px);}
     .quest-card-title{font-size:1rem;}
     .quest-card-pts{font-size:1.25rem;}
     .quest-card-desc{font-size:.9rem;line-height:1.25;}
@@ -808,7 +830,25 @@ function render() {
     strip.scrollLeft = keepLeft;
     strip.style.scrollBehavior = prevBehavior;
   }
+  syncBoardWidth();
   wireCarousel();
+}
+
+// Publish the grid's real content width so the hero, lockbar, board header and
+// Hall of Deeds can sit on exactly the same axis as the cards. Measured from
+// the computed column tracks rather than assumed, because auto-fit changes the
+// column count with the viewport.
+function syncBoardWidth() {
+  const root = rootEl && rootEl.querySelector('.quest-root');
+  if (!root) return;
+  const grid = rootEl.querySelector('.quest-grid');
+  if (!grid) { root.style.removeProperty('--board-w'); return; }   // carousel: full width
+  const cs = getComputedStyle(grid);
+  const cols = cs.gridTemplateColumns.split(' ').map(parseFloat).filter((n) => !Number.isNaN(n));
+  if (!cols.length) { root.style.removeProperty('--board-w'); return; }
+  const gap = parseFloat(cs.columnGap) || 0;
+  const w = cols.reduce((a, b) => a + b, 0) + gap * (cols.length - 1);
+  root.style.setProperty('--board-w', `${w}px`);
 }
 
 // PROTOTYPE (see boardHtml). Marks whichever card is nearest the centre so it
