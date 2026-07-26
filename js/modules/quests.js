@@ -359,7 +359,9 @@ function injectStyles() {
     scroll-snap-type:x mandatory;
     /* Half a card, so the first and last can still reach dead centre. Must
        track the card width above or the snap lands off-centre. */
-    padding:clamp(6px,1vh,12px) calc(50% - clamp(107px,9vw,125px));
+    /* Bottom pad is the counter's lane — without it the cards run underneath
+       "7 of 20" once an active quest shortens this band. */
+    padding:clamp(6px,1vh,12px) calc(50% - clamp(107px,9vw,125px)) clamp(20px,3vh,26px);
     scrollbar-width:none;}
   .quest-carousel::-webkit-scrollbar{display:none;}
   /* Portrait, not landscape. Five cards across a 1280 board — the reference
@@ -367,13 +369,16 @@ function injectStyles() {
      first pass look nothing like it. */
   .quest-carousel .quest-card{flex:0 0 clamp(215px,18vw,250px);height:100%;max-height:340px;
     scroll-snap-align:center;text-align:center;
-    transform:scale(.82);opacity:.42;filter:saturate(.6);
+    transform:scale(.84);opacity:.42;filter:saturate(.6);
     transition:transform .28s ease,opacity .28s ease,filter .28s ease,border-color .28s ease;
     transform-origin:center center;}
   /* The centre card has to win clearly — in the reference it is the only one
      you read. Scale alone was too subtle at this size, so it also takes the
      house colour and the glow while its neighbours desaturate. */
-  .quest-carousel .quest-card.is-focus{transform:scale(1.08);opacity:1;filter:none;
+  /* Scale 1, NOT >1: when a quest is active the hero shortens this band, and a
+     scaled-up focus card spilled past it and collided with the counter. The
+     contrast comes from the neighbours shrinking and desaturating instead. */
+  .quest-carousel .quest-card.is-focus{transform:scale(1);opacity:1;filter:none;
     border-color:var(--h,#f59e0b);border-width:3px;
     box-shadow:0 0 40px var(--hs,rgba(245,158,11,.6)),0 20px 48px rgba(0,0,0,.6);}
   /* Card contents restack into a column so the art leads, like the Magic Shop. */
@@ -381,8 +386,16 @@ function injectStyles() {
   .quest-carousel .quest-type-icon{font-size:clamp(2.6rem,7vh,3.6rem);line-height:1;
     filter:drop-shadow(0 6px 16px var(--hs,rgba(245,158,11,.45)));margin-bottom:.1em;}
   .quest-carousel .quest-card-title{text-align:center;font-size:clamp(.95rem,2vh,1.15rem);}
+  /* The card is a fixed-height flex column, so the description — the only
+     freely shrinkable child — lost the fight and collapsed to a few pixels
+     once the padding grew. Reserve exactly three lines and refuse to shrink;
+     overflow:hidden clips cleanly even where -webkit-line-clamp is ignored. */
   .quest-carousel .quest-card-desc{font-size:clamp(.8rem,1.5vh,.92rem);line-height:1.3;
-    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+    flex:0 0 auto;height:3.9em;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
+  /* Title gets two lines at most, so a long one can't push the description out. */
+  .quest-carousel .quest-card-title{display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden;}
   .quest-carousel .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;min-height:36px;}
   .quest-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;
     width:44px;height:44px;border-radius:999px;cursor:pointer;
