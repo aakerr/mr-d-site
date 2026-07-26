@@ -103,7 +103,10 @@ function injectStyles() {
   s.id = STYLE_ID;
   s.textContent = `
   /* ---- layout: header + hero pinned, board scrolls, deeds pinned ---- */
-  .quest-root{height:100%;display:flex;flex-direction:column;gap:clamp(8px,1.4vh,18px);
+  /* --rgap / --bgap are the column gaps, held in variables so the two rules
+     below can top them up to exactly one card-gap (1.1rem) without inflating
+     every other gap in the stack. */
+  .quest-root{--rgap:clamp(8px,1.4vh,18px);height:100%;display:flex;flex-direction:column;gap:var(--rgap);
     padding:clamp(8px,1.4vh,16px) clamp(12px,1.8vw,26px) clamp(10px,1.6vh,20px);
     background:radial-gradient(ellipse at 50% -20%,rgba(245,158,11,.13),transparent 60%),var(--color-page,#0b0f19);
     color:var(--color-text,#f9fafb);overflow:hidden;box-sizing:border-box;}
@@ -173,7 +176,7 @@ function injectStyles() {
      block of colour competed with the button for attention. It is a footnote
      about the quest, so it now reads as one: small coloured text with a mark. */
   .quest-chip-row{display:flex;justify-content:center;gap:clamp(6px,.8vw,12px);flex-wrap:wrap;
-    margin-top:auto;padding-top:.4em;}
+    margin-top:auto;padding-top:0;}
   .quest-chip{display:inline-flex;align-items:center;gap:.4em;
     font-size:clamp(.85rem,1.4vh,.98rem);font-weight:700;letter-spacing:.02em;
     white-space:nowrap;background:none;border:none;padding:0;}
@@ -232,7 +235,11 @@ function injectStyles() {
   .quest-all-time{color:var(--color-text-soft,#9ca3af);font-size:clamp(.95rem,1.6vh,1.05rem);}
 
   /* ---- QUEST BOARD ---- */
-  .quest-board{flex:1;min-height:0;display:flex;flex-direction:column;gap:clamp(6px,1vh,12px);}
+  .quest-board{--bgap:clamp(6px,1vh,12px);flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--bgap);
+    /* One full card-gap between the active-quest field and the header row. */
+    margin-top:calc(1.1rem - var(--rgap));}
+  /* And the same again between the header row and the first row of cards. */
+  .quest-grid{margin-top:calc(1.1rem - var(--bgap));}
   .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
   /* Its own class, NOT .quest-head-spacer: that one is a fixed-width mirror of
      the masthead's scroll icon and must stay fixed or the title stops being
@@ -291,8 +298,12 @@ function injectStyles() {
     font-size:clamp(1.35rem,3vh,2.1rem);}
   .quest-card-pts small{display:block;font-size:clamp(.75rem,1.4vh,.95rem);letter-spacing:.12em;text-transform:uppercase;
     color:var(--color-text-soft,#9ca3af);font-weight:800;margin-top:.25em;}
-  .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;}
-  .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(11px,1.8vh,20px);padding-top:.4em;}
+  /* Inset a touch further than the title above it, so the body copy sits in
+     from the border rather than running at it. */
+  .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;padding:0 5px;}
+  /* Tight: description, frequency and button read as one block at the foot of
+     the card, and the saved height comes straight off the card. */
+  .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(5px,.8vh,9px);padding-top:.15em;}
   /* Sized to its words and centred, not full-bleed: a button as wide as the
      card read as a slab and crowded the chip above it. */
   .quest-accept{align-self:center;width:auto;padding:0 clamp(20px,2.2vw,34px);
@@ -438,7 +449,7 @@ function injectStyles() {
      measures the (now smaller) title ink and fits the subtitle/pill to match,
      so nothing here fights the fitter. ---- */
   @media (max-height: 800px) {
-    .quest-root{gap:clamp(5px,.9vh,9px);
+    .quest-root{--rgap:clamp(5px,.9vh,9px);
       padding:clamp(5px,.9vh,9px) clamp(10px,1.6vw,20px) clamp(6px,1vh,10px);}
 
     /* masthead: smaller mark, tighter title (subtitle/pill scale to match) */
@@ -478,7 +489,7 @@ function injectStyles() {
     .quest-hero-empty-sub{font-size:.875rem;margin-top:0;}
 
     /* board header + lockbar + cards: reclaim the rest for the grid */
-    .quest-board{gap:clamp(4px,.7vh,8px);}
+    .quest-board{--bgap:clamp(4px,.7vh,8px);}
     .quest-board-title{font-size:1rem;}
     .quest-board-count{font-size:.875rem;}
     /* The board header's height is set by this control, so trimming it is what

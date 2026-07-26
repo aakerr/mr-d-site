@@ -46,7 +46,7 @@ function defaultQuestCatalog() {
     { id: 'q-library', icon: '📖',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.', type: 'service', repeatable: true },
     { id: 'q-cleanup', icon: '🧹',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.', type: 'service', repeatable: true },
     { id: 'q-kindness', icon: '💌',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.', type: 'community', repeatable: true },
-    { id: 'q-tutors', icon: '👥',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).', type: 'academic', repeatable: true },
+    { id: 'q-tutors', icon: '👥',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week, with a teacher’s permission.', type: 'academic', repeatable: true },
     { id: 'q-attendance', icon: '📅',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.', type: 'habit', repeatable: true },
     { id: 'q-homework', icon: '✏️',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.', type: 'academic', repeatable: true },
     { id: 'q-food-drive', icon: '🥫',     points: 40, title: 'Food Drive Forces',        desc: 'Bring in 50+ items for the school food drive.', type: 'community' },
