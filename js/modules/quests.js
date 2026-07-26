@@ -223,7 +223,7 @@ function injectStyles() {
     /* One full card-gap between the active-quest field and the header row. */
     margin-top:calc(1.1rem - var(--rgap));}
   /* And the same again between the header row and the first row of cards. */
-  .quest-grid{margin-top:calc(1.1rem - var(--bgap));}
+  .quest-grid,.quest-carousel-wrap{margin-top:calc(1.1rem - var(--bgap));}
   .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
   /* Its own class, NOT .quest-head-spacer: that one is a fixed-width mirror of
      the masthead's scroll icon and must stay fixed or the title stops being
@@ -265,6 +265,9 @@ function injectStyles() {
      carousel mode, where there is no grid to match. */
   .quest-hero,.quest-hero-empty,.quest-lockbar,.quest-board-head,.quest-deeds{
     width:var(--board-w,100%);margin-left:auto;margin-right:auto;}
+  /* One card-gap under the masthead too, so the rhythm above the active-quest
+     field matches the rhythm below it. */
+  .quest-hero,.quest-hero-empty{margin-top:calc(1.1rem - var(--rgap));}
   .quest-card{display:flex;flex-direction:column;gap:clamp(4px,.7vh,10px);border-radius:1.1rem;
     border:2px solid var(--color-line,#374151);background:linear-gradient(160deg,rgba(31,41,55,.92),rgba(17,24,39,.96));
     padding:clamp(16px,2.2vh,24px) clamp(16px,1.5vw,22px);
