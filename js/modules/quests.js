@@ -168,12 +168,21 @@ function injectStyles() {
   .quest-hero-desc{font-size:clamp(1.05rem,2.4vh,1.7rem);line-height:1.35;color:#e5e7eb;margin:0;
     max-width:60ch;}
 
-  .quest-chip-row{display:flex;gap:clamp(6px,.8vw,12px);flex-wrap:wrap;margin-top:auto;padding-top:.4em;}
-  .quest-chip{display:inline-flex;align-items:center;gap:.4em;border-radius:999px;
-    font-size:clamp(1rem,1.7vh,1.15rem);font-weight:800;padding:.3em .85em;white-space:nowrap;}
-  .quest-chip-repeat{background:rgba(34,197,94,.16);border:1px solid rgba(34,197,94,.55);color:#4ade80;}
-  .quest-chip-once{background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.55);color:#c4b5fd;}
-  .quest-chip-penalty{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);color:#fca5a5;}
+  /* Centred, and no longer a filled pill. As a pill it sat hard left while the
+     Accept button below it sat centred, so the card read lopsided — and the
+     block of colour competed with the button for attention. It is a footnote
+     about the quest, so it now reads as one: small coloured text with a mark. */
+  .quest-chip-row{display:flex;justify-content:center;gap:clamp(6px,.8vw,12px);flex-wrap:wrap;
+    margin-top:auto;padding-top:.4em;}
+  .quest-chip{display:inline-flex;align-items:center;gap:.4em;
+    font-size:clamp(.85rem,1.4vh,.98rem);font-weight:700;letter-spacing:.02em;
+    white-space:nowrap;background:none;border:none;padding:0;}
+  .quest-chip-repeat{color:#4ade80;}
+  .quest-chip-once{color:#c4b5fd;}
+  /* The hero's give-up warning keeps the pill: it's a consequence, not a
+     footnote, and it sits in a row of its own rather than above a button. */
+  .quest-chip-penalty{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);color:#fca5a5;
+    border-radius:999px;padding:.3em .85em;font-size:clamp(1rem,1.7vh,1.15rem);font-weight:800;}
 
   .quest-hero-side{flex:0 0 clamp(230px,22vw,320px);display:flex;flex-direction:column;
     gap:clamp(6px,1vh,12px);justify-content:center;}
@@ -243,9 +252,11 @@ function injectStyles() {
     border-radius:.9rem;padding:.5em .9em;}
   .quest-lockbar.quest-lockbar-info{color:#93c5fd;background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.45);}
 
-  .quest-grid{flex:1;min-height:0;overflow-y:auto;display:grid;gap:clamp(8px,1.2vw,16px);
-    grid-template-columns:repeat(auto-fill,minmax(clamp(240px,20vw,330px),1fr));align-content:start;
-    padding-right:4px;padding-bottom:4px;}
+  /* Same rule as .shop-grid — cards match the Magic Shop's 300px exactly, which
+     lands 3 across at 1280 instead of four narrower ones. */
+  .quest-grid{flex:1;min-height:0;overflow-y:auto;display:grid;gap:1.1rem;
+    grid-template-columns:repeat(auto-fit,minmax(240px,300px));align-content:start;
+    justify-content:center;padding-right:4px;padding-bottom:4px;}
   .quest-card{display:flex;flex-direction:column;gap:clamp(4px,.7vh,10px);border-radius:1.1rem;
     border:2px solid var(--color-line,#374151);background:linear-gradient(160deg,rgba(31,41,55,.92),rgba(17,24,39,.96));
     padding:clamp(10px,1.5vh,18px) clamp(12px,1vw,18px);
@@ -305,14 +316,33 @@ function injectStyles() {
        programmatic scrolls entirely and the arrows do nothing. The arrows pass
        behavior:'smooth' to scrollIntoView instead, which animates correctly. */
     scroll-snap-type:x mandatory;
-    padding:clamp(6px,1vh,12px) calc(50% - clamp(150px,15vw,190px));
+    /* Half a card, so the first and last can still reach dead centre. Must
+       track the card width above or the snap lands off-centre. */
+    padding:clamp(6px,1vh,12px) calc(50% - clamp(107px,9vw,125px));
     scrollbar-width:none;}
   .quest-carousel::-webkit-scrollbar{display:none;}
-  .quest-carousel .quest-card{flex:0 0 clamp(300px,30vw,380px);scroll-snap-align:center;
-    transform:scale(.88);opacity:.55;transition:transform .28s ease,opacity .28s ease;
+  /* Portrait, not landscape. Five cards across a 1280 board — the reference
+     mockup's proportions — instead of three wide ones, which is what made the
+     first pass look nothing like it. */
+  .quest-carousel .quest-card{flex:0 0 clamp(215px,18vw,250px);height:100%;max-height:340px;
+    scroll-snap-align:center;text-align:center;
+    transform:scale(.82);opacity:.42;filter:saturate(.6);
+    transition:transform .28s ease,opacity .28s ease,filter .28s ease,border-color .28s ease;
     transform-origin:center center;}
-  .quest-carousel .quest-card.is-focus{transform:scale(1);opacity:1;
-    box-shadow:0 0 30px var(--hs,rgba(245,158,11,.45)),0 18px 40px rgba(0,0,0,.5);}
+  /* The centre card has to win clearly — in the reference it is the only one
+     you read. Scale alone was too subtle at this size, so it also takes the
+     house colour and the glow while its neighbours desaturate. */
+  .quest-carousel .quest-card.is-focus{transform:scale(1.08);opacity:1;filter:none;
+    border-color:var(--h,#f59e0b);border-width:3px;
+    box-shadow:0 0 40px var(--hs,rgba(245,158,11,.6)),0 20px 48px rgba(0,0,0,.6);}
+  /* Card contents restack into a column so the art leads, like the Magic Shop. */
+  .quest-carousel .quest-card-top{flex-direction:column;align-items:center;gap:.35em;}
+  .quest-carousel .quest-type-icon{font-size:clamp(2.6rem,7vh,3.6rem);line-height:1;
+    filter:drop-shadow(0 6px 16px var(--hs,rgba(245,158,11,.45)));margin-bottom:.1em;}
+  .quest-carousel .quest-card-title{text-align:center;font-size:clamp(.95rem,2vh,1.15rem);}
+  .quest-carousel .quest-card-desc{font-size:clamp(.8rem,1.5vh,.92rem);line-height:1.3;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+  .quest-carousel .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;min-height:36px;}
   .quest-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;
     width:44px;height:44px;border-radius:999px;cursor:pointer;
     border:1px solid var(--color-line,#374151);background:rgba(17,24,39,.9);
@@ -800,6 +830,7 @@ function wireCarousel() {
       if (d < bestD) { bestD = d; best = i; }
     });
     cards.forEach((c, i) => c.classList.toggle('is-focus', i === best));
+    strip.dataset.idx = String(best);   // keep the arrows in step with a swipe
     if (counter) counter.textContent = `${best + 1} of ${cards.length}`;
   };
 
@@ -937,9 +968,18 @@ function onClick(e) {
       if (!strip) break;
       const cards = [...strip.querySelectorAll('.quest-card')];
       if (!cards.length) break;
-      const cur = Math.max(0, cards.findIndex((c) => c.classList.contains('is-focus')));
+      // Index lives on the element, not inferred from .is-focus: that class is
+      // set by the scroll listener a frame later, so reading it back made every
+      // click after the first compute the same "current" card and stand still.
+      const cur = Number(strip.dataset.idx || 0);
       const next = Math.min(cards.length - 1, Math.max(0, cur + (action === 'carousel-next' ? 1 : -1)));
-      cards[next].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      strip.dataset.idx = String(next);
+      // PLAIN assignment only. On a scroll-snap:mandatory container in this
+      // engine, ANY smooth scroll — scrollBy, scrollIntoView, or scrollTo with
+      // behavior:'smooth' — is swallowed and the strip never moves (measured:
+      // smooth left it at 0, the identical plain assignment reached 1241).
+      // The card-to-card jump is instant, which reads fine at this size.
+      strip.scrollLeft = cards[next].offsetLeft - (strip.clientWidth - cards[next].offsetWidth) / 2;
       break;
     }
 
