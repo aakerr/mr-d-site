@@ -37,6 +37,7 @@ const fxNodes = new Set();
 
 // per-mount UI state
 let ui = null;   // { modal: null | {...}, sortAsc: bool, celebrateCore: number|null }
+let lastBoardW = 0;   // last measured grid width, reused when the carousel hides the grid
 
 function initUi() {
   return { modal: null, sortAsc: false, celebrateCore: null, layout: 'grid' };
@@ -319,8 +320,8 @@ function injectStyles() {
   .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(5px,.8vh,9px);padding-top:.15em;}
   /* Sized to its words and centred, not full-bleed: a button as wide as the
      card read as a slab and crowded the chip above it. */
-  .quest-accept{align-self:center;width:auto;padding:0 clamp(20px,2.2vw,34px);
-    min-height:clamp(38px,4.4vh,46px);border-radius:999px;border:none;cursor:pointer;
+  .quest-accept{align-self:center;width:auto;padding:0 clamp(18px,2vw,30px);
+    min-height:clamp(32px,3.6vh,38px);border-radius:999px;border:none;cursor:pointer;
     font-weight:800;font-family:inherit;font-size:clamp(.95rem,1.8vh,1.15rem);color:#0b0f19;
     background:var(--h,#f59e0b);box-shadow:0 8px 20px var(--hs,rgba(245,158,11,.35));
     display:flex;align-items:center;justify-content:center;gap:.4em;
@@ -396,7 +397,10 @@ function injectStyles() {
   /* Title gets two lines at most, so a long one can't push the description out. */
   .quest-carousel .quest-card-title{display:-webkit-box;-webkit-line-clamp:2;
     -webkit-box-orient:vertical;overflow:hidden;}
-  .quest-carousel .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;min-height:36px;}
+  /* Matches the grid's Accept button exactly — the carousel had its own taller
+     value, so the same control was two different sizes depending on the view. */
+  .quest-carousel .quest-accept{padding:0 clamp(12px,1.4vw,20px);font-size:.9rem;
+    min-height:clamp(32px,3.6vh,38px);}
   .quest-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;
     width:44px;height:44px;border-radius:999px;cursor:pointer;
     border:1px solid var(--color-line,#374151);background:rgba(17,24,39,.9);
@@ -511,7 +515,7 @@ function injectStyles() {
     .quest-chip{font-size:.875rem;}
     /* Just the two buttons now, so the column is only as wide as they need. */
     .quest-hero-side{flex:0 0 clamp(170px,16vw,210px);gap:clamp(7px,1vh,10px);justify-content:center;}
-    .quest-act{min-height:48px;font-size:.95rem;}
+    .quest-act{min-height:40px;font-size:.95rem;padding:.3em .8em;}
 
     /* "No quest yet" is the NORMAL state every Monday, so at 720p it earns a
        slim line, not a 104px dashed panel. It grows back into the full hero
@@ -878,12 +882,25 @@ function syncBoardWidth() {
   const root = rootEl && rootEl.querySelector('.quest-root');
   if (!root) return;
   const grid = rootEl.querySelector('.quest-grid');
-  if (!grid) { root.style.removeProperty('--board-w'); return; }   // carousel: full width
+
+  // Carousel mode has no grid to measure, but the header and the active-quest
+  // field must still line up with where the CARDS would be — full-bleed there
+  // made the panel look like it belonged to a different screen. The layout
+  // always starts as the grid, so the remembered width is warm by the time the
+  // carousel can be reached; it only goes stale on a resize mid-carousel,
+  // which the next toggle corrects.
+  if (!grid) {
+    if (lastBoardW) root.style.setProperty('--board-w', `${lastBoardW}px`);
+    else root.style.removeProperty('--board-w');
+    return;
+  }
+
   const cs = getComputedStyle(grid);
   const cols = cs.gridTemplateColumns.split(' ').map(parseFloat).filter((n) => !Number.isNaN(n));
   if (!cols.length) { root.style.removeProperty('--board-w'); return; }
   const gap = parseFloat(cs.columnGap) || 0;
   const w = cols.reduce((a, b) => a + b, 0) + gap * (cols.length - 1);
+  lastBoardW = w;
   root.style.setProperty('--board-w', `${w}px`);
 }
 
