@@ -39,7 +39,7 @@ const fxNodes = new Set();
 let ui = null;   // { modal: null | {...}, sortAsc: bool, celebrateCore: number|null }
 
 function initUi() {
-  return { modal: null, sortAsc: false, celebrateCore: null };
+  return { modal: null, sortAsc: false, celebrateCore: null, layout: 'grid' };
 }
 
 function later(fn, ms) {
@@ -291,6 +291,39 @@ function injectStyles() {
   .quest-deed{flex-shrink:0;display:flex;align-items:center;gap:.6em;border-radius:.8rem;
     border:1px solid var(--color-line,#374151);border-left:5px solid var(--h,#6b7280);
     background:var(--color-card2,#1f2937);padding:.4em .8em;max-width:clamp(200px,22vw,300px);}
+  /* ---- PROTOTYPE: carousel layout (see boardHtml) ----
+     scroll-snap does the work; no library, and touch swipe on the smartboard
+     comes free. The centre card is found on scroll and scaled up. */
+  .quest-layout-toggle{flex-shrink:0;border:1px solid var(--color-line,#374151);background:transparent;
+    color:var(--color-text-soft,#9ca3af);border-radius:999px;cursor:pointer;font-family:inherit;
+    font-size:.8rem;padding:.3em .8em;min-height:32px;}
+  .quest-layout-toggle:hover{color:var(--color-text,#f9fafb);border-color:var(--accent,#f59e0b);}
+  .quest-carousel-wrap{flex:1;min-height:0;position:relative;display:flex;align-items:center;}
+  .quest-carousel{flex:1;min-width:0;height:100%;display:flex;align-items:center;
+    gap:clamp(10px,1.4vw,20px);overflow-x:auto;overflow-y:hidden;
+    /* NO scroll-behavior:smooth here — with scroll-snap:mandatory it swallows
+       programmatic scrolls entirely and the arrows do nothing. The arrows pass
+       behavior:'smooth' to scrollIntoView instead, which animates correctly. */
+    scroll-snap-type:x mandatory;
+    padding:clamp(6px,1vh,12px) calc(50% - clamp(150px,15vw,190px));
+    scrollbar-width:none;}
+  .quest-carousel::-webkit-scrollbar{display:none;}
+  .quest-carousel .quest-card{flex:0 0 clamp(300px,30vw,380px);scroll-snap-align:center;
+    transform:scale(.88);opacity:.55;transition:transform .28s ease,opacity .28s ease;
+    transform-origin:center center;}
+  .quest-carousel .quest-card.is-focus{transform:scale(1);opacity:1;
+    box-shadow:0 0 30px var(--hs,rgba(245,158,11,.45)),0 18px 40px rgba(0,0,0,.5);}
+  .quest-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:3;
+    width:44px;height:44px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--color-line,#374151);background:rgba(17,24,39,.9);
+    color:var(--accent,#f59e0b);font-size:1.6rem;line-height:1;
+    display:flex;align-items:center;justify-content:center;}
+  .quest-carousel-arrow:hover{border-color:var(--accent,#f59e0b);background:var(--color-card2,#1f2937);}
+  .quest-carousel-prev{left:0;}
+  .quest-carousel-next{right:0;}
+  .quest-carousel-counter{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+    color:var(--color-text-soft,#9ca3af);font-size:.8rem;font-variant-numeric:tabular-nums;}
+
   .quest-deed-icon{flex-shrink:0;font-size:clamp(1rem,1.7vh,1.15rem);line-height:1;}
   .quest-deed-main{min-width:0;}
   .quest-deed-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,1.7vh,1.1rem);
@@ -564,7 +597,7 @@ function boardHtml(store, core) {
     return `
       <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${house ? house.accent : '#f59e0b'};--hs:${house ? house.accentSoft : 'rgba(245,158,11,.35)'}">
         <div class="quest-card-top">
-          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${qt(q).icon}</span>
+          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${ctxRef.store.questIcon(q)}</span>
           <div class="quest-card-title">${esc(q.title)}</div>
           <div class="quest-card-pts">${q.points}<small>pts</small></div>
         </div>
@@ -578,16 +611,30 @@ function boardHtml(store, core) {
       </div>`;
   }).join('') : `<div class="quest-empty">Every quest is taken or retired. Mr. D can add more in Admin → Quests.</div>`;
 
+  // PROTOTYPE: two layouts side by side so the choice is made against the real
+  // board at 1280x720, not a mockup. Whichever loses gets deleted — this
+  // toggle is not meant to ship.
+  const carousel = ui.layout === 'carousel';
+  const body = carousel
+    ? `<div class="quest-carousel-wrap">
+         <button type="button" class="quest-carousel-arrow quest-carousel-prev" data-q="carousel-prev" aria-label="Previous quests">‹</button>
+         <div class="quest-carousel" data-carousel>${cards}</div>
+         <button type="button" class="quest-carousel-arrow quest-carousel-next" data-q="carousel-next" aria-label="More quests">›</button>
+         <div class="quest-carousel-counter" data-carousel-counter></div>
+       </div>`
+    : `<div class="quest-grid">${cards}</div>`;
+
   return `
     <section class="quest-board">
       <div class="quest-board-head">
         <span class="quest-board-title">📜 Quests to Choose From</span>
         <span class="quest-board-count">${quests.length} available</span>
+        <button type="button" class="quest-layout-toggle" data-q="layout" title="Prototype: switch between the grid and the carousel">${carousel ? '▦ Try grid' : '◗ Try carousel'}</button>
         <div class="quest-head-push"></div>
         <button type="button" class="quest-sort" data-q="sort">Points ${ui.sortAsc ? '▲ low first' : '▼ high first'}</button>
       </div>
       ${bar}
-      <div class="quest-grid">${cards}</div>
+      ${body}
     </section>`;
 }
 
@@ -606,7 +653,7 @@ function deedsHtml(store) {
             const src = store.getQuestCatalog().find((q) => q.id === c.questId);
             return `
               <div class="quest-deed" style="--h:${h ? h.accent : '#6b7280'}">
-                <span class="quest-deed-icon">${store.questType(src).icon}</span>
+                <span class="quest-deed-icon">${store.questIcon(src)}</span>
                 <div class="quest-deed-main">
                   <div class="quest-deed-title">${esc(c.title)}</div>
                   <div class="quest-deed-meta">${esc(h ? h.name : '')} · ${esc(shortWhen(c.ts))}</div>
@@ -696,6 +743,14 @@ function render() {
   if (!rootEl || !ctxRef) return;
   const store = ctxRef.store;
   const core = store.getState().activeCore;
+  // This whole screen re-renders on every store change AND on the 60s clock
+  // tick that refreshes "2m ago". Rebuilding innerHTML resets the board's
+  // scroll, so a teacher reading halfway down the quest list got yanked back
+  // to the top roughly once a minute. Carry the position across the rebuild.
+  const prevGrid = rootEl.querySelector('.quest-grid');
+  const prevStrip = rootEl.querySelector('[data-carousel]');
+  const keepTop = prevGrid ? prevGrid.scrollTop : 0;
+  const keepLeft = prevStrip ? prevStrip.scrollLeft : 0;
   rootEl.innerHTML = `
     <div class="quest-root">
       ${headerHtml(store, core)}
@@ -711,6 +766,49 @@ function render() {
     headings: rootEl.querySelector('.quest-headings'),
     pill: rootEl.querySelector('.quest-points'),
   });
+
+  // Restore the board position captured above, before paint so it never flashes.
+  const grid = rootEl.querySelector('.quest-grid');
+  if (grid && keepTop) grid.scrollTop = keepTop;
+  const strip = rootEl.querySelector('[data-carousel]');
+  if (strip && keepLeft) {
+    // scroll-behavior:smooth would animate this restore into a visible slide.
+    const prevBehavior = strip.style.scrollBehavior;
+    strip.style.scrollBehavior = 'auto';
+    strip.scrollLeft = keepLeft;
+    strip.style.scrollBehavior = prevBehavior;
+  }
+  wireCarousel();
+}
+
+// PROTOTYPE (see boardHtml). Marks whichever card is nearest the centre so it
+// can scale up, and keeps the "3 of 20" counter honest. Re-wired on every
+// render because innerHTML replaces the strip each time.
+function wireCarousel() {
+  const strip = rootEl && rootEl.querySelector('[data-carousel]');
+  if (!strip) return;
+  const counter = rootEl.querySelector('[data-carousel-counter]');
+  const cards = [...strip.querySelectorAll('.quest-card')];
+  if (!cards.length) return;
+
+  const mark = () => {
+    const mid = strip.getBoundingClientRect().left + strip.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    cards.forEach((c, i) => {
+      const b = c.getBoundingClientRect();
+      const d = Math.abs((b.left + b.width / 2) - mid);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    cards.forEach((c, i) => c.classList.toggle('is-focus', i === best));
+    if (counter) counter.textContent = `${best + 1} of ${cards.length}`;
+  };
+
+  let raf = null;
+  strip.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = null; mark(); });
+  });
+  mark();
 }
 
 // =============================================================================
@@ -822,6 +920,28 @@ function onClick(e) {
       ui.sortAsc = !ui.sortAsc;
       render();
       break;
+
+    // ---- PROTOTYPE carousel controls (remove with the losing layout) ----
+    case 'layout':
+      ui.layout = ui.layout === 'carousel' ? 'grid' : 'carousel';
+      render();
+      break;
+
+    case 'carousel-prev':
+    case 'carousel-next': {
+      // scrollBy() loses an argument with scroll-snap:mandatory — the snap
+      // engine pulls a partial delta straight back to the current card, so the
+      // arrows did nothing. Move by INDEX and let scrollIntoView land on the
+      // snap point that already exists.
+      const strip = rootEl.querySelector('[data-carousel]');
+      if (!strip) break;
+      const cards = [...strip.querySelectorAll('.quest-card')];
+      if (!cards.length) break;
+      const cur = Math.max(0, cards.findIndex((c) => c.classList.contains('is-focus')));
+      const next = Math.min(cards.length - 1, Math.max(0, cur + (action === 'carousel-next' ? 1 : -1)));
+      cards[next].scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      break;
+    }
 
     case 'accept': {
       const core = store.getState().activeCore;

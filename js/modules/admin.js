@@ -645,7 +645,7 @@ function renderQuests() {
       <div class="admin-q-row">
         <div class="admin-q-pts">${q.points}<small>pts</small></div>
         <div class="admin-q-main">
-          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${store.questType(q).icon}</span> ${esc(q.title)}</div>
+          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${store.questIcon(q)}</span> ${esc(q.title)}</div>
           <div class="admin-q-desc">${esc(q.desc || '')}</div>
           <div class="admin-shop-plain">${esc(questSentence(q))}</div>
           <div class="admin-q-statusrow">${status}</div>
@@ -761,6 +761,10 @@ function openQuestForm(id) {
     // one reads through store.questType() so a legacy/unset type resolves
     // the same way here as it does everywhere else it's displayed.
     type: q ? store.questType(q).id : 'service',
+    // RAW icon, never the resolved fallback — an empty icon has to stay empty
+    // here or it gets "promoted" into a real one the next time this quest is
+    // saved, even if the teacher only touched an unrelated field.
+    icon: q ? (q.icon || '') : '',
     repeatable: !!q?.repeatable,
     penalty: q ? questPenalty(q) : 10,
     // While false, the penalty tracks half the reward automatically. The moment
@@ -807,8 +811,22 @@ function renderQuestModal() {
         <label class="admin-flabel" for="admin-quest-title">Title <span class="admin-faint">(shown big on the board)</span></label>
         <input id="admin-quest-title" class="admin-input" type="text" value="${esc(f.title)}" placeholder="School Event Squad" />
 
-        <label class="admin-flabel">Type <span class="admin-faint">(icon shown on the quest card)</span></label>
+        <label class="admin-flabel">Type <span class="admin-faint">(fallback icon, used when this quest has none of its own)</span></label>
         <div class="admin-seg admin-theme-seg">${typeOpts}</div>
+
+        <div class="admin-two">
+          <div>
+            <label class="admin-flabel" for="admin-quest-icon">Icon <span class="admin-faint">(optional)</span></label>
+            <input id="admin-quest-icon" class="admin-input" type="text" value="${esc(f.icon)}" placeholder="🧹" maxlength="8" style="max-width:110px;text-align:center;font-size:1.3rem" />
+            <div class="admin-step-hint">Leave blank to just use the Type icon above. Open your emoji picker with <b>Ctrl+Cmd+Space</b> (Mac) or <b>Win+.</b> (Windows), then paste it in.</div>
+          </div>
+          <div>
+            <label class="admin-flabel">Shows on the board as</label>
+            <div class="admin-preview" style="margin:0">
+              <span class="admin-preview-label" id="admin-quest-icon-preview" style="font-size:1.8rem">${esc(store.questIcon(f))}</span>
+            </div>
+          </div>
+        </div>
 
         <label class="admin-flabel" for="admin-quest-desc">What the house must actually do</label>
         <textarea id="admin-quest-desc" class="admin-input admin-textarea" rows="3"
@@ -848,6 +866,8 @@ function syncQuestFromDom() {
   questForm.desc = g('admin-quest-desc');
   questForm.points = g('admin-quest-points');
   questForm.penalty = g('admin-quest-penalty');
+  // Raw value only — trimming/length-clamping happens in store.saveQuest().
+  questForm.icon = el('admin-quest-icon') ? el('admin-quest-icon').value : questForm.icon;
   const checked = rootEl.querySelector('input[name="admin-quest-repeat"]:checked');
   if (checked) questForm.repeatable = checked.value === '1';
   questForm.saveError = null;
@@ -868,6 +888,15 @@ function updateQuestPreview({ pointsChanged = false } = {}) {
   });
 }
 
+// Live preview of what store.questIcon() will actually show on the card —
+// the typed icon, or the Type icon when the box is empty. Recomputed on every
+// keystroke and whenever the Type picker changes, since both feed the fallback.
+function updateQuestIconPreview() {
+  if (!questForm || !el('admin-quest-icon-preview')) return;
+  const icon = el('admin-quest-icon') ? el('admin-quest-icon').value : questForm.icon;
+  el('admin-quest-icon-preview').textContent = ctxRef.store.questIcon({ type: questForm.type, icon });
+}
+
 function saveQuestFromForm() {
   syncQuestFromDom();
   const f = questForm;
@@ -883,6 +912,7 @@ function saveQuestFromForm() {
     desc: String(f.desc || '').trim(),
     points,
     type: f.type,
+    icon: f.icon,
     repeatable: f.repeatable,
     penalty: Number(f.penalty),
   });
@@ -3797,7 +3827,7 @@ function onClick(e) {
     case 'quest-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-quests .admin-guide'); if (d) questGuideOpen = d.open; }, 0); break;
     case 'quest-new': openQuestForm(null); break;
     case 'quest-edit': openQuestForm(btn.dataset.id); break;
-    case 'quest-type': if (questForm) { questForm.type = btn.dataset.type; renderQuestModal(); } break;
+    case 'quest-type': if (questForm) { syncQuestFromDom(); questForm.type = btn.dataset.type; renderQuestModal(); } break;
     case 'quest-save': saveQuestFromForm(); break;
     case 'quest-close': questForm = null; closeModal(); break;
     case 'quest-del': {
@@ -4679,6 +4709,7 @@ export default {
       else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
       else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });
       else if (e.target.id === 'admin-quest-penalty') { if (questForm) questForm.penaltyTouched = true; updateQuestPreview(); }
+      else if (e.target.id === 'admin-quest-icon') updateQuestIconPreview();
       else if (e.target.id === 'admin-award-points') updateAwardPreview();
       else if (e.target.id === 'admin-house-name' || e.target.id === 'admin-house-motto' || e.target.id === 'admin-house-image') updateHousePreview();
       else if (e.target.id === 'admin-house-accent-color') {
