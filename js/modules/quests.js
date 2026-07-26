@@ -193,20 +193,9 @@ function injectStyles() {
     white-space:nowrap;background:none;border:none;padding:0;}
   .quest-chip-repeat{color:#4ade80;}
   .quest-chip-once{color:#c4b5fd;}
-  /* The hero's give-up warning keeps the pill: it's a consequence, not a
-     footnote, and it sits in a row of its own rather than above a button. */
-  .quest-chip-penalty{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.45);color:#fca5a5;
-    border-radius:999px;padding:.3em .85em;font-size:clamp(1rem,1.7vh,1.15rem);font-weight:800;}
 
   .quest-hero-side{flex:0 0 clamp(230px,22vw,320px);display:flex;flex-direction:column;
     gap:clamp(6px,1vh,12px);justify-content:center;}
-  .quest-hero-points{text-align:center;font-family:Cinzel,Georgia,serif;font-weight:800;line-height:.95;
-    font-size:clamp(2.4rem,6.4vh,4.4rem);color:#fde68a;text-shadow:0 0 26px rgba(253,230,138,.45);}
-  .quest-hero-points small{display:block;font-family:inherit;font-size:clamp(.95rem,1.6vh,1.1rem);
-    letter-spacing:.16em;text-transform:uppercase;color:var(--color-text-soft,#9ca3af);margin-top:.15em;}
-  .quest-teacher-bar{display:flex;align-items:center;justify-content:center;gap:.4em;
-    font-size:clamp(.95rem,1.5vh,1.05rem);font-weight:800;letter-spacing:.1em;text-transform:uppercase;
-    color:#fcd34d;}
 
   .quest-act{width:100%;min-height:clamp(52px,7.4vh,74px);border-radius:1rem;border:none;cursor:pointer;
     font-weight:800;font-size:clamp(1.05rem,2.2vh,1.5rem);font-family:inherit;
@@ -1026,8 +1015,14 @@ async function confirmModal() {
     if (!ui) return;   // module was unmounted while the PIN pad was up
     if (!granted) { ui.modal = null; render(); return; }
     ui.modal = null;
-    const heroPts = rootEl.querySelector('.quest-hero-points');
-    const rect = heroPts ? heroPts.getBoundingClientRect() : null;
+    // The hero used to have a dedicated points readout (.quest-hero-points);
+    // that markup is gone (points now live in the Complete button's own
+    // label), but this selector was never updated, so it always matched
+    // nothing and the fly-to-total animation silently never played. The
+    // Complete button carries the same "+N" and is still in the DOM at this
+    // point (store.completeQuest below hasn't re-rendered the hero away yet).
+    const heroBtn = rootEl.querySelector(`.quest-act-done[data-core="${m.core}"]`);
+    const rect = heroBtn ? heroBtn.getBoundingClientRect() : null;
     const house = store.HOUSES[m.core];
     const quest = store.completeQuest(m.core);   // emits → re-render via subscribe
     render();
@@ -1188,5 +1183,6 @@ export default {
     const st = document.getElementById(STYLE_ID);
     if (st) st.remove();
     rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; lockHandler = null; ui = null;
+    lastBoardW = 0;
   },
 };

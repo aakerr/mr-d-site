@@ -380,7 +380,7 @@ const TOPICS = [
         <li>A house opens the <b>Quests</b> tile and reads the board.</li>
         <li>They tap <b>Accept</b> on a quest. It becomes their active quest.</li>
         <li>They do the thing in the real world and bring you the proof you asked for.</li>
-        <li><b>You</b> confirm it — either right on the Quests screen (the green <b>✓</b> and red <b>✗</b> under the active quest, marked 🗝️ TEACHER ONLY) or in <b>🗝️ Admin → Quests</b>. Both do the same thing. Only then do the points land.</li>
+        <li><b>You</b> confirm it — either right on the Quests screen (the green <b>✓ Complete</b> and red <b>✗ Give Up</b> buttons under the active quest, each showing exactly how many points are at stake, e.g. "✓ Complete +40") or in <b>🗝️ Admin → Quests</b>. Either way, a confirmation card names the house, the quest and the exact points one more time before anything actually happens.</li>
       </ol>
       <p><b>One quest per house at a time.</b> While Camelot holds a quest, nobody else can take that same quest, and Camelot cannot take a second one.</p>
       <p>Points are never awarded by a student tapping something — a quest only ever pays out when you confirm it.</p>
@@ -394,7 +394,8 @@ const TOPICS = [
       <p><b>Fastest, on the Quests screen:</b></p>
       <ol class="help-steps">
         <li>The house's active quest sits at the top of the screen.</li>
-        <li>Tap the green <b>✓ Mark Complete</b> under it (the pair marked 🗝️ TEACHER ONLY).</li>
+        <li>Tap the green <b>✓ Complete</b> button under it — it shows the reward right on the button, e.g. <b>"✓ Complete +40"</b>.</li>
+        <li>A confirmation card names the house and the quest one more time. Tap <b>Confirm</b> and the points land.</li>
       </ol>
       <p><b>Or from Admin:</b></p>
       <ol class="help-steps">
@@ -415,12 +416,13 @@ const TOPICS = [
         <li><b>Gave up / failed</b> — the house is charged a penalty and the quest goes back on the board, where <b>another house can pick it up</b>. Unless you set a different number, the penalty is <b>half the quest's reward</b>, rounded. Failing should sting without erasing a week's work.</li>
         <li><b>Accepted by mistake</b> — return it quietly with no penalty at all. Use this when it was your slip, not theirs.</li>
       </ul>
-      <p>Both live in <b>🗝️ Admin → Quests</b>, next to the active quest.</p>
+      <p>On the Quests screen the red <b>✗ Give Up</b> button under the active quest shows the exact penalty right on it, e.g. <b>"✗ Give Up −20"</b> — no guessing what it will cost. Tapping it does not deduct anything by itself: a confirmation card names the house, the quest and the exact points lost, and only tapping <b>Confirm</b> there actually applies it.</p>
+      <p>Both this and "accepted by mistake" also live in <b>🗝️ Admin → Quests</b>, next to the active quest.</p>
     `,
   },
   {
     id: 'quests-catalog', cat: 'quests', title: 'Editing the quest list',
-    keywords: 'catalog edit add quest points repeatable one time penalty create custom',
+    keywords: 'catalog edit add quest points repeatable one time penalty create custom type kind icon emoji',
     body: () => {
       let n = 0;
       try { n = (store.getQuestCatalog() || []).length; } catch (e) { n = 0; }
@@ -429,11 +431,40 @@ const TOPICS = [
         <p>Each quest has:</p>
         <ul class="help-list">
           <li><b>Title and description</b> — say exactly what proof you want, e.g. "before and after photos".</li>
+          <li><b>Type</b> — Service 🤝, Academic 📚, Community ❤️ or Habit ⭐. It also supplies the card's icon whenever the quest has no icon of its own.</li>
+          <li><b>Icon</b> — an optional emoji just for this quest, like 🧹 for a cleanup or 🏛️ for a museum quest. Leave it empty to fall back to the Type's icon instead. <a href="#" data-help-go="quests-icons">Picking an icon →</a></li>
           <li><b>Points</b> — scale these to effort. The shipped ones run from 10 to 50.</li>
           <li><b>Penalty</b> — deducted if the house gives up. Defaults to half the points.</li>
           <li><b>Repeatable</b> — on means any house can take it again after someone finishes it (good for "attend a school event"). Off means it leaves the board for good.</li>
         </ul>
         <p>Deleting a quest also clears it from any house currently holding it.</p>
+      `;
+    },
+  },
+  {
+    id: 'quests-icons', cat: 'quests', title: 'Quest kinds and quest icons — the picture on the card',
+    keywords: 'quest type kind icon emoji category service academic community habit picker symbol picture card fallback empty blank',
+    body: () => {
+      let kinds = [];
+      try { kinds = Object.values(store.QUEST_TYPES || {}); } catch (e) { kinds = []; }
+      return `
+        <p>Every quest carries two separate things that end up as one picture on its card: a <b>kind</b>, and — optionally — its <b>own icon</b>.</p>
+        <h4>Kind: the fallback</h4>
+        <p>Every quest is one of four kinds, chosen with the row of buttons labelled <b>Type</b> in the quest editor (<b>🗝️ Admin → Quests → + New Quest</b>, or ✏️ on an existing one):</p>
+        <ul class="help-list">
+          ${kinds.map((k) => `<li>${k.icon} <b>${esc(k.label)}</b> — <span class="help-muted">${esc(k.blurb)}</span></li>`).join('') || '<li class="help-muted">Not available right now.</li>'}
+        </ul>
+        <p>Whichever kind you pick becomes that quest's icon on the board — <i>unless</i> the quest has its own icon set, which wins instead.</p>
+        <h4>Icon: the quest's own picture</h4>
+        <p>Under <b>Icon (optional)</b>, right next to Type, you can type any single emoji — 🧹 for Campus Cleanup Crew, 🏛️ for Museum of Us, and so on. A live preview beside the box ("Shows on the board as") shows exactly what will appear.</p>
+        <p class="help-callout"><b>Leaving the box empty is meaningful, not an oversight.</b> An empty icon box does not mean "no icon" — the card falls back to the kind's icon instead (🤝 📚 ❤️ ⭐ above), so nothing on the board is ever blank.</p>
+        <h4>Typing an emoji into the box</h4>
+        <p>You do not need to go hunting for one online — your computer already has a picker built in. Click into the Icon box, then:</p>
+        <ul class="help-list">
+          <li><b>Mac:</b> press <b>Ctrl + Cmd + Space</b></li>
+          <li><b>Windows:</b> press the <b>Windows key + .</b> (period)</li>
+        </ul>
+        <p>Pick an emoji from the picker that pops up and it drops straight into the box.</p>
       `;
     },
   },
@@ -689,11 +720,14 @@ const TOPICS = [
   },
   {
     id: 'admin-settings', cat: 'admin', title: 'Settings',
-    keywords: 'settings term dates theme backup maps key reset danger zone',
+    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets',
     body: () => `
       <ul class="help-list">
         <li><b>Term Timeline</b> — the Monday your term starts and how many weeks it runs. This drives "Week N of M" in the top bar and the term totals. ${termLine()}</li>
         <li><b>Display &amp; Theme</b> — dark or light, and optional seasonal decoration. <a href="#" data-help-go="theme">More →</a></li>
+        <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
+        <li><b>⚡ Quick award buttons</b> — the one-tap awards that appear on the Records screen. Edit the labels and point values to match what you actually say in class.</li>
+        <li><b>🎨 Screen colours</b> — lock the Home screen, Quests or Records to one fixed colour instead of following whichever house is active. <a href="#" data-help-go="screen-colours">More →</a></li>
         <li><b>Maps API key</b> — leave blank unless you have your own. <a href="#" data-help-go="maps-key">More →</a></li>
         <li><b>Backup &amp; Restore</b> — connect a folder, save now, restore the latest backup. <a href="#" data-help-go="data-backup">More →</a></li>
         <li><b>⚠️ Danger Zone</b> — wipes everything and starts over. You have to type <b>RESET</b> to confirm, and there is no undo.</li>
@@ -821,6 +855,32 @@ const TOPICS = [
       <p>The app is built so all four can be renamed and recoloured without losing a single point — the change flows straight through to the top bar, the standings and the battle cards.</p>
       <p class="help-callout">Whether there is a button for it in <b>🗝️ Admin</b> depends on the version you have. Have a look there first; if you cannot find it, it is a five-minute job for whoever set the app up, and nothing about your points or your calendar is at risk in doing it.</p>
     `,
+  },
+  {
+    id: 'screen-colours', cat: 'setup', title: 'Screen colours: follow the house, or lock one in',
+    keywords: 'colour color screen theme accent match house lock quests bronze records home dashboard customise appearance camelot atlantis valhalla rivendell',
+    body: () => {
+      let rows = '';
+      try {
+        rows = Object.keys(store.MODULE_THEMES || {}).map((id) => {
+          const t = store.getModuleTheme(id);
+          return `<li><b>${esc(t.label)}</b> — <span class="help-muted">${t.matchHouse ? 'following the active house right now' : 'locked to its own colour right now'}</span></li>`;
+        }).join('');
+      } catch (e) { rows = ''; }
+      return `
+        <p><b>🗝️ Admin → ⚙️ Settings → 🎨 Screen colours.</b></p>
+        <p>Three screens read this setting:</p>
+        <ul class="help-list">${rows || '<li class="help-muted">Not available right now.</li>'}</ul>
+        <p>Each one has a <b>Match house colour</b> toggle next to a colour swatch:</p>
+        <ul class="help-list">
+          <li><b>On (the usual setting)</b> — the screen glows whichever house is currently up: red for Camelot, blue for Atlantis, gold for Valhalla, green for Rivendell.</li>
+          <li><b>Off</b> — pick one colour with the swatch next to the toggle, and the screen stays that colour all the time, no matter which core you switch to.</li>
+        </ul>
+        <p class="help-callout">Why bother switching it off? A screen that recolours itself every single period can start to feel like four different apps rather than one. That is exactly why the <b>Quests</b> board ships already locked to its own bronze, instead of cycling through the house colours the way the Home screen and Records do.</p>
+        <p class="help-warn"><b>This only covers the three screens above.</b> The Magic Shop, Battle Day, the Die of Destiny, the Council of Four and Place of the Week each have their own colours built into the app — nothing in Screen colours changes any of those.</p>
+        <p><b>Reset</b> next to a screen puts it back the way it shipped.</p>
+      `;
+    },
   },
   {
     id: 'theme', cat: 'setup', title: 'Light mode, dark mode and seasonal decoration',

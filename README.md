@@ -8,7 +8,12 @@ A dark-mode, gamified classroom management web app for 7th-grade social studies.
 
 ## DAY ONE SETUP
 
-When you first open the app, do this in order:
+The first time the app is opened in a browser, a **setup wizard** walks you through
+most of this automatically (backup folder, term dates, a look at your four houses,
+and an optional PIN) — every step has a visible "Skip for now," so it never
+blocks a class that's already sitting down. You can run it again any time from
+🗝️ Admin → ❓ Help → "Run the setup wizard again." The steps below are the same
+things, done by hand if you'd rather (or need to redo one later):
 
 1. **Connect Auto-Backup** (if you have a modern browser on Windows/Mac/Linux — Chrome, Edge, Safari 16+)
    - Tap the 🗝️ Admin glyph (far right of the top bar)
@@ -28,6 +33,12 @@ When you first open the app, do this in order:
    - 📅 Planner tab opens a calendar view
    - Click any date to add events: itineraries (daily schedules per core), homework, tests, quizzes, vacations, notes, term markers
    - Each core (1–4) can have different itineraries; students see today's schedule on the Morning Dashboard
+
+4. **Turn on the Teacher PIN (optional)**
+   - ⚙️ Settings → "🔒 Teacher PIN" — off by default
+   - Puts a short PIN in front of the Admin panel and anything that awards or removes points, so a student can't wander up to an unattended board and start tapping
+   - Everything students do themselves — accepting a quest, buying from the shop, rolling the dice — is never gated
+   - See **Teacher PIN (Lock)** under Core Features below before you turn this on — it's a classroom deterrent, not real security, and it's worth understanding the recovery path first
 
 ---
 
@@ -51,7 +62,9 @@ Open **http://localhost:8000**. The app loads immediately and works fully offlin
 
 ## Teacher's Admin Panel (🗝️ glyph, top-right)
 
-The admin panel has five tabs. Click the key icon to open it anytime.
+The admin panel has six tabs. Click the key icon to open it anytime. If you've
+turned on the Teacher PIN, opening Admin is the one thing that always asks for
+it, no matter which tab you're headed to.
 
 ### 📅 Planner
 - **Calendar view** of the entire term
@@ -65,26 +78,36 @@ The admin panel has five tabs. Click the key icon to open it anytime.
 - Events are color-coded and appear on the Morning Dashboard
 
 ### 🗺️ Quests
-- **Active Quest** per core: one quest active at a time, one per house
-- **Quest Catalog**: Teacher-maintained list of available class quests (e.g., "Campus Cleanup Crew" = 30 pts)
-- **How it works**:
-  1. Students accept a quest from the Quests board module
-  2. Teacher verifies completion in this tab (photo proof, student work, etc.)
-  3. Teacher taps "Confirm Completion" → house gets the points + completion logged
+- **Active Quests**: one card per core/house, with the same **✅ Confirm
+  Complete** / **✖ Mark Given Up** buttons that also appear right on the
+  Quests board itself — use whichever screen is in front of you
+- **"Clear without penalty"**: undoes an accepted-by-mistake quest with no
+  point cost, when Give Up's penalty isn't appropriate
+- **Quest Catalog**: teacher-maintained list of available class quests
+  (e.g., "Campus Cleanup Crew" = 30 pts), grouped into Repeatable vs. One-time
+- Each quest has a **kind** (🤝 Service / 📚 Academic / ❤️ Community / ⭐ Habit,
+  shown as an icon on the board) and a **give-up penalty** (defaults to half
+  its points, editable per quest)
+- **Recent Completions**: a log of the last 20 confirmed quests
 - Pre-seeded with 20 quests; add/edit your own for your class
 
 ### 🔮 Shop (Magic Shop Editor)
-- **Item Catalog**: All items students can buy with accumulated TERM points
+- **Item Catalog**: All items students can buy with accumulated TERM points,
+  grouped as Offensive / Defensive / Wildcard
 - **Create items**:
   - **Name** & **Emoji** (visual identity)
-  - **Cost** (in house points)
-  - **Effect Type**:
-    - **Attack**: Deduct points from a chosen target house
-    - **Steal**: Take points from the current leading house
-    - **Shield**: Block incoming attacks for N hours (default 24h)
+  - **Cost** (in house points) — or flag it **"Mythic reward only"** so it
+    can't be bought at all, only granted from a natural 20 on the Die of Destiny
+  - **Effect Type** (six kinds — each has a live plain-English preview as you edit):
+    - **⚔️ Attack**: Deduct points from a chosen target house
+    - **🐴 Steal**: Take points from the current leading house
+    - **🫥 Pierce**: An attack that ignores shields AND damage-reduction relics
+    - **🛡️ Defend (Shield)**: Block ALL incoming attacks for N hours (default 24h)
+    - **🕵️ Halve damage**: Incoming damage cut in half for N hours (usually a Mythic reward)
+    - **🎲 Wildcard**: Random points swing, for or against the buyer
   - **Optional**: Upload a custom image (displays as a thumbnail)
 - **Pre-seeded items**: Trojan Horse (steal 25, cost 50), Catapult (attack 20, cost 35), Aegis Shield (block 24h, cost 30)
-- Changes take effect immediately on the shop module
+- Changes take effect immediately on the shop module and on Battle Day (both read the same catalog)
 
 ### 🌍 Place of the Week
 - **Add/Edit Destinations**:
@@ -94,19 +117,46 @@ The admin panel has five tabs. Click the key icon to open it anytime.
   - **Quick Facts**: 3–5 bullet points about the place
   - **Primary Sources**: Key artifacts/documents (emoji + name + description)
   - **Quiz**: 2–3 short questions (teacher can review student answers on the dashboard)
-  - **Upload PDF**: Your educational presentation deck (auto-launches full-screen with navigation arrows)
+  - **Presentation**: upload a **PDF**, or paste a published **Google Slides**
+    embed link instead — see the caveat about Slides audio under Known
+    Limitations below
+  - **Quick links**: optional links for the lesson (Kahoot, a quiz, an article)
 - **Weekly Schedule**: Set the "Week Of" date (e.g., "Week 3") — the app automatically switches to that destination at the start of that week
+- **🧭 Test flight preview**: a read-only preview of the camera fly-to, right
+  from the editor, so you can check a destination's camera framing without
+  running the full cinematic in front of the class
 - **Video Playback**: 
   - YouTube intros play for ~3 min
   - After the intro, the map flies to the destination and orbits slowly
   - The reveal card pops with quick facts + primary sources
-  - The presentation PDF (if uploaded) launches full-screen with G to toggle grid, arrows to navigate, Esc to close
+  - The presentation (PDF or Slides) launches full-screen after landing
+
+### ❓ Help
+The in-app teacher's handbook — searchable, with topics grouped under Quick
+answers, Getting started, Points, Place of the Week, Quests, Magic Shop &
+Battle, Die of Destiny, The Admin panel, Your data & backups, Housekeeping,
+Something looks wrong?, and **🩺 System check** (see below). Also where you
+re-run the first-run setup wizard.
 
 ### ⚙️ Settings
 - **Term**: Start date (Monday) & total weeks
-- **Theme**: Dark mode (light mode not implemented yet)
+- **Houses**: rename, recolour, or swap the crest/banner image for any of the
+  four houses — none of it costs a house any points, and it can be reset back
+  to the shipped defaults per house
+- **Screen colours**: pin the Home screen, Records, or Quests to a fixed
+  accent colour instead of following whichever house is active (see
+  **Per-screen colours** under Known Limitations — only these three screens
+  are affected)
+- **Quick award buttons**: edit the one-tap presets shown on Records → Award Routines
+- **Theme**: Dark mode (light mode not implemented yet); optional seasonal
+  ambient particles (falling leaves/snow/etc., based on the calendar date)
 - **Maps API Key**: Leave blank to use the bundled key; paste your own if you prefer
+- **Background music**: assign a quiet looping track (drop files in `/music`)
+  to any screen except Place of the Week and Battle Day, which make their own
+  noise; a master volume slider and the global mute (`M` key, or the speaker
+  icon in the top bar) sit alongside it
 - **Automatic Backup**: Connect/disconnect your backup folder (Chrome/Edge/Safari 16+)
+- **🔒 Teacher PIN**: off by default — see **Teacher PIN (Lock)** under Core Features
 - **Danger Zone**: Hard reset the app
   - Type `RESET` to confirm
   - Wipes ALL data: transactions, quests, shop catalog, planner, POTW edits, backups, settings
@@ -122,28 +172,58 @@ The default home screen.
 - **This Week's Standings**: Points earned this week only (separate from term total, useful for weekly resets)
 - **Today's Itinerary** (per core): Bell ringer, lesson blocks, challenges
 - **Homework Due**: What's due today and this week
-- **Navigation Tiles**: Quick-launch to Houses, Quests, Place of the Week, Battle Day, Magic Shop, Die of Destiny
+- **Navigation Tiles**: Quick-launch to Records, Quests, Place of the Week, Battle Day, Magic Shop, Die of Destiny
+
+### Council of Four (⚖️)
+Select **"All Cores"** in the top-bar house switcher instead of a single house
+and you land here rather than on a per-house screen. Deliberately neutral —
+no module tiles, no scoring controls, no single house singled out. Four
+heraldic banners stand side by side, and each banner's **height** is driven by
+that house's score, so the standings read as shapes from the back of the room
+before anyone reads a number. A Term/This-Week toggle switches which scope the
+banners reflect, and a "Recent Decrees" ribbon along the bottom auto-scrolls
+through the latest point changes across all four houses.
 
 ### House Points Engine
 The core of classroom management.
-- **Top Bar ± Button**: Tap to open the quick-points panel
-  - Select a house (or "All Houses" to distribute points evenly)
-  - **Add Points**: Type a number (1–9999)
+- **Top Bar ± Button**: a small "±" sits in the top bar itself (not a
+  separate floating button anymore); tap it to open the quick-points dropdown
+  - Select a house
+  - **Quick buttons**: +5 / −5 / +10 / −10, or type any amount (1–9999) and
+    tap Add/Deduct
   - **Reason** (optional): Why they earned/lost points
-  - **Tag** (optional): Category (challenge, manual, etc.)
-- **Transaction Log**: Every point change is logged with timestamp, reason, and tag
-  - View the log in the Houses module (newest first)
-  - Mis-awarded points can be undone: tap the ✕ on that row of the Transaction Log (House Points screen) and confirm
+- **Transaction Log**: Every point change is logged with timestamp, reason,
+  and a category tag — view it in **Records** (below), newest first, with
+  filters by category, date range, and search text
+- **Undo**: tap the ✕ on any Ledger row in Records and confirm. This removes
+  **only the points** — a quest you'd already marked complete stays complete,
+  a shield already bought stays active. Records tells you this plainly at the
+  moment you undo, per category
 - **Scoring Scopes**:
   - **Term Total**: All points from the start of the term (used for Magic Shop purchases, rankings)
   - **Week Total**: Points this week only (useful for weekly competitions or resets)
-- **Shields** (Aegis): A house that buys a shield is protected from attacks for 24 hours (blocked by the shield effect in the Magic Shop)
+- **Shields & relics**: a house that buys a Shield is fully protected from
+  Attack/Steal for N hours; a "damage-reduction" relic (usually a Mythic Nat-20
+  reward) halves incoming damage instead of blocking it outright; a Pierce
+  item ignores both
 
-### Houses Module
-- **View all four houses** side-by-side
-- **House Cards** show: shield status (if active), term total, week total
-- **Transaction History**: Tap a house to see its recent transactions
-- **Colors & Crests**: Each house has a unique accent color and shield crest image
+### Records (📜) — formerly "Houses"
+The ledger — the one screen that answers "why does the score look like this?"
+Four parts, top to bottom:
+- **The Term Arc**: a week-by-week line chart of all four houses' points,
+  toggled between "Running total" (the House Cup race) and "Points per week"
+- **Where the points came from**: a per-house (or whole-class) breakdown by
+  source — Quests, Place of the Week, Battle Day, Die of Destiny, Magic Shop,
+  Attacks, Wildcards, and your own manual awards — plus a plain-English
+  takeaway sentence (e.g. "Most of Camelot's points came from your own
+  awards — 62% of everything earned")
+- **The Full Ledger**: every transaction, filterable by category/date
+  range/search text, with an ✕ to undo any row (with confirmation) and an
+  **⬇ Export CSV** button that always exports every matching row regardless
+  of how many are shown on screen (the on-screen list itself caps at 400 rows
+  for speed — narrow your filters or export the CSV for the full history)
+- **Award Routines**: your one-tap quick-award presets (edited in Admin →
+  Settings → Quick award buttons), for a single house or all four at once
 
 ### Place of the Week (🌍)
 A cinematic, multi-stage geography voyage.
@@ -168,29 +248,46 @@ A cinematic, multi-stage geography voyage.
 - **Quiz**: Multiple-choice or short-answer questions (students tap to answer; results logged)
 
 **Stage 5: Presentation (optional)**
-- If you uploaded a PDF in the Place of the Week editor, it auto-launches full-screen after the intro
-- **Navigation**:
-  - **Arrow Buttons**: Next/prev page
-  - **G Key**: Toggle grid view (all pages at once)
-  - **Esc Key**: Close the presentation
-- PDF viewer has auto-hide nav chrome after 3 seconds of idle
+- If you uploaded a PDF (or set a Google Slides link) in the Place of the Week editor, it auto-launches full-screen after the intro
+- **PDF navigation**: Arrow buttons for next/prev page, **G** to toggle grid view (all pages at once), **Esc** to close; auto-hides its nav chrome after 3 seconds of idle
+- **Google Slides**: Google's own control bar stays visible for touch, and a presenter remote's Page Up/Down reaches Google's player — but this app cannot drive slide navigation itself, and doesn't control the deck's audio (see Known Limitations)
 
 ### Quests (🧭)
 - **Quest Board**: Student-facing module to browse and accept class quests
-- **Active Quests**: One per house, shown as a hero banner with description and point value
+- **Active Quest**: One per house at a time, shown as a hero banner at the top
+  with its description, point value, and a "give up" penalty
+- **Quest kinds**: every quest carries a small icon marking what kind of task
+  it is — 🤝 Service, 📚 Academic, ❤️ Community, or ⭐ Habit (set per quest in
+  Admin; older/hand-written quests default to 🤝 Service if none is set)
 - **How Students Use It**:
-  1. Read the active quest for their house
-  2. Tap "Accept Quest" to start
-  3. Tap "Abandon Quest" if they give up and want to try a different one
-  4. Complete the quest (photo proof, signatures, whatever you ask)
-  5. Teacher confirms in Admin → Quests and taps "Confirm Completion"
-- **Quest Board also shows**:
-  - All completed quests (for this term)
-  - Completion timestamp and house that earned it
-  - Total points earned from quests
+  1. Read the active quest for their house, or pick a new one from the board
+     below (a house can't take a second quest until it finishes or gives up
+     its current one)
+  2. Tap "Accept Quest" to start — it moves to the hero banner and off the
+     board for other houses
+  3. Complete the quest (photo proof, signatures, whatever you ask)
+  4. **You** confirm the result — either on the big buttons right on the Quest
+     Board hero (✓ Complete / ✗ Give Up) or in Admin → Quests, whichever is
+     closer. Both are gated by the Teacher PIN if it's turned on
+  5. **Give Up** deducts a penalty (half the quest's points by default, set
+     per quest in Admin) and returns the quest to the board for another house
+     to take. Accepted by mistake instead? "Clear without penalty" in Admin →
+     Quests undoes it with no cost
+- **Hall of Deeds**: a scrolling strip at the bottom of the board shows
+  recently completed quests and each house's running term total
+- A **repeatable** quest returns to the board after someone finishes it; a
+  **one-time** quest leaves the board for good once completed
+
+> **Prototype, not a feature yet**: the Quest Board has a "◗ Try carousel"
+> toggle that swaps the grid of quest cards for an experimental
+> swipeable-carousel layout. It's there to compare against the real board
+> before a decision is made — it isn't saved anywhere, and it may be removed
+> (or become the only layout) in a future update.
 
 ### Battle Day (⚔️)
-A cinematic, quick-strike combat arena.
+A cinematic house-vs-house duel arena. Every strike, from either screen,
+resolves through the same combat rule (`store.applyAttack`), so Battle Day and
+the Magic Shop can never disagree about what a shield or a Pierce item does.
 
 **Landing Page** (inside the app window):
 - Red, pulsing "IGNITE BATTLE" button
@@ -198,32 +295,54 @@ A cinematic, quick-strike combat arena.
 **Full-Screen Cinematic Overlay**:
 - **Swords-clash animation**: Dual swords slam together with screen shake
 - **"BATTLE DAY!" stamp** pulses across the middle
-- Fades to combat mode
+- Fades to the duel screen
 
-**Combat Mode**:
-- **House Battle Cards** (2 or 4 cards per screen, grid layout):
-  - House name, shield badge (if protected), term & week totals
-  - **Strike Buttons**:
-    - **⚔️ Attack**: Instant ±10 points (winner's choice: +10 or −10 from target)
-    - **🛡️ Defend**: Activates a shield if house has one
-  - Quick animations and sound effects on each strike
-- **Link to Magic Shop**: Tap to buy attack items (steal, attack) or shields
-- **Combat Effects**:
-  - Shield blocking visualized on-screen
-  - Point text floats up with color-coding (green gain, red loss)
-  - Celebratory particles on large swings
+**The Duel**:
+- **Choose the challenger** (defaults to whichever house is active in the top
+  bar), then **choose their opponent** — tapping a house shows its points and
+  whether it's currently shielded or damage-reduced
+- **Pick a strike**: the challenger's screen lists every *offensive* Magic Shop
+  item (Attack, Steal, Pierce) they can afford, priced in their own term
+  points — there is no separate, free "±10 attack" button; every strike costs
+  points from the challenger's own total, same as buying from the shop
+  directly
+- Before you tap, the app tells you plainly whether the strike will be
+  **blocked** by the target's shield, **halved** by their damage-reduction
+  relic, or **ignores both** if it's a Pierce item
+- **"🔮 Open Magic Shop"** button jumps straight to the shop to buy an
+  offensive item or a defense before the duel
+- **Teacher scoring row**: a separate, always-visible ±10 per house for you to
+  award or deduct directly — labeled "not a house attack," but a deduction here
+  still respects that house's shield/relic, same as any other attack
+- Point text floats up with color-coding (green gain, red loss), plus sound
+  effects and screen shake on each strike
 
 ### Magic Shop (🔮)
-- **Item Catalog**: Browse teacherreditable items (updated live from Admin)
+- **Item Catalog**: Browse teacher-editable items (updated live from Admin),
+  grouped as Offensive / Defensive / Wildcard
 - **Purchase Flow**:
-  - Tap an item to see cost & effect
+  - Tap an item to see its cost, plain-English effect, and (for offensive
+    items) whether your intended target is shielded or reduced before you commit
   - **Balance Check**: Greyed out if you don't have enough TERM points
-  - **Choose Target** (if it's an attack): Tap the target house
+  - **Choose Target** (Attack/Steal/Pierce only): Tap the target house
   - **Confirm**: Tap "Buy" → points deducted immediately, item effect applied
-- **Item Effects**:
-  - **Attack**: Deduct N points from a chosen target
-  - **Steal**: Take N points from the currently-leading house
-  - **Shield**: Block incoming attacks for 24 hours (subsequent attacks fail silently)
+- **Item Effects** (six kinds, set per item in Admin → Shop):
+  - **⚔️ Attack**: Deduct N points from a house you choose — blocked by a
+    shield, halved by a damage-reduction relic
+  - **🐴 Steal**: Take N points from whichever house currently leads and give
+    them to the buyer — still a real attack, so shields and reduction apply
+    to the leader
+  - **🫥 Pierce**: Same as Attack, but ignores BOTH shields and damage
+    reduction — it always lands in full. Price these higher; nothing stops them
+  - **🛡️ Defend (Shield)**: Blocks every incoming Attack/Steal for N hours
+    (default 24h). A Pierce item still gets through
+  - **🕵️ Halve damage**: Cuts incoming damage in half for N hours — usually a
+    Mythic (Nat 20) reward rather than something bought outright
+  - **🎲 Wildcard**: A random points swing of up to N, which may help OR hurt
+    the buyer — not an attack, so shields/relics don't apply
+- **Mythic-only items**: an item can be flagged "Mythic reward only" in Admin
+  (cost forced to 0) — it can't be bought, only granted to a house that rolls
+  a natural 20 on the Die of Destiny (see below)
 - **Transaction Log**: Every purchase is logged with tag "shop"
 
 ### Die of Destiny (🎲)
@@ -243,12 +362,50 @@ Classroom d20 roller with a 3D physics simulation and outcome table.
 | 6–9 | 😐 **Fate is Neutral** | Nothing happens | No auto-award |
 | 10–14 | ✨ **Small Favor** | +2 points | Tap to award |
 | 15–19 | 🔥 **Fortune Smiles** | +5 points | Tap to award |
-| 20 | 👑 **MYTHIC TRIUMPH** | +20 points **+ free Magic Shop item** (teacher grants manually) | Tap for +20 |
+| 20 | 👑 **MYTHIC TRIUMPH** | +20 points **+ choice of a Mythic Relic** | Tap for +20 |
 
 **Awarding Points**:
 - Tap the outcome button to apply the roll result to the active house
 - One award per roll (new roll re-enables awarding)
-- For Mythic Triumph (20), teacher must manually select a free item from the shop after awarding the 20 points
+- For Mythic Triumph (20): after you award the +20, the screen itself offers a
+  row of **Mythic Relic** cards to tap — any shop item flagged "Mythic reward
+  only" in Admin (there's no separate trip to the Magic Shop needed). If no
+  item is flagged that way, the house just keeps the 20 points
+- Rolls are genuinely uniform 1–20 — nothing behind the scenes weights the
+  outcome
+
+### Teacher PIN (Lock) 🔒
+Off by default. Turn it on in Admin → Settings and it puts a short PIN in
+front of two things only: **opening the Admin panel**, and **any action that
+awards or removes points** anywhere in the app (the quick-points panel, Battle
+Day strikes and teacher scoring, Magic Shop purchases, quest complete/give-up,
+Die of Destiny awards, and undoing a ledger entry). Everything a student does
+themselves — accepting a quest, rolling the dice, browsing the shop — is
+never gated.
+- Type it once and the board stays unlocked for a set number of minutes
+  (5/15/30/60, default 15) of teacher activity, so a lesson doesn't turn into
+  re-typing a PIN constantly
+- Shift-click (or a ~half-second press-and-hold) on the 🗝️/🔒 topbar glyph
+  re-locks instantly, for when you're stepping away
+- **Turning it on shows you a recovery code once** — write it down. If you
+  forget the PIN, the pad's "Forgot your PIN?" link tells you to open your
+  most recent backup `.json` in a text editor and search for `recovery`; that
+  code turns the PIN off with no data lost
+- **Be honest with yourself about what this is**: it's a classroom deterrent,
+  not real security. It stops a student from walking up to an unattended board
+  and tapping around — that's genuinely all it's for. It does not encrypt or
+  protect your saved data, and the recovery code above is stored as **plain,
+  readable text** (that's what makes it findable in a backup file — and it
+  also means anyone holding that backup file can read it)
+
+### Ambient Music & Master Mute
+Every screen except Place of the Week and Battle Day (which make their own
+noise) can have a quiet looping background track, assigned in Admin →
+Settings → Background music. Tracks crossfade smoothly when you switch
+screens, and there's one master volume plus a hard on/off:
+- Press **`M`** anywhere in the app to mute or unmute everything instantly
+  (ignored while you're typing in a text field)
+- Or tap the 🔊/🔇 speaker icon in the top bar
 
 ---
 
@@ -273,11 +430,14 @@ images/class-shield.png
 ```
 
 ### Module Icons
-Each module has an optional icon in the top bar:
+Each screen has an optional icon (topbar/masthead and Admin tab):
 ```
 images/icon-quest.png
 images/icon-market.png  (shop)
 images/icon-potw.png
+images/icon-battle.png
+images/icon-dice.png
+images/icon-points.png (Records)
 ```
 
 ### Edit Term Dates & POTW Profiles
@@ -310,7 +470,7 @@ The app uses a simple plugin architecture.
    ```js
    import yourmodule from './modules/yourmodule.js';
    // ...
-   [dashboard, houses, potw, dice, battle, shop, quests, admin, yourmodule].forEach((m) => registry.register(m));
+   [dashboard, houses, potw, dice, battle, shop, admin, quests, council, yourmodule].forEach((m) => registry.register(m));
    ```
 
 ---
@@ -320,12 +480,14 @@ The app uses a simple plugin architecture.
 ### Storage Structure
 All state lives in localStorage under the key `mrd-classroom-os-v1`. This includes:
 - Transaction log (all point changes)
-- House shields (active protections)
-- Quests (catalog, active, completed)
+- House shields and damage-reduction relics (active protections)
+- Quests (catalog, active, completed, per-quest type/icon/give-up penalty)
 - Magic Shop catalog (teacher edits)
 - Planner events
 - POTW profiles & scheduling
-- Settings (term dates, theme, backup folder handle)
+- Settings — term dates, theme (incl. seasonal effects), backup folder handle,
+  Teacher PIN (hashed, plus the plain-text recovery code), per-screen accent
+  colours, quick award presets, and per-screen ambient music assignments
 - Student quiz responses
 
 ### Media (Videos, PDFs, Images)
@@ -347,13 +509,22 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
 - **WARNING**: Never use browser "Clear Site Data"—it also wipes IndexedDB and the backup folder handle. Data is unrecoverable.
 
 ### How to Fix a Mistake
-- There is no "undo" or "delete transaction" feature
-- **Procedure**: Tap the ✕ beside the entry in the Transaction Log on the House Points screen and confirm. (Undo removes the points only — a completed quest stays completed, a purchased shield stays active.) An equal-and-opposite manual entry also works
+- **Procedure**: Tap the ✕ beside the entry in the Ledger on the **Records**
+  screen and confirm (gated by the Teacher PIN if it's on). This removes
+  **only the points** — a completed quest stays completed, a purchased shield
+  stays active, an attack that already landed isn't un-attacked. Records
+  tells you this plainly, worded for whichever kind of entry you're removing
+- An equal-and-opposite manual entry also works if you'd rather keep both in
+  the log for the record
   - Example: If you accidentally awarded 10 points, add a −10 entry with reason "Correction: removed erroneous award"
   - Both entries remain in the log, but the net effect is correct
 
 ### Schema Reference
-See `data/schema.json` for the complete JSON Schema documenting the persisted state.
+See `data/schema.json` for the JSON Schema documenting the persisted state.
+**Caveat**: this schema file has not kept pace with every feature below (the
+Teacher PIN, per-screen colours, ambient music, and the quests' type/icon/
+give-up-penalty fields aren't in it yet) — `js/core/store.js` is the
+authoritative source for the current shape of saved state.
 
 ---
 
@@ -362,6 +533,7 @@ See `data/schema.json` for the complete JSON Schema documenting the persisted st
 - **Tailwind CSS** (styling): bundled locally in `vendor/tailwind.js` — no internet needed
 - **Google Maps 3D**: Used in Place of the Week; falls back to a flat image if unavailable
 - **YouTube Embeds**: Intro videos; falls back to a bundled audio file if unavailable
+- **Google Slides Embeds**: Only used if you choose a Slides link (instead of a PDF) for a Place of the Week presentation; needs internet, same as Maps
 - **PDF.js**: Presentation decks — bundled in `vendor/pdf.min.mjs`, so decks render with no internet
 - **Dice 3D**: WebGL simulation; falls back to simple number + spin animation
 - **Globe (3D)**: Stage 0 POTW globe; falls back to emoji 🌍
@@ -376,7 +548,7 @@ See `data/schema.json` for the complete JSON Schema documenting the persisted st
   - Used to determine if a house can afford a shop item
 - **Week Totals**: Points earned this week only
   - Calculated from the current Monday (store calculates week boundaries automatically)
-  - Shown on Battle Day and Houses module for a quick "this-week" view
+  - Shown on Battle Day and the Records screen for a quick "this-week" view
   - Useful for weekly competitions or mid-week resets
 
 **Example Workflow**:
@@ -386,9 +558,50 @@ See `data/schema.json` for the complete JSON Schema documenting the persisted st
 
 ---
 
-## Google Classroom Integration (Optional)
+## Google Classroom Integration (Optional, not active)
 
-The app includes a scaffold for syncing student rosters from Google Classroom (if you want it). See `js/integrations/classroom.js` for activation steps.
+The app includes a **scaffold** for syncing student rosters from Google
+Classroom — the code to authenticate and fetch rosters exists, but it is not
+wired into the app at all right now: nothing calls it at startup, and it
+needs a Google Cloud OAuth Client ID pasted in before it does anything.
+`js/integrations/classroom.js` documents every activation step (create a
+Google Cloud project, enable the Classroom API, set up the OAuth consent
+screen, create a Web Client ID, paste it into the file, serve over HTTPS).
+Until that's done, this feature simply isn't there — nothing in the app
+currently reads from or writes to Google Classroom.
+
+---
+
+## Known Limitations & Current State
+
+Being straight about what's finished, what's a deliberate trade-off, and
+what's genuinely unresolved:
+
+- **Teacher PIN is a deterrent, not security.** It stops a student from
+  tapping around an unattended board — that's genuinely all it claims to do.
+  It does not encrypt anything, and its recovery code is stored as plain text
+  (by design — see **Teacher PIN (Lock)** above).
+- **Per-screen accent colours only affect three screens.** Admin → Settings →
+  Screen colours can pin the Home screen, Records, or Quests to a fixed
+  colour instead of following the active house. Magic Shop, Battle Day, Die
+  of Destiny, Council of Four, and Place of the Week each have their own
+  built-in palette and are not affected by that setting.
+- **The Quests board's carousel layout is an undecided prototype**, sitting
+  behind a "Try carousel" toggle next to the normal grid. It isn't saved
+  anywhere and may not survive to the next version in its current form.
+- **Google Slides presentations**: this app cannot drive slide navigation
+  inside a Google Slides embed (Google doesn't expose that control to outside
+  pages) — it can only hand keyboard focus to Google's own player. **Audio
+  behavior inside a Slides deck is not something this app controls or has
+  verified** — whatever a teacher's deck does (an embedded YouTube video vs.
+  an audio file dropped directly into a slide) is up to Google's player, not
+  this code. A PDF upload remains the fully offline, fully app-controlled option.
+- **Google Classroom integration is an unwired scaffold** — see above.
+- **Light mode is not implemented** — the toggle exists in Settings but only dark mode is built out.
+- **Media (videos, PDFs, images) never travels with a backup file.** Backups
+  restore points, quests, the shop, the planner and settings perfectly; any
+  uploaded media has to be re-added by hand on a new computer.
+- **`data/schema.json` lags the real state shape** — see Schema Reference above.
 
 ---
 
@@ -439,14 +652,20 @@ The app includes a scaffold for syncing student rosters from Google Classroom (i
 
 ### Key Files
 - `ARCHITECTURE.md` — Complete module contract and core API reference
-- `js/config.js` — API keys, term config, POTW intro video presets
+- `js/config.js` — API keys, term config, POTW intro video presets, ambient track map
 - `js/core/store.js` — State machine and localStorage sync; all point changes flow through `store.addPoints()`
-- `js/core/shell.js` — Persistent top bar, core switcher, quick-points panel, term tracker
+- `js/core/shell.js` — Persistent top bar, core switcher, quick-points panel, term tracker, accent/theme wiring
+- `js/core/lock.js` — Optional Teacher PIN gate
+- `js/core/ambient.js` — Per-screen background music + crossfade
+- `js/core/firstrun.js` — First-run setup wizard
+- `js/core/health.js` — "System check" diagnostics (rendered inside Help)
 - `js/core/backup.js` — File System Access API auto-backup to a chosen folder
 - `js/core/media.js` — IndexedDB-backed media store (videos, PDFs, images)
+- `js/modules/admin.js` — The Teacher's Admin panel (all six tabs)
+- `js/modules/quests.js` / `js/modules/council.js` — Quest Board / Council of Four screens
 - `js/main.js` — Boot and module registration
-- `data/schema.json` — JSON Schema documenting the persisted state
-- `js/integrations/classroom.js` — Google Classroom API scaffold (optional)
+- `data/schema.json` — JSON Schema documenting the persisted state (lags current fields — see Schema Reference)
+- `js/integrations/classroom.js` — Google Classroom API scaffold (not currently wired in)
 
 ### Running the Dev Server
 ```bash
