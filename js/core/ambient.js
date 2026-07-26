@@ -15,7 +15,6 @@ const FADE_MS = 900;      // crossfade between screens
 const STEP_MS = 60;       // fade tick
 
 let current = null;       // { el, moduleId }
-let fadeTimer = null;
 
 function settings() {
   const s = store.getSettings?.() || {};
@@ -47,26 +46,49 @@ function targetVolume(moduleId = current?.moduleId) {
   return volume * (e ? e.gain : 1);
 }
 
+// Each element owns its fade timer. A single shared timer meant that starting
+// the incoming track's ramp cleared the OUTGOING track's fade-out, so its
+// kill() never ran and it kept playing at full volume — every screen change
+// stacked another track on top of the last.
 function ramp(el, to, done) {
-  clearInterval(fadeTimer);
+  if (el.__ambRamp) clearInterval(el.__ambRamp);
   const from = el.volume;
   const steps = Math.max(1, Math.round(FADE_MS / STEP_MS));
   let i = 0;
-  fadeTimer = setInterval(() => {
+  el.__ambRamp = setInterval(() => {
     i += 1;
     const v = from + (to - from) * (i / steps);
     try { el.volume = Math.min(1, Math.max(0, v)); } catch (e) { /* detached */ }
-    if (i >= steps) { clearInterval(fadeTimer); fadeTimer = null; done && done(); }
+    if (i >= steps) {
+      clearInterval(el.__ambRamp);
+      el.__ambRamp = null;
+      done && done();
+    }
   }, STEP_MS);
+}
+
+// Everything that has been asked to stop but may still be fading. Tracked so a
+// hard stop (mute, presentation opening, teardown) can silence them too.
+const retiring = new Set();
+
+function killAudio(el) {
+  if (!el) return;
+  if (el.__ambRamp) { clearInterval(el.__ambRamp); el.__ambRamp = null; }
+  if (el.__ambKill) { clearTimeout(el.__ambKill); el.__ambKill = null; }
+  try { el.pause(); el.src = ''; el.load(); } catch (e) { /* already gone */ }
+  retiring.delete(el);
 }
 
 function stopCurrent(fade = true) {
   if (!current) return;
   const { el } = current;
   current = null;
-  const kill = () => { try { el.pause(); el.src = ''; } catch (e) {} };
-  if (!fade) { kill(); return; }
-  ramp(el, 0, kill);
+  if (!fade) { killAudio(el); return; }
+  retiring.add(el);
+  ramp(el, 0, () => killAudio(el));
+  // Belt and braces: if that fade is ever interrupted, this still silences it.
+  // A track that outlives its screen is the worst failure mode here.
+  el.__ambKill = setTimeout(() => killAudio(el), FADE_MS + 400);
 }
 
 // Play the track assigned to `moduleId`, or fade out if that screen has none.
@@ -104,7 +126,13 @@ export function refreshAmbient() {
   ramp(current.el, targetVolume(current.moduleId));
 }
 
-export function stopAmbient() { stopCurrent(false); }
+// Hard stop: used when a presentation opens or everything is muted. Kills the
+// current track AND anything still mid-fade, so nothing can bleed into a
+// lesson video.
+export function stopAmbient() {
+  stopCurrent(false);
+  [...retiring].forEach(killAudio);
+}
 
 // What's playing right now — for diagnostics (Help → System check) and tests.
 export function ambientStatus() {
