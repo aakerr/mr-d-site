@@ -27,29 +27,41 @@ function defaultAwardPresets() {
   ];
 }
 
+// Quest kinds. The icon rides on the card so a class can tell at a glance what
+// sort of task it is — which is what the repeated crossed-swords could never do.
+// 'service' is the fallback for anything untyped (a quest the teacher wrote
+// before this existed, or one restored from an older backup).
+const QUEST_TYPES = {
+  service:   { id: 'service',   icon: '🤝', label: 'Service',   blurb: 'Helping the school run' },
+  academic:  { id: 'academic',  icon: '📚', label: 'Academic',  blurb: 'Learning and schoolwork' },
+  community: { id: 'community', icon: '❤️', label: 'Community', blurb: 'Giving and kindness' },
+  habit:     { id: 'habit',     icon: '⭐', label: 'Habit',     blurb: 'Daily and weekly conduct' },
+};
+const DEFAULT_QUEST_TYPE = 'service';
+
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
   return [
-    { id: 'q-school-event',   points: 20, title: 'School Event Squad',       desc: 'Attend a school event together. Proof: photos showing at least half the class there.', repeatable: true },
-    { id: 'q-library',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.', repeatable: true },
-    { id: 'q-cleanup',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.', repeatable: true },
-    { id: 'q-kindness',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.', repeatable: true },
-    { id: 'q-tutors',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).', repeatable: true },
-    { id: 'q-attendance',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.', repeatable: true },
-    { id: 'q-homework',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.', repeatable: true },
-    { id: 'q-food-drive',     points: 40, title: 'Food Drive Forces',        desc: 'Bring in 50+ items for the school food drive.' },
-    { id: 'q-recycling',      points: 20, title: 'Recycling Rangers',        desc: 'Collect and sort recycling from all 7th-grade rooms for one week.', repeatable: true },
-    { id: 'q-thank-you',      points: 15, title: 'Teacher Appreciation Op',  desc: 'Write and deliver thank-you cards to five teachers or staff members.', repeatable: true },
-    { id: 'q-greeters',       points: 20, title: 'Morning Ambassadors',      desc: 'Greet students at the front doors for three mornings with school-approved signs.', repeatable: true },
-    { id: 'q-spirit',         points: 25, title: 'Spirit Week Sweep',        desc: 'At least 75% of the class participates in every day of Spirit Week.' },
-    { id: 'q-welcome',        points: 15, title: 'New Student Welcome',      desc: 'Build a welcome guide and buddy system for students who join mid-year.' },
-    { id: 'q-garden',         points: 30, title: 'School Garden Guardians',  desc: 'Plant or maintain the school garden for two weeks. Proof: photo log.' },
-    { id: 'q-history-fair',   points: 50, title: 'History Fair Heroes',      desc: 'Every student completes and presents a history fair entry.' },
-    { id: 'q-current-events', points: 20, title: 'Current Events Council',   desc: 'Deliver five student-led current-events briefings to the class.', repeatable: true },
-    { id: 'q-book-drive',     points: 35, title: 'Book Drive Battalion',     desc: 'Collect 40 gently used books to donate to the school library.' },
-    { id: 'q-transitions',    points: 10, title: 'Silent Transition Masters',desc: 'One full week of fast, silent transitions between activities.', repeatable: true },
-    { id: 'q-fundraiser',     points: 45, title: 'Fundraiser Front Line',    desc: 'Hit the class goal in a school fundraiser (or raise the most of any class).' },
-    { id: 'q-museum',         points: 40, title: 'Museum of Us',             desc: 'Build a classroom museum exhibit and host another class for a guided tour.' },
+    { id: 'q-school-event',   points: 20, title: 'School Event Squad',       desc: 'Attend a school event together. Proof: photos showing at least half the class there.', type: 'service', repeatable: true },
+    { id: 'q-library',        points: 15, title: 'Library Legends',          desc: 'Every student checks out a library book and logs one thing they learned.', type: 'service', repeatable: true },
+    { id: 'q-cleanup',        points: 30, title: 'Campus Cleanup Crew',      desc: 'Clean a shared school space during recess or lunch. Proof: before & after photos.', type: 'service', repeatable: true },
+    { id: 'q-kindness',       points: 25, title: 'Kindness Campaign',        desc: 'Deliver 25 hand-written kind notes to students or staff around the building.', type: 'community', repeatable: true },
+    { id: 'q-tutors',         points: 35, title: 'Tutor Titans',             desc: 'Five classmates tutor younger students for one week (teacher sign-off from their room).', type: 'academic', repeatable: true },
+    { id: 'q-attendance',     points: 30, title: 'Perfect Attendance Week',  desc: 'Every student present, every day, for one full week.', type: 'habit', repeatable: true },
+    { id: 'q-homework',       points: 25, title: 'Homework Hundred',         desc: '100% homework turn-in from the whole class for a full week.', type: 'academic', repeatable: true },
+    { id: 'q-food-drive',     points: 40, title: 'Food Drive Forces',        desc: 'Bring in 50+ items for the school food drive.', type: 'community' },
+    { id: 'q-recycling',      points: 20, title: 'Recycling Rangers',        desc: 'Collect and sort recycling from all 7th-grade rooms for one week.', type: 'service', repeatable: true },
+    { id: 'q-thank-you',      points: 15, title: 'Teacher Appreciation Op',  desc: 'Write and deliver thank-you cards to five teachers or staff members.', type: 'community', repeatable: true },
+    { id: 'q-greeters',       points: 20, title: 'Morning Ambassadors',      desc: 'Greet students at the front doors for three mornings with school-approved signs.', type: 'community', repeatable: true },
+    { id: 'q-spirit',         points: 25, title: 'Spirit Week Sweep',        desc: 'At least 75% of the class participates in every day of Spirit Week.', type: 'habit' },
+    { id: 'q-welcome',        points: 15, title: 'New Student Welcome',      desc: 'Build a welcome guide and buddy system for students who join mid-year.', type: 'community' },
+    { id: 'q-garden',         points: 30, title: 'School Garden Guardians',  desc: 'Plant or maintain the school garden for two weeks. Proof: photo log.', type: 'service' },
+    { id: 'q-history-fair',   points: 50, title: 'History Fair Heroes',      desc: 'Every student completes and presents a history fair entry.', type: 'academic' },
+    { id: 'q-current-events', points: 20, title: 'Current Events Council',   desc: 'Deliver five student-led current-events briefings to the class.', type: 'academic', repeatable: true },
+    { id: 'q-book-drive',     points: 35, title: 'Book Drive Battalion',     desc: 'Collect 40 gently used books to donate to the school library.', type: 'community' },
+    { id: 'q-transitions',    points: 10, title: 'Silent Transition Masters',desc: 'One full week of fast, silent transitions between activities.', type: 'habit', repeatable: true },
+    { id: 'q-fundraiser',     points: 45, title: 'Fundraiser Front Line',    desc: 'Hit the class goal in a school fundraiser (or raise the most of any class).', type: 'community' },
+    { id: 'q-museum',         points: 40, title: 'Museum of Us',             desc: 'Build a classroom museum exhibit and host another class for a guided tour.', type: 'academic' },
   ];
 }
 
@@ -265,6 +277,11 @@ function load() {
           repeatable: q.repeatable ?? (d ? !!d.repeatable : false),
           penalty: Number.isFinite(Number(q.penalty)) ? Number(q.penalty)
             : (d && Number.isFinite(Number(d.penalty)) ? Number(d.penalty) : Math.round(Number(q.points || 0) / 2)),
+          // Quest kinds arrived after some browsers had already saved. Take the
+          // shipped type by id; a quest the teacher wrote themselves has no
+          // default to borrow, so it lands on the fallback until they pick one.
+          type: QUEST_TYPES[q.type] ? q.type
+            : (d && QUEST_TYPES[d.type] ? d.type : DEFAULT_QUEST_TYPE),
         };
       });
       if (!merged.quests.active || typeof merged.quests.active !== 'object') merged.quests.active = {};
@@ -344,6 +361,9 @@ function fmtDue(dateStr) {
 
 export const store = {
   HOUSES,
+  QUEST_TYPES,
+  // Icon for a quest's kind, falling back rather than rendering a blank.
+  questType(q) { return QUEST_TYPES[q && q.type] || QUEST_TYPES[DEFAULT_QUEST_TYPE]; },
   getState: () => state,
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
@@ -760,6 +780,10 @@ export const store = {
       // repeatable: any house may take it again after someone finishes it
       // (e.g. "attend a school event"). One-shots leave the board for good.
       repeatable: !!quest.repeatable,
+      // Kind of task, which picks the icon on the card. This object is REBUILT
+      // field by field, so anything not named here is dropped on save — the
+      // type has to be listed or the teacher's choice silently reverts.
+      type: QUEST_TYPES[quest.type] ? quest.type : DEFAULT_QUEST_TYPE,
       // Deducted when a house gives up on a quest it accepted. Defaults to
       // half the reward — failing should sting without erasing a week's work.
       penalty: Number.isFinite(Number(quest.penalty)) ? Math.max(0, Math.round(Number(quest.penalty))) : Math.round(points / 2),

@@ -225,6 +225,11 @@ function injectStyles() {
   /* ---- QUEST BOARD ---- */
   .quest-board{flex:1;min-height:0;display:flex;flex-direction:column;gap:clamp(6px,1vh,12px);}
   .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
+  /* Its own class, NOT .quest-head-spacer: that one is a fixed-width mirror of
+     the masthead's scroll icon and must stay fixed or the title stops being
+     centred. Here the job is the opposite — eat the slack so the sort control
+     lands on the grid's right edge instead of floating mid-row. */
+  .quest-head-push{flex:1 1 auto;min-width:0;}
   .quest-board-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
     font-size:clamp(1.1rem,2.6vh,1.8rem);color:#e5e7eb;}
   .quest-board-count{color:var(--color-text-soft,#9ca3af);font-weight:700;font-size:clamp(1rem,1.8vh,1.2rem);}
@@ -249,15 +254,22 @@ function injectStyles() {
     box-shadow:0 12px 30px rgba(0,0,0,.45);}
   .quest-card-locked{opacity:.5;filter:grayscale(.35);}
   .quest-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.7em;}
-  .quest-card-title{font-weight:800;color:#f9fafb;line-height:1.2;font-size:clamp(1.1rem,2.3vh,1.55rem);}
+  /* The kind-of-task mark. Sized off the title so it reads as a sibling of the
+     words, and flex-shrink:0 so a long title never squashes it. */
+  .quest-type-icon{flex:0 0 auto;line-height:1.2;font-size:clamp(1.05rem,2.2vh,1.45rem);}
+  .quest-card-title{font-weight:800;color:#f9fafb;line-height:1.2;font-size:clamp(1.1rem,2.3vh,1.55rem);
+    flex:1 1 auto;min-width:0;}
   .quest-card-pts{flex-shrink:0;text-align:center;font-weight:800;line-height:1;color:#fde68a;
     font-size:clamp(1.35rem,3vh,2.1rem);}
   .quest-card-pts small{display:block;font-size:clamp(.75rem,1.4vh,.95rem);letter-spacing:.12em;text-transform:uppercase;
     color:var(--color-text-soft,#9ca3af);font-weight:800;margin-top:.25em;}
   .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;}
-  .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(5px,.8vh,10px);padding-top:.4em;}
-  .quest-accept{width:100%;min-height:clamp(48px,6vh,60px);border-radius:.9rem;border:none;cursor:pointer;
-    font-weight:800;font-family:inherit;font-size:clamp(1rem,2vh,1.3rem);color:#0b0f19;
+  .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(11px,1.8vh,20px);padding-top:.4em;}
+  /* Sized to its words and centred, not full-bleed: a button as wide as the
+     card read as a slab and crowded the chip above it. */
+  .quest-accept{align-self:center;width:auto;padding:0 clamp(20px,2.2vw,34px);
+    min-height:clamp(38px,4.4vh,46px);border-radius:999px;border:none;cursor:pointer;
+    font-weight:800;font-family:inherit;font-size:clamp(.95rem,1.8vh,1.15rem);color:#0b0f19;
     background:var(--h,#f59e0b);box-shadow:0 8px 20px var(--hs,rgba(245,158,11,.35));
     display:flex;align-items:center;justify-content:center;gap:.4em;
     transition:transform .12s ease,filter .16s ease;touch-action:manipulation;}
@@ -374,13 +386,25 @@ function injectStyles() {
     .quest-teacher-bar{font-size:.875rem;}
     .quest-act{min-height:48px;font-size:.9rem;}
 
+    /* "No quest yet" is the NORMAL state every Monday, so at 720p it earns a
+       slim line, not a 104px dashed panel. It grows back into the full hero
+       card the moment a quest is actually accepted — which is when the space
+       is worth spending. The ~64px this frees goes straight to the grid. */
+    .quest-hero-empty{gap:clamp(6px,1vw,12px);flex-wrap:nowrap;border-width:2px;
+      padding:clamp(6px,1vh,10px) clamp(12px,1.6vw,20px);}
+    .quest-hero-empty-icon{font-size:clamp(1.1rem,2.4vh,1.5rem);}
+    .quest-hero-empty-title{font-size:clamp(1rem,2.2vh,1.3rem);}
+    .quest-hero-empty-sub{font-size:.875rem;margin-top:0;}
+
     /* board header + lockbar + cards: reclaim the rest for the grid */
     .quest-board{gap:clamp(4px,.7vh,8px);}
     .quest-board-title{font-size:1rem;}
     .quest-board-count{font-size:.875rem;}
     .quest-sort{min-height:36px;font-size:.9rem;padding:.3em .8em;}
     .quest-lockbar{font-size:.9rem;padding:.35em .7em;}
-    .quest-card{padding:clamp(7px,.9vh,11px) clamp(8px,.8vw,12px);gap:4px;}
+    /* Deliberately LOOSER than before (was 7px/4px). The cards read as cramped;
+       the room comes from the trimmed empty hero above, not from the grid. */
+    .quest-card{padding:clamp(11px,1.5vh,15px) clamp(12px,1.1vw,16px);gap:clamp(7px,1vh,10px);}
     .quest-card-title{font-size:1rem;}
     .quest-card-pts{font-size:1.25rem;}
     .quest-card-desc{font-size:.9rem;line-height:1.25;}
@@ -533,11 +557,13 @@ function boardHtml(store, core) {
     bar = `<div class="quest-lockbar">🔒 ${esc(house.name)} must finish or give up “${esc(active.title)}” before taking another quest.</div>`;
   }
 
+  const qt = (q) => ctxRef.store.questType(q);
   const cards = quests.length ? quests.map((q) => {
     const canAccept = !isAll && !locked;
     return `
       <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${house ? house.accent : '#f59e0b'};--hs:${house ? house.accentSoft : 'rgba(245,158,11,.35)'}">
         <div class="quest-card-top">
+          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${qt(q).icon}</span>
           <div class="quest-card-title">${esc(q.title)}</div>
           <div class="quest-card-pts">${q.points}<small>pts</small></div>
         </div>
@@ -545,7 +571,7 @@ function boardHtml(store, core) {
         <div class="quest-card-foot">
           <div class="quest-chip-row">${repeatChip(q)}</div>
           ${canAccept
-            ? `<button type="button" class="quest-accept" data-q="accept" data-id="${esc(q.id)}">⚔️ Accept Quest</button>`
+            ? `<button type="button" class="quest-accept" data-q="accept" data-id="${esc(q.id)}">Accept Quest</button>`
             : `<div class="quest-card-note">${isAll ? 'Pick a core to accept' : '🔒 Finish your current quest first'}</div>`}
         </div>
       </div>`;
@@ -556,7 +582,7 @@ function boardHtml(store, core) {
       <div class="quest-board-head">
         <span class="quest-board-title">📜 Quests to Choose From</span>
         <span class="quest-board-count">${quests.length} available</span>
-        <div class="quest-head-spacer"></div>
+        <div class="quest-head-push"></div>
         <button type="button" class="quest-sort" data-q="sort">Points ${ui.sortAsc ? '▲ low first' : '▼ high first'}</button>
       </div>
       ${bar}
@@ -609,12 +635,12 @@ function modalHtml(store) {
   if (m.kind === 'accept') {
     const q = store.getQuestCatalog().find((x) => x.id === m.questId);
     if (!q) return '';
-    icon = '⚔️';
+    icon = store.questType(q).icon;   // the quest's own kind reads better than a generic sword
     title = 'Accept this quest?';
     body = `<b>${esc(house.name)}</b> takes on <b>${esc(q.title)}</b> for <b>${q.points} points</b>.`;
     extra = `<div class="quest-modal-info">It leaves the board while you hold it. Giving up later costs
       <b>${penaltyOf(q)} points</b> and hands the quest back to the other houses.</div>`;
-    go = '⚔️ Accept';
+    go = 'Accept';
   } else if (m.kind === 'complete') {
     const q = store.getActiveQuest(m.core);
     if (!q) return '';

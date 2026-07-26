@@ -645,7 +645,7 @@ function renderQuests() {
       <div class="admin-q-row">
         <div class="admin-q-pts">${q.points}<small>pts</small></div>
         <div class="admin-q-main">
-          <div class="admin-q-title">${esc(q.title)}</div>
+          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${store.questType(q).icon}</span> ${esc(q.title)}</div>
           <div class="admin-q-desc">${esc(q.desc || '')}</div>
           <div class="admin-shop-plain">${esc(questSentence(q))}</div>
           <div class="admin-q-statusrow">${status}</div>
@@ -757,6 +757,10 @@ function openQuestForm(id) {
     title: q?.title || '',
     desc: q?.desc || '',
     points: q?.points ?? 20,
+    // New quest starts on the store's own fallback kind; editing an existing
+    // one reads through store.questType() so a legacy/unset type resolves
+    // the same way here as it does everywhere else it's displayed.
+    type: q ? store.questType(q).id : 'service',
     repeatable: !!q?.repeatable,
     penalty: q ? questPenalty(q) : 10,
     // While false, the penalty tracks half the reward automatically. The moment
@@ -770,7 +774,13 @@ function openQuestForm(id) {
 function renderQuestModal() {
   const f = questForm;
   if (!f) return;
+  const store = ctxRef.store;
   const m = el('admin-modal-root');
+  // Driven entirely off store.QUEST_TYPES — a fifth kind added there shows up
+  // here with no changes needed.
+  const typeOpts = Object.values(store.QUEST_TYPES).map((t) => `
+    <button class="admin-theme-opt${f.type === t.id ? ' on' : ''}" data-action="quest-type" data-type="${esc(t.id)}" title="${esc(t.blurb)}">${t.icon} ${esc(t.label)}</button>
+  `).join('');
   const opts = [
     { key: true, label: '♻️ Repeatable', explain: 'Any house can earn this again. It returns to the board after it is completed.' },
     { key: false, label: '★ One time only', explain: 'It leaves the board once completed — the first house to finish it is the only one who ever gets it.' },
@@ -796,6 +806,9 @@ function renderQuestModal() {
       <div class="admin-modal-body admin-modal-scroll">
         <label class="admin-flabel" for="admin-quest-title">Title <span class="admin-faint">(shown big on the board)</span></label>
         <input id="admin-quest-title" class="admin-input" type="text" value="${esc(f.title)}" placeholder="School Event Squad" />
+
+        <label class="admin-flabel">Type <span class="admin-faint">(icon shown on the quest card)</span></label>
+        <div class="admin-seg admin-theme-seg">${typeOpts}</div>
 
         <label class="admin-flabel" for="admin-quest-desc">What the house must actually do</label>
         <textarea id="admin-quest-desc" class="admin-input admin-textarea" rows="3"
@@ -869,6 +882,7 @@ function saveQuestFromForm() {
     title,
     desc: String(f.desc || '').trim(),
     points,
+    type: f.type,
     repeatable: f.repeatable,
     penalty: Number(f.penalty),
   });
@@ -3783,6 +3797,7 @@ function onClick(e) {
     case 'quest-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-quests .admin-guide'); if (d) questGuideOpen = d.open; }, 0); break;
     case 'quest-new': openQuestForm(null); break;
     case 'quest-edit': openQuestForm(btn.dataset.id); break;
+    case 'quest-type': if (questForm) { questForm.type = btn.dataset.type; renderQuestModal(); } break;
     case 'quest-save': saveQuestFromForm(); break;
     case 'quest-close': questForm = null; closeModal(); break;
     case 'quest-del': {
