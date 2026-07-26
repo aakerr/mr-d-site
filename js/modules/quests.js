@@ -312,9 +312,12 @@ function injectStyles() {
     font-size:clamp(1.35rem,3vh,2.1rem);}
   .quest-card-pts small{display:block;font-size:clamp(.75rem,1.4vh,.95rem);letter-spacing:.12em;text-transform:uppercase;
     color:var(--color-text-soft,#9ca3af);font-weight:800;margin-top:.25em;}
-  /* Inset a touch further than the title above it, so the body copy sits in
-     from the border rather than running at it. */
-  .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;padding:0 5px;}
+  /* Title and description share a column beside the icon, so the body copy
+     starts at the TITLE's left edge rather than under the icon. No horizontal
+     padding of its own — that would break the alignment it now inherits. */
+  .quest-card-text{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
+    gap:clamp(4px,.7vh,7px);}
+  .quest-card-desc{color:#d1d5db;font-size:clamp(1rem,1.95vh,1.3rem);line-height:1.35;}
   /* Tight: description, frequency and button read as one block at the foot of
      the card, and the saved height comes straight off the card. */
   .quest-card-foot{margin-top:auto;display:flex;flex-direction:column;gap:clamp(5px,.8vh,9px);padding-top:.15em;}
@@ -625,7 +628,7 @@ function heroHtml(store, core) {
           ✓ Complete +${q.points}
         </button>
         <button type="button" class="quest-act quest-act-fail" data-q="fail" data-core="${core}">
-          ✗ Give Up
+          ✗ Give Up −${penaltyOf(q)}
         </button>
       </div>
     </section>`;
@@ -678,10 +681,12 @@ function boardHtml(store, core) {
       <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${sa.color};--hs:${sa.soft}">
         <div class="quest-card-top">
           <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${ctxRef.store.questIcon(q)}</span>
-          <div class="quest-card-title">${esc(q.title)}</div>
+          <div class="quest-card-text">
+            <div class="quest-card-title">${esc(q.title)}</div>
+            <div class="quest-card-desc">${esc(q.desc || '')}</div>
+          </div>
           <div class="quest-card-pts">${q.points}<small>pts</small></div>
         </div>
-        <div class="quest-card-desc">${esc(q.desc || '')}</div>
         <div class="quest-card-foot">
           <div class="quest-chip-row">${repeatChip(q)}</div>
           ${canAccept
