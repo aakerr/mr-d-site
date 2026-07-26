@@ -291,6 +291,7 @@ function injectStyles() {
   .quest-deed{flex-shrink:0;display:flex;align-items:center;gap:.6em;border-radius:.8rem;
     border:1px solid var(--color-line,#374151);border-left:5px solid var(--h,#6b7280);
     background:var(--color-card2,#1f2937);padding:.4em .8em;max-width:clamp(200px,22vw,300px);}
+  .quest-deed-icon{flex-shrink:0;font-size:clamp(1rem,1.7vh,1.15rem);line-height:1;}
   .quest-deed-main{min-width:0;}
   .quest-deed-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,1.7vh,1.1rem);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -599,8 +600,13 @@ function deedsHtml(store) {
         <div class="quest-deeds-strip">
           ${items.map((c) => {
             const h = store.HOUSES[c.core];
+            // The kind of task, looked up from the catalog by id. A quest the
+            // teacher has since deleted no longer resolves, so questType()'s
+            // fallback carries it rather than leaving a gap in the row.
+            const src = store.getQuestCatalog().find((q) => q.id === c.questId);
             return `
               <div class="quest-deed" style="--h:${h ? h.accent : '#6b7280'}">
+                <span class="quest-deed-icon">${store.questType(src).icon}</span>
                 <div class="quest-deed-main">
                   <div class="quest-deed-title">${esc(c.title)}</div>
                   <div class="quest-deed-meta">${esc(h ? h.name : '')} · ${esc(shortWhen(c.ts))}</div>
