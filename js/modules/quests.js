@@ -130,22 +130,6 @@ function injectStyles() {
   .quest-head-sub{color:#fcd34d;font-style:italic;font-weight:600;
     font-size:clamp(1.05rem,2.7vw,1.7rem);margin-top:.05rem;line-height:1.05;}
 
-  /* Shields flank a points-only pill; the pill spans the width of the heading
-     text above it (set at render time from the heading block's measured width).
-     Crests are contain-fit transparent PNGs — never boxed or cropped. */
-  .quest-points-row{flex-shrink:0;display:flex;align-items:center;justify-content:center;
-    gap:clamp(.6rem,1.6vw,1.4rem);margin:clamp(5px,1vh,12px) auto 0;}
-  .quest-crest{height:min(clamp(2.8rem,8vw,5.4rem),9vh);width:auto;object-fit:contain;flex-shrink:0;
-    filter:drop-shadow(0 6px 16px rgba(0,0,0,.6));}
-  .quest-points{display:flex;align-items:baseline;justify-content:center;flex:0 0 auto;
-    background:var(--color-card,#111827);border:2px solid var(--qp-accent,#f59e0b);
-    border-radius:1.5rem;padding:clamp(.35rem,1.1vh,1rem) 1.5rem;
-    box-shadow:0 0 26px var(--qp-glow,rgba(245,158,11,.35));}
-  .quest-points .val{font-size:clamp(1.8rem,5vw,3rem);font-weight:800;color:#fde68a;
-    font-variant-numeric:tabular-nums;line-height:1;}
-  .quest-points .unit{font-size:clamp(.9rem,2.2vw,1.4rem);font-weight:700;color:#fde68a;
-    margin-left:.4rem;opacity:.85;}
-
   /* ---- ACTIVE QUEST hero ---- */
   .quest-hero{flex-shrink:0;position:relative;display:flex;gap:clamp(12px,2vw,28px);flex-wrap:wrap;
     border:3px solid var(--h,#f59e0b);border-radius:1.5rem;padding:clamp(12px,2vh,24px) clamp(14px,2vw,28px);
@@ -382,6 +366,20 @@ function injectStyles() {
   .quest-carousel-counter{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
     color:var(--color-text-soft,#9ca3af);font-size:.8rem;font-variant-numeric:tabular-nums;}
 
+  /* Running total, sat next to the deeds it comes from. Pinned left of the
+     strip so it never scrolls away with the entries. */
+  .quest-deeds-total{flex-shrink:0;display:flex;align-items:baseline;gap:.35em;
+    padding:.2em .7em;border-radius:999px;border:1px solid var(--h,#f59e0b);
+    background:rgba(17,24,39,.9);box-shadow:0 0 16px var(--hs,rgba(245,158,11,.3));
+    transition:transform .2s ease,box-shadow .2s ease;}
+  .quest-deeds-crest{height:1.15em;width:auto;object-fit:contain;align-self:center;flex-shrink:0;}
+  .quest-deeds-val{font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums;
+    font-size:clamp(1rem,1.9vh,1.25rem);line-height:1;}
+  .quest-deeds-unit{font-size:.72em;font-weight:700;color:#fde68a;opacity:.85;}
+  /* The kick when points land — this is the moment the row exists for. */
+  .quest-deeds-total.is-hit{transform:scale(1.12);
+    box-shadow:0 0 30px var(--hs,rgba(245,158,11,.75));}
+
   .quest-deed-icon{flex-shrink:0;font-size:clamp(1rem,1.7vh,1.15rem);line-height:1;}
   .quest-deed-main{min-width:0;}
   .quest-deed-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,1.7vh,1.1rem);
@@ -456,11 +454,6 @@ function injectStyles() {
     .quest-head{gap:clamp(.35rem,.9vw,.6rem);}
     .quest-head-icon,.quest-head-spacer{width:clamp(1.4rem,3.2vw,1.9rem);}
     .quest-head-title{font-size:clamp(1rem,2.2vw,1.4rem);}
-    .quest-points-row{margin:clamp(3px,.6vh,6px) auto 0;gap:clamp(.4rem,1vw,.7rem);}
-    .quest-crest{height:min(clamp(1.4rem,3.6vw,1.9rem),4.2vh);}
-    .quest-points{padding:.2rem 1rem;}
-    .quest-points .val{font-size:clamp(1.1rem,2.8vw,1.5rem);}
-    .quest-points .unit{font-size:.75rem;}
 
     /* active-quest hero: tighter padding/gaps and smaller type; the two
        teacher buttons stay pinned at the 48px touch minimum */
@@ -532,18 +525,6 @@ function repeatChip(q) {
 // =============================================================================
 // RENDER
 // =============================================================================
-// Match the points pill's width to the heading text above it (measured after
-// paint, since the heading is fluid-typed). Presentation only — never throws.
-function sizeQuestPill(root) {
-  try {
-    const headings = root.querySelector('.quest-headings');
-    const pill = root.querySelector('.quest-points');
-    if (!headings || !pill) return;
-    const w = Math.round(headings.getBoundingClientRect().width);
-    if (w > 0) pill.style.width = w + 'px';
-  } catch (e) { /* ignore */ }
-}
-
 function headerHtml(store, core) {
   const house = core === 'all' ? null : store.HOUSES[core];
   // The tagline is fixed rather than per-house: it is measured to size the
@@ -556,17 +537,11 @@ function headerHtml(store, core) {
         <div class="quest-head-sub"><span class="mh-ink">Take up a quest. Earn the glory. Serve the school.</span></div>
       </div>
       <span class="quest-head-spacer" aria-hidden="true"></span>
-    </div>
-    ${house ? `
-      <div class="quest-points-row" style="--qp-accent:${house.accent}; --qp-glow:${house.accentSoft}">
-        <img class="quest-crest" src="${esc(house.image)}" alt="${esc(house.name)} crest"
-          onerror="this.style.visibility='hidden'" />
-        <div class="quest-points" title="${esc(house.name)} points">
-          <span class="val">${store.getTotal(house.id, 'term')}</span><span class="unit">pts</span>
-        </div>
-        <img class="quest-crest" src="${esc(house.image)}" alt="" aria-hidden="true"
-          onerror="this.style.visibility='hidden'" />
-      </div>` : ''}`;
+    </div>`;
+  // The crests-and-pill row that used to sit here is gone. It cost 35px to
+  // state something the top bar already says, and the number only MATTERS for
+  // the couple of seconds after an award — so the total now lives in the Hall
+  // of Deeds, which is where the completion animation already lands.
 }
 
 function heroHtml(store, core) {
@@ -701,11 +676,23 @@ function boardHtml(store, core) {
     </section>`;
 }
 
-function deedsHtml(store) {
+function deedsHtml(store, core) {
   const items = store.getCompletedQuests({ limit: 10 });
+  const house = core === 'all' ? null : store.HOUSES[core];
+  // The running total lives here rather than in a band of its own: this strip
+  // is where a completion already lands, so the number is beside the deed that
+  // just moved it. [data-house-total] is the flight target for flyPoints().
+  const total = house ? `
+    <div class="quest-deeds-total" data-house-total style="--h:${house.accent};--hs:${house.accentSoft}"
+         title="${esc(house.name)} — points this term">
+      <img class="quest-deeds-crest" src="${esc(house.image)}" alt=""
+        onerror="this.style.visibility='hidden'" />
+      <span class="quest-deeds-val">${store.getTotal(house.id, 'term')}</span><span class="quest-deeds-unit">pts</span>
+    </div>` : '';
   return `
     <div class="quest-deeds">
       <div class="quest-deeds-title">🏆 Hall of Deeds</div>
+      ${total}
       ${items.length ? `
         <div class="quest-deeds-strip">
           ${items.map((c) => {
@@ -819,7 +806,7 @@ function render() {
       ${headerHtml(store, core)}
       ${core === 'all' ? allCoresHtml(store) : heroHtml(store, core)}
       ${boardHtml(store, core)}
-      ${deedsHtml(store)}
+      ${deedsHtml(store, core)}
     </div>
     ${modalHtml(store)}`;
   fitMastheadWhenReady({
@@ -827,7 +814,7 @@ function render() {
     titleInk: rootEl.querySelector('.quest-head-title .mh-ink'),
     subInk: rootEl.querySelector('.quest-head-sub .mh-ink'),
     headings: rootEl.querySelector('.quest-headings'),
-    pill: rootEl.querySelector('.quest-points'),
+    // No pill any more — the masthead fitter tolerates a null here.
   });
 
   // Restore the board position captured above, before paint so it never flashes.
@@ -906,25 +893,47 @@ function toast(text) {
   later(() => { t.remove(); fxNodes.delete(t); }, 2400);
 }
 
-// Points visibly leave the quest card and rise toward the top bar, where the
-// house total lives — so the class sees where the reward went.
+// Points visibly leave the quest and land ON the house total in the Hall of
+// Deeds, which then kicks. The whole reason the total sits down there is this
+// moment — the class should see the number that just moved.
 function flyPoints(fromRect, points) {
   if (!fromRect) return;
   const host = document.getElementById('overlay-root') || document.body;
   const count = prefersReducedMotion() ? 1 : 5;
+  const fromX = fromRect.left + fromRect.width / 2;
+  const fromY = fromRect.top + fromRect.height / 2;
+
+  // Aim at the live total; with no house total on screen ("All Cores"), fall
+  // back to drifting upward as before rather than flying to 0,0.
+  const target = rootEl && rootEl.querySelector('[data-house-total]');
+  const t = target ? target.getBoundingClientRect() : null;
+  const dx = t ? (t.left + t.width / 2) - fromX : 0;
+  const dy = t ? (t.top + t.height / 2) - fromY : -(fromY) + 40;
+
   for (let i = 0; i < count; i += 1) {
     later(() => {
       const el = document.createElement('div');
       el.className = 'quest-fly';
       el.textContent = `+${points}`;
-      el.style.left = `${fromRect.left + fromRect.width / 2}px`;
-      el.style.top = `${fromRect.top + fromRect.height / 2}px`;
-      el.style.setProperty('--dx', `${(Math.random() - 0.5) * 140}px`);
-      el.style.setProperty('--dy', `${-(fromRect.top + fromRect.height / 2) + 40}px`);
+      el.style.left = `${fromX}px`;
+      el.style.top = `${fromY}px`;
+      // Spread only across the flight, so they still converge on the total.
+      el.style.setProperty('--dx', `${dx + (Math.random() - 0.5) * 60}px`);
+      el.style.setProperty('--dy', `${dy}px`);
       host.appendChild(el);
       fxNodes.add(el);
       later(() => { el.remove(); fxNodes.delete(el); }, 1300);
     }, i * 110);
+  }
+
+  // Kick the total as the first coins arrive (the flight runs 1.15s).
+  if (target) {
+    later(() => {
+      const live = rootEl && rootEl.querySelector('[data-house-total]');
+      if (!live) return;                        // re-rendered away mid-flight
+      live.classList.add('is-hit');
+      later(() => live.classList.remove('is-hit'), 420);
+    }, 900);
   }
 }
 
