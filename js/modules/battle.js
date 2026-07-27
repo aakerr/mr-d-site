@@ -320,6 +320,10 @@ function injectStyles() {
   .duel-def-shield{background:rgba(59,130,246,.16);border:1px solid rgba(96,165,250,.6);color:#bfdbfe;}
   .duel-def-reduce{background:rgba(180,83,9,.2);border:1px solid rgba(251,191,36,.6);color:#fde68a;
     transition:transform .2s ease;}
+  .duel-empty-broke{border:1px dashed rgba(251,191,36,.45);color:#fde68a;
+    background:rgba(180,83,9,.15);border-radius:.8rem;padding:.55rem .7rem;}
+  .duel-items-more{grid-column:1/-1;text-align:center;color:var(--color-text-soft,#9ca3af);
+    font-size:.8rem;padding:.35rem 0 .1rem;}
   .duel-def-none{background:rgba(127,29,29,.18);border:1px dashed rgba(239,68,68,.5);color:#fca5a5;
     justify-content:center;}
   .duel-reduce-flare{animation:duel-reduce-flare-kf .7s ease;}
@@ -661,10 +665,29 @@ function itemRowHtml(store, item, treasury, target) {
 
 function challengerSideHtml(store, challenger, target) {
   const treasury = store.getTotal(challenger.id, 'term');
-  const items = offensiveItems(store);
-  const list = items.length
-    ? items.map((it) => itemRowHtml(store, it, treasury, target)).join('')
-    : `<div class="duel-empty">No offensive items in the Magic Shop yet — add some in Admin.</div>`;
+  // Only what this house can actually strike with RIGHT NOW. The full catalogue
+  // lives one tap away behind the Magic Shop button in the header; repeating it
+  // here — mostly greyed out with "needs 35 more points" — filled the card with
+  // things that cannot be clicked and buried the ones that can. This mirrors
+  // the defender side, which lists real active defences rather than every
+  // shield that exists.
+  const all = offensiveItems(store);
+  const items = all.filter((it) => treasury >= it.cost);
+  const hidden = all.length - items.length;
+
+  let list;
+  if (!all.length) {
+    list = `<div class="duel-empty">No offensive items in the Magic Shop yet — add some in Admin.</div>`;
+  } else if (!items.length) {
+    // Same shape as the defender's "Undefended" line: state the situation and
+    // what would change it.
+    const cheapest = Math.min(...all.map((i) => i.cost));
+    list = `<div class="duel-empty duel-empty-broke">💰 Nothing affordable yet — the cheapest strike costs
+      <b>${cheapest} pts</b>, and ${esc(challenger.name)} has <b>${treasury}</b>.</div>`;
+  } else {
+    list = items.map((it) => itemRowHtml(store, it, treasury, target)).join('')
+      + (hidden ? `<div class="duel-items-more">${hidden} more in the Magic Shop, once ${esc(challenger.name)} can afford ${hidden === 1 ? 'it' : 'them'}.</div>` : '');
+  }
 
   return `
     <section class="duel-side" style="--side-accent:${esc(challenger.accent)}">
@@ -672,8 +695,7 @@ function challengerSideHtml(store, challenger, target) {
       ${pointsBlockHtml(store, challenger, 'challenger')}
       ${crestHtml(challenger, 'challenger')}
       <div class="duel-name">${esc(challenger.name)}</div>
-      <button type="button" class="duel-swap-btn" data-open-chooser>⇄ Change attacker</button>
-      <div class="duel-section-lbl">Magic items — pick your strike</div>
+      <div class="duel-section-lbl">Ready to strike</div>
       <div class="duel-items">${list}</div>
     </section>`;
 }
@@ -697,7 +719,6 @@ function defenderSideHtml(store, target) {
       ${pointsBlockHtml(store, target, 'defender')}
       ${crestHtml(target, 'defender')}
       <div class="duel-name">${esc(target.name)}</div>
-      <button type="button" class="duel-swap-btn" data-clear-target>⇄ Change opponent</button>
       <div class="duel-section-lbl">Their active defenses</div>
       ${defenseListHtml(store, target)}
     </section>`;
@@ -747,10 +768,15 @@ function arenaHtml(challenger, target) {
   const hint = !challenger ? 'Pick the attacking house to begin.'
     : !target ? 'Now choose who they attack →'
     : 'Pick a magic item on the left to strike.';
+  // "Change opponent" lives here rather than on the defender card: it is about
+  // the matchup, not about either house, and the middle column has room the
+  // cards do not. There is deliberately no "change attacker" twin — the
+  // attacker IS whichever house is selected in the top bar, one class at a time.
   return `
     <div class="duel-arena" data-arena>
       <div class="duel-vs font-display">VS</div>
       <div class="duel-arena-hint">${esc(hint)}</div>
+      ${target ? '<button type="button" class="duel-swap-btn" data-clear-target>⇄ Change opponent</button>' : ''}
     </div>`;
 }
 
