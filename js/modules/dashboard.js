@@ -170,18 +170,27 @@ function renderHero(state, store) {
       <img src="${h.heroImage}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
            onerror="this.onerror=null;this.style.display='none';" />
       <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-black/10"></div>
-      <!-- Crest and text share ONE height (--crest-h) and the text column is
-           justify-between, so "Welcome" pins to the top of the shield and the
-           motto to the bottom, with the two gaps equal by construction rather
-           than by hand-tuned margins. Previously the block sat 11px inside the
-           shield at both ends, and the name/motto gap only LOOKED bigger than
-           the welcome/name one because a 72px line box leaves empty space below
-           the glyphs — margins were never the thing to adjust. -->
+      <!-- The three lines stay TIGHT together — a couple of px between each,
+           the way Welcome/name already sat. What reaches the shield's top and
+           bottom edges is the NAME growing, not space being distributed.
+           An earlier attempt used justify-between, which spread the free height
+           into the gaps instead: it aligned the edges but pushed the two gaps
+           out to 12px each and left the name barely larger. The type does the
+           work here; the gaps are meant to be small and equal. -->
       <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full" style="--crest-h:clamp(7rem,21vh,10.5rem)">
         ${houseImg(h, 'w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]', 'style="height:var(--crest-h)"')}
-        <div class="flex-1 min-w-[240px] flex flex-col justify-between" style="height:var(--crest-h)">
+        <div class="flex-1 min-w-[240px] flex flex-col justify-center" style="height:var(--crest-h);gap:2px">
           <div class="text-white/80 text-xs xl:text-sm font-bold uppercase tracking-[0.25em] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">Welcome</div>
-          <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:clamp(2.75rem,11vh,6rem)">
+          <!-- Sized OFF the crest, not off the viewport: the name is whatever is
+               left of the shield's height once the other two lines and the two
+               gaps are taken out. That is what makes top and bottom line up on
+               their own at any screen size — a vh value only matches at the one
+               height it was tuned at and drifts everywhere else.
+               The 52px is their BOX heights, not their font sizes: Tailwind's
+               text-sm and text-xl each carry their own line-height (20px and
+               28px) and beat leading-none here, so measuring the rendered boxes
+               is the only way this arithmetic comes out right. -->
+          <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:calc(var(--crest-h) - 52px)">
             ${h.name.toUpperCase()}!
           </h1>
           <p class="text-white/90 text-lg xl:text-xl italic leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
