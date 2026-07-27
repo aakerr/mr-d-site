@@ -58,6 +58,21 @@ const MODULE_THEMES = {
 // vertically — the teacher is standing at the board, not holding a mouse.
 // Grid stays the default: choosing from ~20 quests is a scanning task, and a
 // grid shows eight at once where a carousel shows one clearly.
+// Sound effects the teacher can replace with their own recording. Drop files in
+// /sfx and assign them in Admin; an unassigned sound keeps the built-in synth
+// tone, so the app is never silent because a file is missing.
+//
+// 'battlecry' has no synth fallback on purpose — it is a voice line, and a
+// beep would be worse than nothing. It simply stays quiet until recorded.
+const SFX_SLOTS = {
+  battlecry: { label: 'Battle Day war cry', hint: 'Plays as the Battle Day cinematic slams in — e.g. “It’s Battle Day. Attack!”' },
+  sword:     { label: 'Sword clash',        hint: 'A strike landing on another house.' },
+  thud:      { label: 'Blocked / heavy hit', hint: 'A shield holding, or points coming off.' },
+  coin:      { label: 'Points awarded',     hint: 'The reward chime when a house scores.' },
+  fanfare:   { label: 'Fanfare',            hint: 'Mythic relic claimed on a natural 20.' },
+  roll:      { label: 'Dice rattle',        hint: 'The Die of Destiny tumbling.' },
+};
+
 const LAYOUT_SCREENS = {
   quests: { label: 'Quests board' },
   shop:   { label: 'Magic Shop' },
@@ -112,6 +127,8 @@ function defaultState() {
       moduleThemes: null,
       // 'grid' | 'carousel' per screen (see LAYOUT_SCREENS).
       layouts: null,
+      // Teacher recordings per sound (see SFX_SLOTS). Empty = use the built-in.
+      sfx: null,
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
@@ -302,6 +319,14 @@ function load() {
         });
         merged.settings.layouts = out;
       }
+      {
+        const saved = merged.settings.sfx && typeof merged.settings.sfx === 'object' ? merged.settings.sfx : {};
+        const out = {};
+        Object.keys(SFX_SLOTS).forEach((id) => {
+          out[id] = typeof saved[id] === 'string' ? saved[id].trim() : '';
+        });
+        merged.settings.sfx = out;
+      }
       // Per-screen colours arrived late; seed any screen the saved state has
       // never seen, without disturbing ones the teacher has already set.
       {
@@ -422,6 +447,22 @@ export const store = {
   QUEST_TYPES,
   MODULE_THEMES,
   LAYOUT_SCREENS,
+  SFX_SLOTS,
+
+  // '' means "use the built-in sound".
+  getSfx(name) {
+    if (!SFX_SLOTS[name]) return '';
+    const v = (store.getSettings().sfx || {})[name];
+    return typeof v === 'string' ? v.trim() : '';
+  },
+
+  setSfx(name, src) {
+    if (!SFX_SLOTS[name]) return false;
+    const all = { ...(store.getSettings().sfx || {}) };
+    all[name] = typeof src === 'string' ? src.trim() : '';
+    store.updateSettings({ sfx: all });
+    return true;
+  },
 
   // 'grid' | 'carousel'. Unknown screens are always 'grid' — a screen that has
   // no carousel must never be told it is in one.

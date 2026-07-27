@@ -152,7 +152,8 @@ function injectStyles() {
     60%{box-shadow:inset 0 0 90px 20px rgba(239,68,68,.35);}
     100%{box-shadow:inset 0 0 60px 10px rgba(239,68,68,.25);}
   }
-  .battle-swords-wrap{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);
+  /* Title reads FIRST, swords slam in beneath it. */
+  .battle-swords-wrap{position:absolute;top:62%;left:50%;transform:translate(-50%,-50%);
     display:flex;align-items:center;justify-content:center;pointer-events:none;}
   .battle-sword{font-size:clamp(4rem,10vw,8rem);position:absolute;
     filter:drop-shadow(0 0 24px rgba(255,180,120,.6));}
@@ -171,7 +172,7 @@ function injectStyles() {
   .battle-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
     animation:battle-flash-pop .35s ease .55s both;}
   @keyframes battle-flash-pop{0%{opacity:0;}30%{opacity:.85;}100%{opacity:0;}}
-  .battle-stamp{position:absolute;top:64%;left:50%;transform:translate(-50%,-50%);
+  .battle-stamp{position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(2rem,6vw,4.5rem);color:#fca5a5;
     text-shadow:0 0 30px rgba(239,68,68,.8),0 4px 10px rgba(0,0,0,.8);}
@@ -529,7 +530,14 @@ function triggerCinematic() {
   if (!host || overlayEl) return;
 
   ctxRef.audio.sfx('sword');
-  ctxRef.audio.say("It's Battle Day! Attack!", { rate: 1.05, pitch: 0.8 });
+  // A recorded war cry REPLACES the robot voice rather than joining it — two
+  // voices over one another would be worse than either alone. Until the teacher
+  // records one, speech synthesis carries the line as before.
+  if (ctxRef.store.getSfx && ctxRef.store.getSfx('battlecry')) {
+    ctxRef.audio.sfx('battlecry');
+  } else {
+    ctxRef.audio.say("It's Battle Day! Attack!", { rate: 1.05, pitch: 0.8 });
+  }
 
   overlayEl = document.createElement('div');
   overlayEl.className = 'battle-cinematic';

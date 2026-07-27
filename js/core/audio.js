@@ -78,7 +78,33 @@ export const audio = {
     return el;
   },
 
-  sfx(name) { (SFX[name] || (() => {}))(); },
+  // A teacher recording always wins over the built-in synth tone. Drop files in
+  // /sfx and assign them per sound in Admin; anything unassigned keeps the tone,
+  // so the app is never silent just because a file is missing or unplayable.
+  //
+  // Deliberately NOT cached as a single element per sound: two strikes can land
+  // close together, and one element replaying from the start would cut the first
+  // off mid-clash. A fresh element per hit lets them overlap like real effects.
+  sfx(name) {
+    // (Mute is applied by the wrapper at the bottom of this file — not here.)
+    let src = '';
+    try { src = (store.getSettings().sfx || {})[name] || ''; } catch (e) { src = ''; }
+    if (src) {
+      try {
+        const el = new Audio(src);
+        el.volume = 1;
+        playing.add(el);
+        const done = () => { playing.delete(el); };
+        el.addEventListener('ended', done);
+        // A bad path must not swallow the cue — fall back to the built-in.
+        el.addEventListener('error', () => { done(); (SFX[name] || (() => {}))(); });
+        const p = el.play();
+        if (p && p.catch) p.catch(() => { done(); (SFX[name] || (() => {}))(); });
+        return;
+      } catch (e) { /* fall through to the synth below */ }
+    }
+    (SFX[name] || (() => {}))();
+  },
 
   say(text, { rate = 1, pitch = 1 } = {}) {
     try {
