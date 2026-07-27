@@ -2107,7 +2107,16 @@ function renderSettings() {
         <div class="admin-card-title">Backup &amp; Restore</div>
         <div class="admin-help-row">${helpLink(HELP_TOPICS.backups, 'What backups do, and how to restore one')}</div>
 
-        <div class="admin-auto-head">🔄 Automatic backup</div>
+        <p class="admin-mini">There are two different ways this saves a file for you, and they cover different gaps — leaving <b>both</b> switched on is the safest setup:</p>
+        <p class="admin-mini"><b>⬇️ The daily backup file</b> needs nothing from you and works in any browser — but it only saves once a school day, so at worst you'd lose that one day's points if something went wrong.</p>
+        <p class="admin-mini" style="margin-bottom:16px"><b>🔄 The folder backup</b> saves within seconds of every single change, which is better protection — but it has to be set up once, only works in Chrome or Edge, and can occasionally need reconnecting after the browser updates.</p>
+
+        <div class="admin-auto-head">⬇️ Daily backup file <span class="admin-faint">(on by default, no setup)</span></div>
+        ${downloadBackupHTML()}
+
+        <hr class="admin-hr" />
+
+        <div class="admin-auto-head">🔄 Continuous folder backup <span class="admin-faint">(one-time setup, Chrome/Edge only)</span></div>
         ${autoBackupHTML()}
 
         <hr class="admin-hr" />
@@ -2119,7 +2128,13 @@ function renderSettings() {
           <button class="admin-btn admin-btn-lg" data-action="backup-import">⬆ Import backup</button>
           <input id="admin-import-file" type="file" accept="application/json,.json" hidden />
         </div>
-        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in either backup.</div>
+        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in any of these backups.</div>
+
+        <hr class="admin-hr" />
+
+        <div class="admin-auto-head">Using a backup file</div>
+        <p class="admin-mini">Bringing one back in always happens right here, never anywhere else: tap <b>⬆ Import backup</b> above and choose the file (or <b>Restore from folder…</b> if a folder is connected). It replaces everything currently on screen, so it always asks you to confirm first — nothing is lost by accident.</p>
+        <p class="admin-mini" style="margin-bottom:0">Moving to a different computer some day? The file to bring with you is the newest one named <code>mrd-backup-YYYY-MM-DD.json</code> — either the one already sitting in this computer's <b>Downloads</b> folder, or the newest dated file in your connected backup folder. Copy it across any way that's easy (a memory stick, emailing it to yourself, a Google Drive folder), then use <b>Import backup</b> on the new computer.</p>
       </div>
 
       ${renderLockCard()}
@@ -2634,6 +2649,55 @@ function autoBackupHTML() {
 function updateBackupStatusLine() {
   const box = el('admin-backup-status');
   if (box && ctxRef) box.innerHTML = backupStatusLine(backup.status());
+}
+
+// ----- daily safety-net download (js/core/backup.js `downloadNow`) ----------
+// The folder backup above is the better option, but it needs Chrome/Edge and
+// a one-time setup. This is the floor under it: on by default, no setup, and
+// it works in every browser — it just only saves once a day.
+function downloadBackupHTML() {
+  const bs = backup.status();
+  const savedToday = !!bs.lastDownloadDate && bs.lastDownloadDate === todayStr();
+
+  let statusLine;
+  if (!bs.downloadEnabled) {
+    statusLine = `<div class="admin-warn-line">This is turned off — nothing is being saved to Downloads right now. Leave it on unless the folder backup below is connected and working.</div>`;
+  } else if (savedToday) {
+    const when = bs.lastDownloadTs ? relTime(bs.lastDownloadTs) : 'earlier today';
+    statusLine = `<div class="admin-ok-line">✓ Today's backup file has already been saved to Downloads (${esc(when)}).</div>`;
+  } else {
+    statusLine = `<div class="admin-mini" style="margin:0 0 10px">Not saved yet today. It saves itself the moment you next change anything — or tap the button below to do it right now.</div>`;
+  }
+
+  return `
+    <div class="admin-toggle-row">
+      <button class="admin-toggle${bs.downloadEnabled ? ' on' : ''}" data-action="backup-download-toggle" role="switch" aria-checked="${bs.downloadEnabled}"><span class="admin-toggle-knob"></span></button>
+      <span class="admin-mini" style="margin:0">Once each school day, the first time something changes, save a backup file to Downloads automatically.</span>
+    </div>
+    ${statusLine}
+    <div class="admin-backup-row">
+      <button class="admin-btn" data-action="backup-download-now">💾 Save a backup now</button>
+    </div>
+    <div class="admin-mini" style="margin-top:10px">This lands in this computer's ordinary <b>Downloads</b> folder, named something like <code>mrd-backup-${esc(todayStr())}.json</code> — the same place any file you download normally ends up. There is no folder to choose and no permission to grant, and it works in any browser, not just Chrome or Edge.</div>`;
+}
+
+async function saveDownloadNow() {
+  const before = backup.status();
+  if (!before.downloadEnabled) {
+    toast('Turn on the daily backup file above first, then tap this again.');
+    return;
+  }
+  backup.downloadNow();
+  renderBody();
+  toast('Backup file saved to your Downloads folder.');
+}
+
+function toggleDownloadBackup() {
+  const store = ctxRef.store;
+  const cur = store.getSettings().backupDownload !== false;
+  store.updateSettings({ backupDownload: !cur });
+  renderBody();
+  toast(`Daily backup file ${!cur ? 'on' : 'off'}.`);
 }
 
 // ----- Teacher PIN (js/core/lock.js) ----------------------------------------
@@ -4234,6 +4298,8 @@ function onClick(e) {
     case 'backup-save-now': saveBackupNow(); break;
     case 'backup-restore-folder': restoreFromFolder(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
+    case 'backup-download-toggle': toggleDownloadBackup(); break;
+    case 'backup-download-now': saveDownloadNow(); break;
 
     // settings
     case 'settings-save': saveSettings(); break;

@@ -160,7 +160,7 @@ const TOPICS = [
     keywords: 'setup wizard first run install day one getting set up new computer',
     body: `
       <ol class="help-steps">
-        <li><b>Connect a backup folder.</b> This is the single most important thing on this page — without it, all your points live only inside this browser. <a href="#" data-help-go="data-backup">How backups work →</a></li>
+        <li><b>Check your backups.</b> This is the single most important thing on this page. A daily backup file already saves itself to Downloads with no setup — but connecting a backup folder too gives you second-by-second protection instead of once-a-day. <a href="#" data-help-go="data-backup">How backups work →</a></li>
         <li><b>Set your term dates.</b> <b>🗝️ Admin → ⚙️ Settings → Term Timeline</b>: the Monday your term starts and how many weeks it runs.</li>
         <li><b>Plan a week or two.</b> <b>🗝️ Admin → 📅 Planner</b> — tap any date to add an itinerary, homework, a quiz or a vacation.</li>
         <li><b>Schedule your first Place of the Week.</b> <a href="#" data-help-go="potw-schedule">Step by step →</a></li>
@@ -763,7 +763,7 @@ const TOPICS = [
           <li>Open your most recent backup <code>.json</code> in any text editor (Notepad or TextEdit will do) and search for <b>recovery</b>.</li>
           <li>Type that code in. The PIN switches off and <b>nothing else changes</b> — every point, quest and setting stays exactly as it was.</li>
         </ol>
-        <p class="help-warn">Without a backup file or the written-down code, the only way to clear the PIN is to clear this browser's site data — which erases the whole term along with it. That is the real reason to connect a backup folder: it is also your way back in.</p>
+        <p class="help-warn">Without a backup file or the written-down code, the only way to clear the PIN is to clear this browser's site data — which erases the whole term along with it. That is one more reason to keep at least the daily backup file running (it is on by default): it is also your way back in. <a href="#" data-help-go="data-backup">More about backups →</a></p>
         <p class="help-fineprint">The recovery code is stored as plain readable text, which is what lets you find it in a backup. Anyone holding your backup file can therefore read it — so keep backups somewhere only you can reach, and treat the code as a key to the classroom, not to anything sensitive.</p>
       `;
     },
@@ -810,7 +810,7 @@ const TOPICS = [
         <li><b>🗂️ Screen layout</b> — show Quests and the Magic Shop as a scrolling grid or a one-card-at-a-time carousel. Purely visual. <a href="#" data-help-go="screen-layout">More →</a></li>
         <li><b>Maps API key</b> — leave blank unless you have your own. <a href="#" data-help-go="maps-key">More →</a></li>
         <li><b>🔊 Sound effects</b> — replace any built-in beep, or the spoken Battle Day line, with your own recording. <a href="#" data-help-go="admin-sfx">More →</a></li>
-        <li><b>Backup &amp; Restore</b> — connect a folder, save now, restore the latest backup. <a href="#" data-help-go="data-backup">More →</a></li>
+        <li><b>Backup &amp; Restore</b> — a daily backup file to Downloads (on by default, no setup), an optional backup folder for second-by-second saving, and restoring either one. <a href="#" data-help-go="data-backup">More →</a></li>
         <li><b>⚠️ Danger Zone</b> — wipes everything and starts over. You have to type <b>RESET</b> to confirm, and there is no undo.</li>
       </ul>
       <p class="help-warn">Before you ever touch the Danger Zone, make sure you have a backup folder connected and a dated snapshot in it.</p>
@@ -869,38 +869,49 @@ const TOPICS = [
         <li>Open it on a <b>different computer</b> and the same is true.</li>
         <li>If someone clears this browser's site data, everything goes with it.</li>
       </ul>
-      <p>Which is why the backup folder matters more than anything else in this handbook. <a href="#" data-help-go="data-backup">How backups work →</a></p>
+      <p>Which is why backups matter more than anything else in this handbook — a daily one saves itself with no setup, and a backup folder does even better. <a href="#" data-help-go="data-backup">How backups work →</a></p>
     `,
   },
   {
     id: 'data-backup', cat: 'data', title: 'How backups work (and what they leave out)',
-    keywords: 'backup folder connect autosave restore json snapshot save file system access',
+    keywords: 'backup folder connect autosave restore json snapshot save file system access daily download downloads safety net',
     body: () => {
-      const s = backup.status();
-      const line = !s.supported
-        ? '<p class="help-warn"><b>This browser cannot do it.</b> Automatic folder backup needs Google Chrome or Microsoft Edge. Everything else in the app works fine here, but nothing will be backed up.</p>'
-        : s.connected
-          ? `<p class="help-ok"><b>You are connected</b> to the folder "${esc(s.folderName)}". Nothing to do.</p>`
-          : '<p class="help-warn"><b>No folder is connected right now.</b> Use the button below.</p>';
+      const h = backup.health();
+      const bannerClass = h.level === 'folder' ? 'help-ok' : h.level === 'daily' ? 'help-callout' : 'help-warn';
+      const banner = `<p class="${bannerClass}"><b>Right now:</b> ${esc(h.message)}</p>`;
       return `
-        ${line}
-        <h4>Connecting one</h4>
+        ${banner}
+        <h4>Two safety nets, not one</h4>
+        <p>This app keeps everything — every point, the calendar, quests, the shop, your destinations and settings — in this one browser, on this one computer. Nothing is on a server anywhere, which is great for privacy but means <i>you</i> are the one who has to make sure a copy exists elsewhere. There are two ways the app does that for you automatically, and they cover different gaps:</p>
+        <ul class="help-list">
+          <li><b>⬇️ The daily backup file</b> — on by default, needs nothing from you, and works in <i>any</i> browser. It only saves once a school day though, so the worst you could lose is that one day's points.</li>
+          <li><b>🔄 The folder backup</b> — saves within a couple of seconds of every single change, which is real-time protection. But it needs a one-time setup, only works in Chrome or Edge, and can occasionally need reconnecting after the browser updates.</li>
+        </ul>
+        <p>Having <b>both</b> switched on is the safest setup, and costs you nothing extra to do — the daily file is already running unless you have turned it off.</p>
+
+        <h4>⬇️ The daily backup file</h4>
+        <p>The first time you change anything on a given school day — award a point, mark a quest done, anything — the app quietly saves a file named like <code>mrd-backup-${esc(new Date().toISOString().slice(0, 10))}.json</code> straight into this computer's ordinary <b>Downloads</b> folder. The same place any file you download normally lands. No folder to pick, no permission box to say yes to.</p>
+        <p>It is on by default. If you ever want to check it, or turn it off because the folder backup below is doing the job, that switch lives in <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>, along with a <b>Save a backup now</b> button for taking one on demand — worth tapping before a holiday, or to hand a copy to someone.</p>
+
+        <h4>🔄 The folder backup — better, but needs setting up</h4>
         <ol class="help-steps">
           <li>Open <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> (or use the button at the bottom of this page).</li>
           <li>Tap <b>🔄 Connect backup folder…</b> and pick somewhere safe — a Google Drive or OneDrive folder is ideal, because then the backups sync off the computer too.</li>
           <li>Say yes when the browser asks for permission to save files there.</li>
         </ol>
-        <p>Once connected you also get <b>Save now</b>, <b>Restore from folder…</b> and <b>Disconnect</b> in the same place, plus a line telling you when the last save happened.</p>
-        <h4>What happens after that</h4>
-        <p>A couple of seconds after <i>any</i> change, the app writes <code>mrd-live-backup.json</code> to that folder. Once a day it also writes a dated snapshot, <code>mrd-backup-2026-01-31.json</code>, so you can go back to a particular day if you need to.</p>
-        <h4>What a backup contains</h4>
-        <p><b>Included:</b> every point ever awarded, the calendar, quests, the shop catalogue, your destinations and their schedule, house edits and all settings.</p>
-        <p class="help-warn"><b>Not included: media.</b> Videos, PDFs and images you have uploaded are far too big for the backup file and stay in the browser's own storage. Restoring a backup on a new computer brings back everything except those, and you will need to upload them again.</p>
-        <h4>Restoring</h4>
-        <p><b>🗝️ Admin → ⚙️ Settings → Restore from folder…</b> reads <code>mrd-live-backup.json</code> back in. It asks you to confirm first, because it replaces <i>everything</i> currently in the browser and cannot be undone.</p>
-        <h4>If your browser can't do folder backups</h4>
-        <p>The same Settings card has <b>⬇ Export backup</b> and <b>⬆ Import backup</b>, which work in every browser. Export saves one file to your Downloads; do it at the end of each week and keep the files somewhere safe. It is more work than the automatic folder, but it is far better than nothing.</p>
+        <p>Once connected you also get <b>Save now</b>, <b>Restore from folder…</b> and <b>Disconnect</b> in the same place, plus a line telling you when the last save happened. A couple of seconds after <i>any</i> change, the app writes <code>mrd-live-backup.json</code> to that folder. Once a day it also writes a dated snapshot, <code>mrd-backup-2026-01-31.json</code>, so you can go back to a particular day if you need to.</p>
         <p class="help-callout">Browsers sometimes drop folder permission after an update. If that happens the app tells you, and you just pick the same folder again. The <a href="#" data-help-go="system-check">System check</a> watches for it.</p>
+
+        <h4>What a backup contains</h4>
+        <p><b>Included:</b> every point ever awarded, the calendar, quests, the shop catalogue, your destinations and their schedule, house edits and all settings — from either kind of backup.</p>
+        <p class="help-warn"><b>Not included: media.</b> Videos, PDFs and images you have uploaded are far too big for a backup file and stay in the browser's own storage. Restoring a backup on a new computer brings back everything except those, and you will need to upload them again.</p>
+
+        <h4>Bringing a backup back in (restoring)</h4>
+        <p>This always happens in the same place: <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>. Tap <b>⬆ Import backup</b> and choose the file — whichever is newest, whether that's the one in Downloads or the one in your connected folder — or tap <b>Restore from folder…</b> if a folder is connected. Either way it asks you to confirm first, because it replaces <i>everything</i> currently on screen and cannot be undone.</p>
+
+        <h4 style="margin-top:16px">The one thing neither backup protects you from</h4>
+        <p class="help-warn"><b>Both</b> of these backups write their file to <i>this computer</i>. If this computer is ever replaced, or the school wipes its browser profile, both are gone at the same time as everything else — unless you have already copied a backup file somewhere else: a Google Drive folder, a memory stick, or just emailed to yourself. That copy, sitting outside this computer, is the only thing that survives the computer itself disappearing. It costs two minutes and is well worth doing once a term.</p>
+
         <p class="help-actions"><button type="button" class="help-btn help-btn-primary" data-help-action="connect-backup">Connect a backup folder now</button></p>
       `;
     },
@@ -910,10 +921,10 @@ const TOPICS = [
     keywords: 'move computer transfer new laptop copy migrate another machine home school',
     body: `
       <ol class="help-steps">
-        <li>On the <b>old</b> computer, make sure a backup folder is connected and the file is up to date (Settings → <b>Save now</b>). If there is no folder, use <b>⬇ Export backup</b> instead.</li>
-        <li>Copy the whole app folder <b>and</b> your backup folder to the new computer (a USB stick or Drive both work).</li>
-        <li>On the <b>new</b> computer, start the app the same way you start it now, and open it in Chrome or Edge.</li>
-        <li>Go to <b>🗝️ Admin → ⚙️ Settings</b>, tap <b>🔄 Connect backup folder…</b>, pick the copied folder, then <b>Restore from folder…</b>. (Or <b>⬆ Import backup</b> and choose the exported file.)</li>
+        <li>On the <b>old</b> computer, get a fresh backup file: if you have a folder connected, Settings → <b>Save now</b>; either way, Settings → <b>Save a backup now</b> takes a fresh daily file too, or use <b>⬇ Export backup</b>. Any of these is fine — you just want the newest one.</li>
+        <li>Copy that file (and your backup folder, if you use one) to the new computer any way that's easy — a USB stick, a synced Drive folder, or emailing it to yourself all work.</li>
+        <li>On the <b>new</b> computer, start the app the same way you start it now.</li>
+        <li>Go to <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> and tap <b>⬆ Import backup</b>, choosing the file you copied over. (Or, if you copied a whole backup folder and are in Chrome or Edge, <b>🔄 Connect backup folder…</b> then <b>Restore from folder…</b>.)</li>
         <li>Re-upload your PDFs and any videos — <a href="#" data-help-go="potw-pdf">those do not travel in the backup</a>. Run <a href="#" data-help-go="system-check">System check</a>; it will name any destination whose presentation is missing.</li>
       </ol>
     `,
@@ -923,15 +934,17 @@ const TOPICS = [
     keywords: 'cleared lost data gone wiped clear browsing data cache disaster recover',
     body: `
       <p class="help-warn">"Clear browsing data" in the browser menu wipes this app completely — points, calendar, uploaded PDFs, and even the memory of which folder your backups live in. Never use it on this computer.</p>
+      <p>The good news: neither kind of backup file lives in that browser storage, so clearing it does not touch backup files already sitting in your Downloads folder or your connected backup folder — those are ordinary files on the computer's disk, completely separate from the app's own memory.</p>
       <h4>If it has already happened</h4>
       <ol class="help-steps">
         <li>Do not panic and do not start re-entering points.</li>
-        <li>Open the app, go to <b>🗝️ Admin → ⚙️ Settings</b>, tap <b>🔄 Connect backup folder…</b> and pick your backup folder again.</li>
-        <li>Tap <b>Restore from folder…</b> and confirm. You are back to within a few seconds of where you were.</li>
+        <li>Open the app, go to <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>.</li>
+        <li>If you had a backup folder connected: tap <b>🔄 Connect backup folder…</b>, pick it again, then <b>Restore from folder…</b> and confirm. You are back to within a few seconds of where you were.</li>
+        <li>If you did not: tap <b>⬆ Import backup</b> and choose the newest <code>mrd-backup-YYYY-MM-DD.json</code> file in this computer's Downloads folder — that is the daily backup file, and it saves itself even if you never set anything up. Confirm the restore. You are back to within a day of where you were.</li>
         <li>Re-upload your PDFs and videos.</li>
       </ol>
-      <h4>If there was no backup folder</h4>
-      <p>Then the data is gone and cannot be recovered by anyone. Connect a folder today — it takes about fifteen seconds. <a href="#" data-help-go="data-backup">Here is how →</a></p>
+      <h4>If there is truly no backup file anywhere</h4>
+      <p>That only happens if the daily backup file was switched off <i>and</i> no folder was ever connected. In that case the data is gone and cannot be recovered by anyone. Check <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> today and make sure at least the daily file is on — it takes no setup at all. <a href="#" data-help-go="data-backup">Here is how it works →</a></p>
       <p>If you genuinely want a clean slate, use <b>Settings → Danger Zone</b> instead. It only clears this app, not the browser.</p>
     `,
   },
@@ -941,15 +954,15 @@ const TOPICS = [
     body: `
       <h4>A new term, keeping the history</h4>
       <ol class="help-steps">
-        <li>Make sure today's dated snapshot is in your backup folder.</li>
+        <li>Make sure today's dated snapshot exists — in your backup folder if you have one connected, or in Downloads if you are relying on the daily backup file. Tap <b>Save a backup now</b> in Settings if you want to be certain.</li>
         <li><b>🗝️ Admin → ⚙️ Settings → Term Timeline</b>: set <b>Term Start</b> to the new Monday and the number of weeks.</li>
       </ol>
       <p>The week counter restarts and the dashboard follows. Points are <b>not</b> zeroed — term totals still count everything in the log.</p>
       <h4>A new school year, starting from zero</h4>
       <ol class="help-steps">
-        <li>Copy the latest dated snapshot out of your backup folder and keep it somewhere safe — that is your archive of last year.</li>
+        <li>Copy the latest dated snapshot — out of your backup folder, or out of Downloads — and keep it somewhere off this computer too (a Drive folder, a memory stick, or emailed to yourself). That is your archive of last year.</li>
         <li><b>🗝️ Admin → ⚙️ Settings → Danger Zone</b>, type <b>RESET</b>.</li>
-        <li>Set the new term dates, then reconnect your backup folder.</li>
+        <li>Set the new term dates. Reconnect your backup folder if you use one; the daily backup file needs nothing done to it.</li>
         <li>Re-upload the presentations you still want.</li>
       </ol>
       <p class="help-warn">The reset takes the shop catalogue, quest edits, planner and destinations with it. If you spent time on those, keep the snapshot file — it holds all of them.</p>

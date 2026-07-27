@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mr. D's Classroom OS</title>
 
+  <!-- Lets Chrome offer "Install" so this opens in its own window with no tab
+       strip and no address bar. On a 1080p board that browser chrome costs
+       ~130px of height, and every size in this app is in vh units — so the
+       chrome is not just ugly, it shrinks the whole interface. There is also a
+       fullscreen button in the top bar for when it is not installed. -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b0f19">
+  <link rel="icon" href="images/class-shield.png">
+  <link rel="apple-touch-icon" href="images/class-shield.png">
+
   <!-- Tailwind vendored locally: the classroom smartboard must render even if
        the school network blocks CDNs. Update by re-downloading vendor/tailwind.js. -->
   <script src="vendor/tailwind.js"></script>

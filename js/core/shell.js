@@ -16,9 +16,26 @@ import { openHelp } from './help.js';
 import { maybeRunFirstRun } from './firstrun.js';
 import { health } from './health.js';
 import { lock } from './lock.js';
+import { backup } from './backup.js';
 
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
+
+// Shared width expression for the center house-pill — hoisted so both
+// renderTopbar() (which positions the pill itself, plus the mute and ±
+// triggers flanking it) and the backup-status trigger/popover (added beside
+// the mute button) can anchor off the exact same value.
+const PILL_WIDTH_EXPR = 'min(30.6rem,44vw)';
+
+// True when anything is filling the screen. Also covers the installed-app case:
+// a window opened from the manifest has no tab strip or address bar to hide, so
+// the button reads as "already filling the board" and offers nothing to undo.
+function isFullscreen() {
+  try {
+    if (document.fullscreenElement) return true;
+    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+  } catch (e) { return false; }
+}
 
 function hexToRgbTriplet(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
@@ -227,6 +244,22 @@ export function initShell(ctx) {
     if (adminLongPressTimer) { clearTimeout(adminLongPressTimer); adminLongPressTimer = null; }
   }
 
+  // ---------------- backup status trigger + popover ----------------
+  // A small control beside the sound button so a stopped/absent auto-backup
+  // is somewhere the teacher can't help but see, without ever nagging while
+  // things are fine (backup.health() level 'folder' renders nothing at all).
+  // Every call into backup.js is wrapped: a thrown health()/status() must
+  // never take the whole top bar down with it.
+  let backupPanelOpen = false;
+  let backupPanelClosing = false;
+
+  function safeBackupHealth() {
+    try { return backup.health(); } catch (e) { console.warn('shell: backup.health() failed', e); return null; }
+  }
+  function safeBackupStatus() {
+    try { return backup.status(); } catch (e) { console.warn('shell: backup.status() failed', e); return null; }
+  }
+
   function renderTopbar() {
     let activeCore = 1;
     try { activeCore = store.getState().activeCore; } catch (e) { /* keep default */ }
@@ -303,7 +336,34 @@ export function initShell(ctx) {
     // one shared centered wrapper would center the *pair*, which visibly
     // drifts the pill itself off-true-center by half the trigger's width
     // (also verified, ~28px off) since the trigger only adds width on one side.
-    const pillWidthExpr = 'min(30.6rem,44vw)';
+    const pillWidthExpr = PILL_WIDTH_EXPR;
+
+    // ---- backup status trigger (beside the sound button) ----
+    // Never let a backup failure break the shell: a thrown health() renders
+    // nothing rather than a broken bar (see safeBackupHealth()).
+    let backupBtnHtml = '';
+    const bHealth = safeBackupHealth();
+    if (bHealth && bHealth.level !== 'folder') {
+      const level = bHealth.level;
+      const urgent = level === 'attention' || level === 'none';
+      // Reuses .sound-trigger-btn/.sound-trigger-dot wholesale (identical 44px
+      // hit-area / 38px dot geometry, hover/active transitions, and the
+      // data-muted amber-halo rule already defined for the mute button) — the
+      // 'attention' level rides that rule as-is; 'none' is the same look
+      // shifted to rose via an inline override (inline beats the class rule).
+      const roseGlow = level === 'none'
+        ? 'background:rgba(244,63,94,0.18);box-shadow:0 0 0 1px rgba(244,63,94,0.65);opacity:1;'
+        : '';
+      const title = level === 'daily'
+        ? `Backup: ${bHealth.message}`
+        : `Backup needs attention: ${bHealth.message}`;
+      backupBtnHtml = `
+      <button type="button" data-backup-btn data-open="${backupPanelOpen}" data-muted="${urgent}" class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="right:calc(50% + ${pillWidthExpr}/2 + 12px + 52px)" title="${title}" aria-label="Backup status">
+        <span class="sound-trigger-dot leading-none" style="${roseGlow}">☁️</span>
+      </button>
+      `;
+    }
+
     topbarRoot.innerHTML = `
       <div class="h-full w-full flex items-center gap-2 sm:gap-4 px-3 sm:px-5">
         <button type="button" data-brand data-active="${homeActive}" class="shell-brand flex-1 flex items-center gap-2 sm:gap-3 px-2 sm:px-3 rounded-xl justify-start" title="Home" aria-label="Go to dashboard">
@@ -346,6 +406,18 @@ export function initShell(ctx) {
       <button type="button" data-sound-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" data-muted="${!soundOn}" style="right:calc(50% + ${pillWidthExpr}/2 + 12px)" title="${soundOn ? 'Sound on — tap to mute (or press M)' : 'Sound off — tap to unmute (or press M)'}" aria-label="${soundOn ? 'Mute all sound' : 'Unmute sound'}" aria-pressed="${!soundOn}">
         <span class="sound-trigger-dot leading-none">${soundOn ? '🔊' : '🔇'}</span>
       </button>
+      ${backupBtnHtml}
+
+      <!-- Fullscreen. On a 1080p board Chrome's tab strip and address bar cost
+           roughly 130px of height, and every size in this app is in vh units —
+           so that chrome does not just look untidy, it shrinks the entire
+           interface by about 12%. Fullscreen has to be triggered by a real tap
+           (browsers refuse it otherwise), which is exactly why it is a button
+           and not something the app does at startup. Sits on the far side of
+           the sound button, mirroring the ± trigger's offset. -->
+      <button type="button" data-fullscreen-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="right:calc(50% + ${pillWidthExpr}/2 + 12px + 104px)" title="${isFullscreen() ? 'Leave fullscreen (or press Escape)' : 'Fill the whole board — hides the browser bars'}" aria-label="${isFullscreen() ? 'Leave fullscreen' : 'Go fullscreen'}" aria-pressed="${isFullscreen()}">
+        <span class="sound-trigger-dot leading-none">${isFullscreen() ? '🗗' : '⛶'}</span>
+      </button>
 
       ${currentModuleId === 'admin' ? '' : `
       <button type="button" data-points-trigger data-open="${fabOpen}" class="points-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full font-display" style="left:calc(50% + ${pillWidthExpr}/2 + 12px)" title="Quick Points" aria-label="Quick Points">
@@ -376,6 +448,19 @@ export function initShell(ctx) {
       return;
     }
 
+    if (e.target.closest('[data-fullscreen-btn]')) {
+      // requestFullscreen only resolves inside a real user gesture, which is
+      // why this lives on a tap rather than at startup. Failures are silent on
+      // purpose — a school machine may block it by policy, and an error dialog
+      // mid-lesson helps nobody. The bar redraws from the fullscreenchange
+      // listener, so the glyph flips itself either way.
+      try {
+        if (isFullscreen()) document.exitFullscreen?.();
+        else document.documentElement.requestFullscreen?.().catch(() => {});
+      } catch (err) { console.warn('shell: fullscreen toggle failed', err); }
+      return;
+    }
+
     if (e.target.closest('[data-sound-btn]')) {
       // Writing the setting re-renders the bar through store.subscribe, so the
       // glyph flips itself; the audio gate above reads the same setting live.
@@ -389,6 +474,11 @@ export function initShell(ctx) {
 
     if (e.target.closest('[data-points-trigger]')) {
       if (fabOpen && !fabClosing) closeFab(); else openFab();
+      return;
+    }
+
+    if (e.target.closest('[data-backup-btn]')) {
+      if (backupPanelOpen && !backupPanelClosing) closeBackupPanel(); else openBackupPanel();
       return;
     }
 
@@ -441,9 +531,11 @@ export function initShell(ctx) {
 
   // The quick-point FAB has no place on the Teacher's Admin screen — hide it
   // (force-closing any open panel first) there, restore it everywhere else.
+  // The backup popover lives in the same #fab-root, so it force-closes too.
   function setFabAdminHidden(hidden) {
     if (hidden) {
       if (fabOpen || fabClosing) { fabOpen = false; fabClosing = false; renderFab(); }
+      if (backupPanelOpen || backupPanelClosing) { backupPanelOpen = false; backupPanelClosing = false; renderBackupPanel(); }
       fabRoot.style.display = 'none';
     } else {
       fabRoot.style.display = '';
@@ -483,6 +575,63 @@ export function initShell(ctx) {
     fabPanelHost.id = 'fab-panel-host';
     fabRoot.appendChild(fabPanelHost);
     return fabPanelHost;
+  }
+
+  // ---- backup popover — same construction as the quick-points panel above:
+  // its own host inside #fab-root (so it can't be yanked out by a toast or
+  // the points panel re-rendering), open/closing booleans driving a
+  // pop-in/pop-out animation, force-torn-down on Admin, closed by outside
+  // tap or Escape. It reuses .fab-panel/.fab-close-btn/.fab-apply-btn for
+  // visuals so it reads as the same system as the points panel, just
+  // anchored under the backup trigger instead of pinned top-right.
+  let backupPanelHost = null;
+  function ensureBackupPanelHost() {
+    if (backupPanelHost && backupPanelHost.isConnected) return backupPanelHost;
+    backupPanelHost = document.createElement('div');
+    backupPanelHost.id = 'backup-panel-host';
+    fabRoot.appendChild(backupPanelHost);
+    return backupPanelHost;
+  }
+
+  function renderBackupPanel() {
+    const visible = backupPanelOpen || backupPanelClosing;
+    let panelHtml = '';
+    if (visible) {
+      const bHealth = safeBackupHealth();
+      const bStatus = safeBackupStatus();
+      const message = (bHealth && bHealth.message) || 'Backup status isn’t available right now.';
+      const canConnect = !!(bStatus && bStatus.supported);
+      // Anchored at the same horizontal offset as the trigger button itself
+      // (PILL_WIDTH_EXPR + the same +52px step) rather than .fab-panel's
+      // usual pinned right:16px, so it opens directly under the control that
+      // spawned it instead of jumping to the far corner of the bar.
+      panelHtml = `
+        <div class="fab-panel p-4 flex flex-col gap-3 ${backupPanelClosing ? 'closing' : ''}" data-backup-panel style="right:max(16px, calc(50% + ${PILL_WIDTH_EXPR}/2 + 12px + 52px - 158px))">
+          <div class="flex items-center justify-between">
+            <span class="font-display font-bold text-sm text-gray-100">Backup</span>
+            <button type="button" data-backup-close class="fab-close-btn rounded-full flex items-center justify-center text-gray-400 hover:text-gray-100 hover:bg-white/10 text-lg leading-none">✕</button>
+          </div>
+          <p class="text-xs text-gray-200 leading-snug">${message}</p>
+          <p class="text-[11px] text-gray-400 leading-snug">A backup is just a saved copy of the house points — so if this computer is ever wiped or swapped out, the term’s points aren’t lost with it.</p>
+          <div class="flex flex-col gap-2">
+            ${canConnect ? `<button type="button" data-backup-connect class="fab-apply-btn rounded-xl bg-white/10 font-bold text-xs sm:text-sm text-gray-100">Connect a backup folder</button>` : ''}
+            <button type="button" data-backup-download class="fab-apply-btn rounded-xl bg-emerald-600/80 font-bold text-xs sm:text-sm text-white">Save a backup now</button>
+          </div>
+        </div>
+      `;
+    }
+    ensureBackupPanelHost().innerHTML = panelHtml;
+  }
+
+  // Mirrors openFab()/closeFab() exactly, including the re-render of the top
+  // bar so the trigger's data-open glow/rotate cue stays in sync.
+  function openBackupPanel() { backupPanelOpen = true; backupPanelClosing = false; renderBackupPanel(); renderTopbar(); }
+  function closeBackupPanel() {
+    if (!backupPanelOpen) return;
+    backupPanelClosing = true;
+    renderBackupPanel();
+    renderTopbar();
+    setTimeout(() => { backupPanelOpen = false; backupPanelClosing = false; renderBackupPanel(); renderTopbar(); }, 160);
   }
 
   function renderFab() {
@@ -631,6 +780,28 @@ export function initShell(ctx) {
       if (ok && amountEl) amountEl.value = '';
       return;
     }
+
+    if (e.target.closest('[data-backup-close]')) { closeBackupPanel(); return; }
+
+    if (e.target.closest('[data-backup-connect]')) {
+      // Called synchronously from this click handler (a real user gesture),
+      // never on a timer — connectFolder() opens the OS folder picker, which
+      // requires that. Re-render on completion either way so a granted/denied
+      // permission is reflected immediately rather than waiting for the next
+      // unrelated store tick.
+      try {
+        await backup.connectFolder();
+      } catch (err) { console.warn('shell: backup connectFolder failed', err); }
+      renderBackupPanel();
+      renderTopbar();
+      return;
+    }
+
+    if (e.target.closest('[data-backup-download]')) {
+      try { backup.downloadNow(); } catch (err) { console.warn('shell: backup downloadNow failed', err); }
+      renderBackupPanel();
+      return;
+    }
   });
 
   // Digits-only enforcement for the amount field (max 4 digits === max 9999).
@@ -651,18 +822,23 @@ export function initShell(ctx) {
     if (fabOpen && !fabClosing && !e.target.closest('[data-fab-panel]') && !e.target.closest('[data-points-trigger]') && !e.target.closest('.lock-pad-backdrop')) {
       closeFab();
     }
+    if (backupPanelOpen && !backupPanelClosing && !e.target.closest('[data-backup-panel]') && !e.target.closest('[data-backup-btn]')) {
+      closeBackupPanel();
+    }
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (coreMenuOpen) { coreMenuOpen = false; renderTopbar(); }
     if (fabOpen) closeFab();
+    if (backupPanelOpen) closeBackupPanel();
   });
 
   // ---------------- store reactivity ----------------
   function rerenderAll() {
     applyAccentVars();
     applyThemeSettings();
-    renderTopbar();
+    renderTopbar(); // re-evaluates backup.health() too, so the trigger updates the moment a folder connects (or a permission drops)
+    if (backupPanelOpen || backupPanelClosing) renderBackupPanel(); // keep its message current while open
     // Keep the FAB's preselected house following the active core, but only
     // while the panel is closed — never yank a selection mid-interaction.
     if (!fabOpen && !fabClosing) {
@@ -672,6 +848,11 @@ export function initShell(ctx) {
   }
   store.subscribe(rerenderAll);
   window.__mrdShellRerender = rerenderAll; // idempotency escape hatch, see top guard
+
+  // Fullscreen can be entered or left without touching our button — F11, or
+  // Escape, which is how most people get out. Redraw so the glyph never claims
+  // the opposite of what the screen is actually doing.
+  try { document.addEventListener('fullscreenchange', rerenderAll); } catch (e) { /* non-fatal */ }
 
   // ---------------- initial paint ----------------
   // Safety net: the app always boots on 'dashboard' (main.js calls

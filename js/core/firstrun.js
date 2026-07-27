@@ -9,6 +9,12 @@
 // else here is a bonus; that one step is the difference between "I lost my
 // term" and "I restored it in fifteen seconds".
 //
+// "Skip for now" defers, it never dismisses. A skip is remembered, and the
+// wizard comes back on a later launch — resuming where it left off, with a
+// short line owning the fact that it's back — instead of quietly vanishing
+// for good. It only truly closes for good when setup is finished, or when a
+// backup folder turns out to be connected by any route (see needsSetup()).
+//
 // Owns exactly one element (#firstrun-root), removed completely on close.
 import { store } from './store.js';
 import { backup } from './backup.js';
@@ -28,6 +34,20 @@ function nextMonday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// After this many "Skip for now"s, the wizard stops inviting itself back —
+// it's had three fair chances. It's still one tap away from ❓ Help → "Run
+// the setup wizard again", so nothing is actually lost, it just stops nagging.
+const MAX_DEFERRALS = 3;
+
+function backupConnected() {
+  try { return !!backup.status().connected; } catch (e) { return false; }
+}
+
 // ---------------------------------------------------------------------------
 // state
 // ---------------------------------------------------------------------------
@@ -37,6 +57,7 @@ let keyHandler = null;
 let busy = false;         // a folder picker is open
 let termDraft = null;     // { termStart, termWeeks } while editing step 3
 let savedTerm = false;
+let returnBanner = false; // this open is a return from an earlier skip
 
 
 function isOpen() { return !!(rootEl && rootEl.isConnected); }
@@ -227,6 +248,10 @@ function render() {
         <button type="button" class="fr-skip" data-fr-action="skip">Skip for now</button>
       </div>
       <div class="fr-body">
+        ${returnBanner ? `
+          <div class="fr-status fr-status-warn">
+            <b>Picking up where you left off.</b> You skipped this before — no trouble, it's still quick, and it's worth a minute before the term gets busy.
+          </div>` : ''}
         <div class="fr-eyebrow">${esc(s.eyebrow)}</div>
         <h2 class="fr-title">${esc(s.title)}</h2>
         ${s.html}
@@ -268,11 +293,25 @@ function markDone() {
   catch (e) { console.warn('firstrun: could not persist setupDone', e); }
 }
 
+// "Skip for now" — remembered, not final. Records how many times and when,
+// plus the step reached, so a later launch can resume instead of restarting.
+function deferSetup() {
+  try {
+    const s = store.getSettings();
+    store.updateSettings({
+      setupSkipCount: (Number(s.setupSkipCount) || 0) + 1,
+      setupSkippedAt: todayStr(),
+      setupResumeStep: step,
+    });
+  } catch (e) { console.warn('firstrun: could not record the skip', e); }
+}
+
 function goto(n) {
   // Leaving the term step keeps whatever was typed, even if "Save" wasn't tapped.
   if (step === 2) readTermDraft();
   step = Math.max(0, Math.min(STEPS.length - 1, n));
   savedTerm = false;
+  returnBanner = false;
   render();
   const panel = rootEl && rootEl.querySelector('.fr-body');
   if (panel) panel.scrollTop = 0;
@@ -283,7 +322,8 @@ function onClick(e) {
   if (!btn) return;
   const what = btn.dataset.frAction;
 
-  if (what === 'skip' || what === 'finish') { markDone(); close(); return; }
+  if (what === 'skip') { deferSetup(); close(); return; }
+  if (what === 'finish') { markDone(); close(); return; }
   if (what === 'back') { goto(step - 1); return; }
   if (what === 'next') {
     if (step >= STEPS.length - 1) { markDone(); close(); return; }
@@ -335,7 +375,7 @@ function onClick(e) {
 
 function onKeydown(e) {
   if (!isOpen()) return;
-  if (e.key === 'Escape') { e.stopPropagation(); markDone(); close(); }
+  if (e.key === 'Escape') { e.stopPropagation(); deferSetup(); close(); }
 }
 
 function close() {
@@ -345,11 +385,13 @@ function close() {
   busy = false;
   termDraft = null;
   savedTerm = false;
+  returnBanner = false;
 }
 
-function openWizard(atStep = 0) {
+function openWizard(atStep = 0, returning = false) {
   if (isOpen()) return;
   step = atStep;
+  returnBanner = returning;
   rootEl = document.createElement('div');
   rootEl.id = ROOT_ID;
   rootEl.addEventListener('click', onClick);
@@ -363,25 +405,63 @@ function openWizard(atStep = 0) {
 // public API
 // ---------------------------------------------------------------------------
 
-/** Open the wizard on demand (Help → "Run the setup wizard again"). */
+/** Open the wizard on demand (Help → "Run the setup wizard again"). Always
+ *  starts fresh at the welcome step — this is the deliberate, explicit way
+ *  back in, unaffected by the deferral count below. */
 export function startSetup() { openWizard(0); }
 
-/** True when this browser has never been through (or skipped) setup. */
+/** True when setup still has unfinished business: not finished, and no
+ *  backup folder connected either (that alone counts as "done" — see
+ *  maybeRunFirstRun()). */
 export function needsSetup() {
-  try { return !store.getSettings().setupDone; } catch (e) { return false; }
+  try {
+    const s = store.getSettings();
+    return !s.setupDone && !backupConnected();
+  } catch (e) { return false; }
 }
 
 /**
- * Called once at boot from shell.js. Shows the wizard only if setup has never
- * been completed OR skipped. Wrapped so a failure here can never stop the app
- * from starting.
+ * Called once at boot from shell.js. Wrapped so a failure here can never
+ * stop the app from starting.
+ *
+ * Skipping never counts as finishing. Instead:
+ *  - Never skipped yet → opens right away, at the welcome step.
+ *  - Skipped before → opens again on a LATER calendar day (never twice in
+ *    the same day — that would feel exactly like the trap this file is
+ *    built to avoid), resuming at the step it was on, with a short line
+ *    owning that it's back.
+ *  - Skipped three times → stops volunteering itself. Still one tap away
+ *    from ❓ Help → "Run the setup wizard again", so nothing is lost.
+ *  - A backup folder connected by ANY route (including later, from Admin)
+ *    is treated the same as finishing — the one thing this wizard actually
+ *    cares about is done, so it locks that in and never asks again.
  */
 export function maybeRunFirstRun() {
   try {
-    if (!needsSetup()) return false;
+    const s = store.getSettings();
+    if (s.setupDone) return false;
+
+    if (backupConnected()) {
+      try { store.updateSettings({ setupDone: true }); } catch (e) { /* best effort */ }
+      return false;
+    }
+
+    const skipCount = Number(s.setupSkipCount) || 0;
+    const skippedAt = s.setupSkippedAt || null;
+
+    if (skippedAt) {
+      if (skipCount >= MAX_DEFERRALS) return false;   // leave it to Help now
+      if (skippedAt === todayStr()) return false;     // already offered today
+    }
+
+    const returning = !!skippedAt;
+    const resumeStep = returning
+      ? Math.max(0, Math.min(STEPS.length - 1, Number(s.setupResumeStep) || 0))
+      : 0;
+
     // One frame's delay so the dashboard is painted behind the wizard — it
     // reads as "here is your app, plus a hand getting started", not a gate.
-    setTimeout(() => { try { openWizard(0); } catch (e) { console.warn('firstrun: open failed', e); } }, 350);
+    setTimeout(() => { try { openWizard(resumeStep, returning); } catch (e) { console.warn('firstrun: open failed', e); } }, 350);
     return true;
   } catch (e) {
     console.warn('firstrun: skipped', e);
