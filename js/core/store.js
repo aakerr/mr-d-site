@@ -1529,14 +1529,23 @@ export const store = {
     }
 
     const total = Math.max(0, Math.round(Number(rolled) || 0)) * (item.effect?.mult || 1);
-    out.damage = total;
-    store.addPoints(targetId, -total, {
+    // Report what LANDED, not what was rolled. addPoints trims a deduction at
+    // the zero floor and hands back the trimmed transaction, so a 1200-point
+    // hit on a house holding 600 takes 600 — and the number on screen has to
+    // say 600 too, or the crest tally and the falling total disagree in front
+    // of the class.
+    const hit = store.addPoints(targetId, -total, {
       reason: `${item.name}${item.effect?.anonymous ? '' : ` from ${attacker?.name || 'a house'}`}`,
       tag: 'attack',
     });
+    out.damage = hit ? Math.abs(hit.delta) : 0;
+    out.rolledFor = total;   // what it would have taken, for the ledger-curious
     if (pv.steals) {
-      out.stolen = total;
-      store.addPoints(attackerId, total, { reason: `${item.name} on ${target?.name || 'a house'}`, tag: 'attack' });
+      // You cannot loot more than they had. Stealing the rolled amount rather
+      // than the amount actually taken would mint points out of nothing every
+      // time a poor house got hit.
+      const got = store.addPoints(attackerId, out.damage, { reason: `${item.name} on ${target?.name || 'a house'}`, tag: 'attack' });
+      out.stolen = got ? got.delta : 0;
     }
     emit();
     return out;
