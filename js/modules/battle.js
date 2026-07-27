@@ -365,7 +365,14 @@ function injectStyles() {
      utility row overflowed the card and collided with the teacher-scoring band
      below it, by 118px. The crest gives way because it is the one part with no
      information in it. On a 1080p board the vh terms give it back. */
-  .duel-root[data-mode="duel"] .duel-crest{height:clamp(64px,12.4vh,205px);}
+  /* Duel mode's top half carries less than hp mode's did — no HP row, no bar —
+     so it had slack it was not using. Everything in it goes up about 20% to
+     fill the space, scoped to duel so the hp screen is untouched. The maxima
+     are what actually bind at 1920 wide, which is why they move most. */
+  .duel-root[data-mode="duel"] .duel-crest{height:clamp(77px,14.9vh,246px);}
+  .duel-root[data-mode="duel"] .duel-points-val{font-size:clamp(2.9rem,5.5vw,5rem);}
+  .duel-root[data-mode="duel"] .duel-points-lbl{font-size:clamp(.86rem,1.32vw,1.14rem);}
+  .duel-root[data-mode="duel"] .duel-name{font-size:clamp(1.75rem,3.25vw,2.75rem);}
   .duel-crest{position:relative;flex:0 0 auto;height:clamp(115px,22vh,320px);
     aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
