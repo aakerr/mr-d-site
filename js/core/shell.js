@@ -358,7 +358,7 @@ export function initShell(ctx) {
         ? `Backup: ${bHealth.message}`
         : `Backup needs attention: ${bHealth.message}`;
       backupBtnHtml = `
-      <button type="button" data-backup-btn data-open="${backupPanelOpen}" data-muted="${urgent}" class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="right:calc(50% + ${pillWidthExpr}/2 + 12px + 52px)" title="${title}" aria-label="Backup status">
+      <button type="button" data-backup-btn data-open="${backupPanelOpen}" data-muted="${urgent}" class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="left:calc(50% + ${pillWidthExpr}/2 + 12px + 52px)" title="${title}" aria-label="Backup status">
         <span class="sound-trigger-dot leading-none" style="${roseGlow}">☁️</span>
       </button>
       `;
@@ -415,7 +415,7 @@ export function initShell(ctx) {
            (browsers refuse it otherwise), which is exactly why it is a button
            and not something the app does at startup. Sits on the far side of
            the sound button, mirroring the ± trigger's offset. -->
-      <button type="button" data-fullscreen-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="right:calc(50% + ${pillWidthExpr}/2 + 12px + 104px)" title="${isFullscreen() ? 'Leave fullscreen (or press Escape)' : 'Fill the whole board — hides the browser bars'}" aria-label="${isFullscreen() ? 'Leave fullscreen' : 'Go fullscreen'}" aria-pressed="${isFullscreen()}">
+      <button type="button" data-fullscreen-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="left:calc(50% + ${pillWidthExpr}/2 + 12px + 104px)" title="${isFullscreen() ? 'Leave fullscreen (or press Escape)' : 'Fill the whole board — hides the browser bars'}" aria-label="${isFullscreen() ? 'Leave fullscreen' : 'Go fullscreen'}" aria-pressed="${isFullscreen()}">
         <span class="sound-trigger-dot leading-none">${isFullscreen() ? '🗗' : '⛶'}</span>
       </button>
 
@@ -601,12 +601,14 @@ export function initShell(ctx) {
       const bStatus = safeBackupStatus();
       const message = (bHealth && bHealth.message) || 'Backup status isn’t available right now.';
       const canConnect = !!(bStatus && bStatus.supported);
-      // Anchored at the same horizontal offset as the trigger button itself
-      // (PILL_WIDTH_EXPR + the same +52px step) rather than .fab-panel's
-      // usual pinned right:16px, so it opens directly under the control that
-      // spawned it instead of jumping to the far corner of the bar.
+      // Anchored under its own trigger rather than .fab-panel's usual pinned
+      // right:16px, so it opens beneath the control that spawned it. The
+      // trigger now sits on the RIGHT of the core switcher (it used to sit left,
+      // where it crowded the school name), so this mirrors it — same offset,
+      // measured from the left, and clamped so a narrow window cannot push the
+      // panel off the edge.
       panelHtml = `
-        <div class="fab-panel p-4 flex flex-col gap-3 ${backupPanelClosing ? 'closing' : ''}" data-backup-panel style="right:max(16px, calc(50% + ${PILL_WIDTH_EXPR}/2 + 12px + 52px - 158px))">
+        <div class="fab-panel p-4 flex flex-col gap-3 ${backupPanelClosing ? 'closing' : ''}" data-backup-panel style="left:min(calc(100vw - 16px - 316px), calc(50% + ${PILL_WIDTH_EXPR}/2 + 12px + 52px - 136px));right:auto">
           <div class="flex items-center justify-between">
             <span class="font-display font-bold text-sm text-gray-100">Backup</span>
             <button type="button" data-backup-close class="fab-close-btn rounded-full flex items-center justify-center text-gray-400 hover:text-gray-100 hover:bg-white/10 text-lg leading-none">✕</button>
