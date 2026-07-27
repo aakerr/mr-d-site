@@ -1531,7 +1531,7 @@ function renderMrDDuel() {
       <div class="battle-embers">${emberField()}</div>
       <div class="duel-topbar">
         <div class="duel-topbar-inner">
-          <div class="duel-title font-display">⚔️ BATTLE DAY — MR. D'S RULES</div>
+          <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR OPPONENT</div>
         <div class="duel-topbar-actions">
           <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
           <button type="button" class="battle-end-btn">🏳️ End Battle</button>
