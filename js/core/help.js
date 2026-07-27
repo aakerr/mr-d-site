@@ -44,6 +44,27 @@ function termLine() {
 function shopItemsByKind(kind) {
   try { return (store.getShopItems() || []).filter((i) => i.effect && i.effect.kind === kind); } catch (e) { return []; }
 }
+// Battle Day runs under one of TWO complete rule sets — 'duel' (Mr. D's own
+// game, the default) or 'hp' (the earlier hit-points model). Only one is ever
+// active, and its shop items are the only ones store.getShopItems() returns —
+// see store.js's COMBAT_MODES / setCombatMode(). Every article that describes
+// specific items or specific combat mechanics has to know which one it is
+// talking about, so it can say so plainly instead of going stale or silent.
+function combatModeNow() {
+  try { return store.getCombatMode(); } catch (e) { return 'duel'; }
+}
+function isDuelNow() { return combatModeNow() === 'duel'; }
+// Items in the CURRENT shop that belong to a given slot ('attack' | 'defense'
+// | 'utility') — only meaningful while Mr. D's rules are active, since the
+// hit-points shop has no slots at all. Returns null rather than an empty list
+// when the other rule set is running, so callers can tell "nothing here"
+// apart from "wrong mode to ask this in".
+function duelItemsBySlot(slot) {
+  try {
+    if (store.getCombatMode() !== 'duel') return null;
+    return (store.getShopItems() || []).filter((i) => i.slot === slot);
+  } catch (e) { return null; }
+}
 
 // ---------------------------------------------------------------------------
 // The d20 prophecy table.
@@ -189,7 +210,7 @@ const TOPICS = [
         <li><b>Quests</b> — points land when <i>you</i> confirm a quest as complete.</li>
         <li><b>Place of the Week</b> — quiz bounties pay the house that answers first.</li>
         <li><b>Die of Destiny</b> — you tap the outcome button to apply the roll.</li>
-        <li><b>Magic Shop and Battle Day</b> — buying an item spends its cost in points right away, but that is all buying does. When a house later uses a stockpiled weapon as a strike on Battle Day it removes hit points, not points, and only the battle's winner is paid a points prize at the end. <a href="#" data-help-go="battle-hp">How that works →</a></li>
+        <li><b>Magic Shop and Battle Day</b> — buying an item spends its cost in points right away, but that is all buying does at the counter; what happens after depends on which Battle Day rule set is running. Under <b>Mr. D's rules</b> (the default), a landed, uncountered attack rolls dice and the total comes straight off the target's points. Under <b>Hit points</b>, a house instead uses a stockpiled weapon as a strike that removes hit points, not points, and only the battle's winner is paid a points prize at the end. <a href="#" data-help-go="battle-day">How that works →</a></li>
       </ul>
       <p>All of them go through the same log, so nothing happens that you cannot see afterwards.</p>
     `,
@@ -229,7 +250,7 @@ const TOPICS = [
       <p class="help-callout">If your copy of the app shows a <b>remove</b> control (✕ or Undo) beside a log entry, you can use that instead and the entry disappears entirely. The reversal above works either way and is never wrong.</p>
       <h4>Undoing something bigger</h4>
       <p>If a whole class period went sideways — a shop spree, a Battle Day that got out of hand — work through it one entry at a time. There is no bulk undo, on purpose: a single mis-tap should never be able to erase a term.</p>
-      <p>Shields and defences are separate from points. Clear those in <b>🗝️ Admin → 🛡️ Active Defenses</b>.</p>
+      <p>Shields and damage-halving (Hit points mode) are separate from points — clear those in <b>🗝️ Admin → 🛡️ Active Defenses</b>. Under Mr. D's rules, a held attack or defense is not a timer running down at all — it just sits until it is spent or countered, so there is nothing separate to clear.</p>
     `,
   },
   {
@@ -486,22 +507,31 @@ const TOPICS = [
   // ======================= SHOP & BATTLE =======================
   {
     id: 'shop-basics', cat: 'shop', title: 'How buying works',
-    keywords: 'shop buy purchase spend cost afford magic shop balance target',
-    body: `
+    keywords: 'shop buy purchase spend cost afford magic shop balance target duel loadout',
+    body: () => {
+      const duel = isDuelNow();
+      return `
       <ol class="help-steps">
         <li>Open the <b>Magic Shop</b> tile.</li>
         <li>Pick the house that is buying.</li>
-        <li>Tap an item. Items the house cannot afford are greyed out.</li>
+        <li>Tap an item. Items the house cannot afford — or is not allowed to hold any more of right now — are greyed out.</li>
         <li>Confirm. The cost comes off immediately.</li>
       </ol>
-      <p>What happens next depends on what was bought. A <b>shield</b> or a damage-halving relic starts protecting the house the instant you confirm, and a <b>wildcard</b> rolls its dice right there in the shop and applies the result on the spot. But an <b>attack item</b> — an attack, a steal or a pierce weapon — does none of that yet. Nobody picks a target at the shop counter, and nothing happens to anyone's points or hit points there. Buying one of these simply adds it to that house's <b>armoury</b> — a stockpile of weapons waiting to be used — ready to be spent as a strike on <a href="#" data-help-go="battle-day">Battle Day</a>. <a href="#" data-help-go="battle-hp">How strikes and hit points work →</a></p>
+      <p>What happens next depends on <b>which Battle Day rule set is running</b> — there are two, they use different items, and only one is active at a time. This computer is currently set to <b>${duel ? "Mr. D's rules" : 'Hit points'}</b>; switch either way in <b>🗝️ Admin → ⚔️ Battle Day</b>. <a href="#" data-help-go="battle-day">Both rule sets, side by side →</a></p>
+      ${duel ? `
+      <p>Under <b>Mr. D's rules</b> (the default), buying an attack or a defense doesn't do anything to anyone yet — it just gets held by the buying house, ready for later. A house may hold only <b>one attack and one defense at a time</b> (two of each once it owns the Bag of Holding) — see <a href="#" data-help-go="duel-loadout">One attack, one defense — and the Bag of Holding</a>. Utility items — the Stone of Seeing, the Shroud of Secrecy, the Time Turner, the Bag of Holding itself — don't count against that limit. <a href="#" data-help-go="duel-flow">How a Battle Day throw actually plays out →</a></p>
+      ` : `
+      <p>Under <b>Hit points</b>, a <b>shield</b> or a damage-halving relic starts protecting the house the instant you confirm, and a <b>wildcard</b> rolls its dice right there in the shop and applies the result on the spot. But an <b>attack item</b> — an attack, a steal or a pierce weapon — does none of that yet. Nobody picks a target at the shop counter, and nothing happens to anyone's points or hit points there. Buying one of these simply adds it to that house's <b>armoury</b> — a stockpile of weapons waiting to be used — ready to be spent as a strike on <a href="#" data-help-go="battle-day">Battle Day</a>. <a href="#" data-help-go="battle-hp">How strikes and hit points work →</a></p>
+      `}
       <p>Items are paid for with <b>term</b> points, not this week's points. Every purchase is logged with the reason "Bought: <i>item name</i>".</p>
-    `,
+    `;
+    },
   },
   {
-    id: 'shop-effects', cat: 'shop', title: 'What each type of item does',
-    keywords: 'attack steal shield pierce reduce wild effect types items list',
+    id: 'shop-effects', cat: 'shop', title: 'What each type of item does (Hit points mode)',
+    keywords: 'attack steal shield pierce reduce wild effect types items list hit points',
     body: () => {
+      const duel = isDuelNow();
       const rows = [
         ['Attack', 'attack', 'Buying one doesn’t hit anyone. It goes straight into the buyer’s armoury as a weapon saved for Battle Day. Only when that house later spends it there as a strike does it remove hit points (HP) from whoever it lands on — and even then a shield can block it outright, or a halving relic cut it down.'],
         ['Steal', 'steal', 'Also stockpiled at purchase, just like an attack — nothing happens until it’s spent as a strike on Battle Day. When it lands, it takes HP off whichever house is leading, and the buyer’s own house is credited points equal to whatever HP the strike actually took — nothing if it was blocked, half if it was halved.'],
@@ -511,26 +541,29 @@ const TOPICS = [
         ['Wildcard', 'wild', 'A random swing, for the buyer or against them, up to the listed amount — this one still happens immediately at the shop counter with its own dice roll. It is never stockpiled.'],
       ];
       return `
-        <p class="help-lede">Attack, Steal and Pierce work differently from everything else in the shop: buying one of these weapons does not do anything to anyone yet. It only fills the buyer's armoury. Nothing about points or hit points changes until that weapon is actually used as a strike on <a href="#" data-help-go="battle-day">Battle Day</a>.</p>
+        <p class="help-lede">Attack, Steal and Pierce work differently from everything else in the shop: buying one of these weapons does not do anything to anyone yet. It only fills the buyer's armoury. Nothing about points or hit points changes until that weapon is actually used as a strike on <a href="#" data-help-go="battle-hp">Battle Day</a>.</p>
+        ${duel ? `<p class="help-warn">This article describes the <b>Hit points</b> rule set, which is <b>not</b> the one running on this computer right now — Battle Day is currently set to <b>Mr. D's rules</b> instead, and its items work differently (see <a href="#" data-help-go="duel-items">The weapon list</a>). Switch rule sets any time in <b>🗝️ Admin → ⚔️ Battle Day</b>; whichever set is off keeps its own items and your edits to them exactly as you left them.</p>` : ''}
         <table class="help-table">
-          <thead><tr><th>Type</th><th>What it does</th><th>In the shop right now</th></tr></thead>
+          <thead><tr><th>Type</th><th>What it does</th><th>In the shop, when this mode is on</th></tr></thead>
           <tbody>
             ${rows.map(([label, kind, desc]) => {
-              const items = shopItemsByKind(kind);
+              const items = duel ? [] : shopItemsByKind(kind);
               return `<tr><td><b>${label}</b></td><td>${desc}</td><td class="help-muted">${
-                items.length ? items.map((i) => `${esc(i.emoji || '')} ${esc(i.name)}${i.mythicOnly ? '' : ` <span class="help-nowrap">(${i.cost} pts)</span>`}`).join('<br>') : '—'
+                items.length ? items.map((i) => `${esc(i.emoji || '')} ${esc(i.name)}${i.mythicOnly ? '' : ` <span class="help-nowrap">(${i.cost} pts)</span>`}`).join('<br>')
+                  : (duel ? 'Hit points mode is off — nothing to show here right now.' : '—')
               }</td></tr>`;
             }).join('')}
           </tbody>
         </table>
-        <p class="help-callout">You can change any of these, or invent your own — see <a href="#" data-help-go="shop-create">Creating your own item</a>. For the full rules on hit points and how a strike plays out, see <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a>.</p>
+        <p class="help-callout">You can change any of these, or invent your own, whenever Hit points is the active rule set — see <a href="#" data-help-go="shop-create">Creating your own item</a>. For the full rules on hit points and how a strike plays out, see <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a>.</p>
       `;
     },
   },
   {
-    id: 'shop-matchups', cat: 'shop', title: 'How attacks and defences interact',
-    keywords: 'matchup blocked shield halved pierce combat rules damage interaction which wins',
-    body: `
+    id: 'shop-matchups', cat: 'shop', title: 'How attacks and defences interact (Hit points mode)',
+    keywords: 'matchup blocked shield halved pierce combat rules damage interaction which wins hit points',
+    body: () => `
+      ${isDuelNow() ? `<p class="help-warn">This article describes the <b>Hit points</b> rule set, which is <b>not</b> the one running on this computer right now — Battle Day is currently set to <b>Mr. D's rules</b>, where each attack has exactly one specific counter instead of a shared shield/halving/pierce order. See <a href="#" data-help-go="duel-items">The weapon list: every attack and its counter</a>, and <a href="#" data-help-go="duel-flow">how a Battle Day throw plays out</a>. Switch rule sets any time in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
       <p class="help-lede">This is about the moment a weapon is actually <b>used</b> — a strike on Battle Day — not about buying it. Buying an attack, steal or pierce item only stockpiles it in the buyer's armoury; nothing below happens until that weapon is spent as a strike. There is one rule for what happens then, applied in this order: <b>a shield blocks the whole strike; otherwise a halving defence cuts it in half; a pierce ignores both.</b></p>
       <p>Take a plain <b>20-HP strike</b> (from the Catapult Volley, spent out of the armoury) landing on a house that is:</p>
       <table class="help-table">
@@ -550,9 +583,10 @@ const TOPICS = [
     `,
   },
   {
-    id: 'shop-blocked', cat: 'shop', title: 'Why was that attack blocked?',
-    keywords: 'blocked shield why nothing happened attack failed no damage defence',
-    body: `
+    id: 'shop-blocked', cat: 'shop', title: 'Why was that attack blocked? (Hit points mode)',
+    keywords: 'blocked shield why nothing happened attack failed no damage defence hit points',
+    body: () => `
+      ${isDuelNow() ? `<p class="help-warn">This article describes <b>Hit points</b> mode, which is <b>not</b> the one running on this computer right now — Battle Day is currently set to <b>Mr. D's rules</b>. Under those, "blocked" means the defender was secretly holding the one item that counters that exact attack — see <a href="#" data-help-go="duel-flow">how a Battle Day throw plays out</a> for the reveal-and-counter step. Switch rule sets any time in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
       <p>Because the target had a shield running when the strike landed. Nothing gets checked against a shield when a weapon is <i>bought</i> — buying an attack, steal or pierce item just puts it in the buyer's armoury. The shield check happens later, on <b>Battle Day</b>, at the exact moment a house spends that stockpiled weapon as a strike. A shield blocks <b>every</b> ordinary strike aimed at its house until it expires — it is not a chance, it is a certainty.</p>
       <p>To see what is currently protecting whom, open <b>🗝️ Admin</b> and look at <b>🛡️ Active Defenses</b>. It lists every shield and halving effect with the time left, and lets you clear one if a class talked itself into a corner.</p>
       <p>Ways through a shield:</p>
@@ -564,12 +598,14 @@ const TOPICS = [
     `,
   },
   {
-    id: 'shop-mythic', cat: 'shop', title: 'Mythic relics',
-    keywords: 'mythic relic natural 20 nat20 reward free item oracle spy network lookout',
+    id: 'shop-mythic', cat: 'shop', title: 'Mythic relics (Hit points mode)',
+    keywords: 'mythic relic natural 20 nat20 reward free item oracle spy network lookout hit points',
     body: () => {
+      const duel = isDuelNow();
       let items = [];
       try { items = store.getMythicRewards() || []; } catch (e) { items = []; }
       return `
+        ${duel ? `<p class="help-warn">Mythic relics belong to the <b>Hit points</b> rule set, which is <b>not</b> the one running on this computer right now — Battle Day is currently set to <b>Mr. D's rules</b>, and none of its items are marked mythic-only out of the box. That's why the list below is empty: it isn't broken, there's just nothing configured to hand out under the active rule set. Rolling a natural 20 still awards points as normal — see <a href="#" data-help-go="dice-prophecy">The d20 prophecy table</a>. If you want a natural-20 relic under Mr. D's rules, add your own mythic-only item in <a href="#" data-help-go="shop-create">Creating your own item</a>, or switch to Hit points in <b>🗝️ Admin → ⚔️ Battle Day</b> to bring these three back.</p>` : ''}
         <p>Mythic relics are the only items that cannot be bought at any price. They are granted by <b>rolling a natural 20 on the Die of Destiny</b> — one relic per 20.</p>
         <p>The relics on this computer:</p>
         <ul class="help-list">
@@ -581,37 +617,59 @@ const TOPICS = [
   },
   {
     id: 'shop-create', cat: 'shop', title: 'Creating your own shop item',
-    keywords: 'create item custom new shop editor add own effect cost emoji image',
-    body: `
+    keywords: 'create item custom new shop editor add own effect cost emoji image duel slot counter dice',
+    body: () => {
+      const duel = isDuelNow();
+      return `
       <ol class="help-steps">
-        <li>Open <b>🗝️ Admin → Shop</b>.</li>
+        <li>Open <b>🗝️ Admin → 🔮 Shop</b>.</li>
         <li>Add a new item, or edit one that exists.</li>
         <li>Give it a <b>name</b>, an <b>emoji</b> (or upload a small picture), and a <b>cost</b> in points.</li>
+        ${duel ? `
+        <li>Choose which <b>slot</b> it belongs to: <b>attack</b>, <b>defense</b>, or <b>utility</b>. Attack and defense are the two slots a house may only hold one of at a time (two once it owns the Bag of Holding) — see <a href="#" data-help-go="duel-loadout">One attack, one defense — and the Bag of Holding</a>. Utility items don't count against that limit.</li>
+        <li>Choose the <b>effect</b>. An attack item does <b>damage</b> (removes points), <b>steal</b> (removes points from the target and hands them to the attacker), or <b>freeze</b> (stops a house earning points for a number of days). A defense item <b>blocks</b> whichever attacks you tick. For damage and steal, set the <b>dice</b> (e.g. <code>2d6</code>) and the <b>multiplier</b> (e.g. 100, so 2d6 becomes 2d6 × 100 when it's rolled live). For freeze, the dice decide how many days.</li>
+        ` : `
         <li>Choose the <b>effect</b>: attack, steal, shield, pierce, halve or wildcard — and the amount. What that amount means depends on the effect: for <b>attack, steal and pierce</b> it is <b>hit points (HP)</b> removed by a strike on Battle Day, not points — buying the item does not take anything from anyone yet, it just adds the weapon to the buyer's armoury for later. For <b>shield</b> and <b>halve</b> the amount is hours of protection. For <b>wildcard</b> the amount is still points, because a wildcard resolves immediately, right at the shop counter, with its own dice roll.</li>
+        `}
         <li>Write a <b>description</b>. This is the bit students read, so it is worth a sentence of history.</li>
         <li><b>Save.</b> It appears in the shop instantly.</li>
       </ol>
+      ${duel ? `
+      <p class="help-callout">Sizing a new attack? Compare it against <a href="#" data-help-go="duel-items">The weapon list</a> so you know whether 2d6 × 100 is a light jab or as heavy as the Catapult's 3d6 × 100.</p>
+      ` : `
       <p class="help-callout">Sizing an attack, steal or pierce weapon? Compare the HP amount you're setting against the hit-point totals in <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a> so you know whether 20 HP is a light tap or close to a knockout.</p>
+      `}
       <p>Two rules the editor enforces so nothing can be saved that the app will not honour: an item must have a real effect type, and anything that is not a Mythic relic must cost more than zero.</p>
       <p>Deleting an item you dislike is permanent — it will not come back on the next reload.</p>
-    `,
+      <p class="help-fineprint">The Magic Shop keeps a separate set of items for each Battle Day rule set. Editing here only touches whichever one is active right now (<b>${duel ? "Mr. D's rules" : 'Hit points'}</b>) — switch in <b>🗝️ Admin → ⚔️ Battle Day</b> and the shop swaps over to the other set, with its own items and your past edits to them intact.</p>
+    `;
+    },
   },
   {
     id: 'battle-day', cat: 'shop', title: 'Battle Day',
-    keywords: 'battle day combat strike victory defeat arena swords ignite hit points hp',
-    body: `
+    keywords: 'battle day combat strike victory defeat arena swords ignite hit points hp duel mr d rules mode which switch',
+    body: () => {
+      const duel = isDuelNow();
+      return `
       <p>Battle Day is a full-screen contest mode. Tap the tile, tap <b>IGNITE BATTLE</b>, and it opens the arena with a card per house.</p>
-      <p>It runs on <b>hit points (HP)</b>, not points directly — points are the score and the currency; HP is only what a strike removes during the fight. Every house's HP refills to full the moment Battle Day starts, weapons are bought <i>in advance</i> from the Magic Shop and stockpiled for use here, strikes chip away at HP, and a house is beaten when its HP hits zero. The winner then takes a <b>prize in points</b> — and the loser never loses any points at all. <a href="#" data-help-go="battle-hp">The full rules and your current settings →</a></p>
+      <p>Battle Day can be run under <b>two completely different rule sets</b>, and only one is ever active at a time:</p>
+      <ul class="help-list">
+        <li><b>Mr. D's rules</b> (the default, and the one this handbook shows first) — a house holds one attack and one defense at a time, chosen in secret. When an attack is thrown, the defender's held item is revealed; the right defense cancels it outright, otherwise the damage is rolled on real dice and comes straight off the target's points. <a href="#" data-help-go="duel-flow">The full step-by-step →</a></li>
+        <li><b>Hit points</b> — the earlier model, kept fully working as an alternative. Houses have hit points that refill every Battle Day; strikes remove HP instead of points, and when a house hits zero HP the winner takes a points prize while the loser keeps everything it earned. <a href="#" data-help-go="battle-hp">The full rules →</a></li>
+      </ul>
+      <p>Right now, on this computer, Battle Day is set to <b>${duel ? "Mr. D's rules" : 'Hit points'}</b>. Change it any time in <b>🗝️ Admin → ⚔️ Battle Day</b> — switching swaps the Magic Shop's items over too, since each rule set has its own list, and switching back finds your edits to that shop exactly as you left them.</p>
       <p><b>Esc</b> closes the arena. Everything that happened is in the points log like any other award.</p>
-    `,
+    `;
+    },
   },
   {
-    id: 'battle-hp', cat: 'shop', title: 'Hit points, strikes and prizes — how Battle Day actually works',
-    keywords: 'battle day hit points hp combat prize attack punching down strike defeat victory arena refill gap percent flat hpbase hpper500',
+    id: 'battle-hp', cat: 'shop', title: 'Hit points, strikes and prizes — Battle Day’s other rule set',
+    keywords: 'battle day hit points hp combat prize attack punching down strike defeat victory arena refill gap percent flat hpbase hpper500 alternative other mode',
     body: () => {
       const c = store.getCombat();
       const rule = store.PRIZE_RULES[c.prizeRule] ? c.prizeRule : 'gap';
       const houses = houseNames();
+      const duel = isDuelNow();
       const hpRows = houses.map((h) => {
         let pts = 0, hp = 0;
         try { pts = Math.max(0, store.getTotal(h.id, 'term')); hp = store.getMaxHp(h.id); } catch (e) { /* leave at 0 */ }
@@ -625,7 +683,10 @@ const TOPICS = [
         return `<tr><td>${marker}<b>${esc(def.label)}</b></td><td>${esc(def.blurb)}</td><td class="help-nowrap">${esc(now)}</td></tr>`;
       }).join('');
       return `
-        <p class="help-lede">Battle Day runs on <b>hit points (HP)</b>, which are completely separate from house points. Points are the score and the currency you already know; HP only exists during a fight, and is simply what a strike takes away.</p>
+        <p class="help-lede">Battle Day can run under two rule sets, and this article covers <b>Hit points</b> — the earlier of the two, and still fully working, but ${duel ? "<b>not</b> the one running on this computer right now" : 'the one currently running on this computer'}. Hit points are completely separate from house points. Points are the score and the currency you already know; HP only exists during a fight, and is simply what a strike takes away.</p>
+        <p class="help-callout">${duel
+          ? `Battle Day is currently set to <b>Mr. D's rules</b> instead — see <a href="#" data-help-go="duel-flow">how a Battle Day plays out under those</a>. Switch back to Hit points any time in <b>🗝️ Admin → ⚔️ Battle Day</b>; this computer remembers which shop items and edits belong to each rule set.`
+          : `This is the active rule set on this computer right now. <b>Mr. D's rules</b> are also available — see <a href="#" data-help-go="duel-flow">how a Battle Day plays out under those instead</a> — switch any time in <b>🗝️ Admin → ⚔️ Battle Day</b>.`}</p>
 
         <h4>Before the battle: buying weapons</h4>
         <p>Houses spend <b>points</b> in the <b>🔮 Magic Shop</b> to buy weapons ahead of time. Offensive items — attacks, steals, pierces — are <b>stockpiled</b>: buying one puts it in that house's armoury rather than firing it immediately, so a house can buy on Tuesday and save the weapon for Friday's battle. Shields and damage-halving items work differently and start protecting the moment they're bought.</p>
@@ -657,6 +718,138 @@ const TOPICS = [
           : 'Currently <b>off</b> on this computer (the default) — a house may only attack one with <b>more</b> points than itself. That stops the leading class from farming the last-placed class every single week.'}</p>
 
         <p class="help-callout">Every number and rule above is teacher-editable in <a href="#" data-help-go="admin-settings">🗝️ Admin → ⚙️ Settings → ⚔️ Battle rules</a> — including a live preview of what any two houses would win right now.</p>
+      `;
+    },
+  },
+  {
+    id: 'duel-flow', cat: 'shop', title: "Mr. D's rules: how a Battle Day plays out",
+    keywords: 'duel attack defense reveal counter dice roll sequence throw steps how battle day works mr d rules',
+    body: () => {
+      const duel = isDuelNow();
+      return `
+        ${!duel ? `<p class="help-warn">Mr. D's rules are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b> instead. See <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a> for what's actually happening on your screen, or switch back in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
+        <p class="help-lede">This is Mr. D's own game, transcribed from his own document, and it's the rule set Battle Day uses by default.</p>
+        <ol class="help-steps">
+          <li><b>Ahead of time, houses shop.</b> A house buys a defense from the Magic Shop and holds it quietly — nobody else knows which one, not even you, unless a house has spent the Stone of Seeing on them. An attack can be bought at any time too, including moments before it is thrown.</li>
+          <li><b>A house picks a target and throws an attack.</b> Open Battle Day, choose the attacking house, choose who they are aiming at, and choose which attack item they are spending.</li>
+          <li><b>The defender's held defense is revealed.</b> Whatever that house was quietly holding turns up on screen the moment the attack lands — this is the only moment anyone finds out what they had.</li>
+          <li><b>It either counters the attack, or it doesn't.</b> Every attack has exactly one specific defense that stops it — see <a href="#" data-help-go="duel-items">The weapon list</a>. If the defender is holding that exact item, the attack is cancelled completely and nothing else below happens.</li>
+          <li><b>If it wasn't countered, roll the damage dice on real dice, in front of the class.</b> Every attack lists its own dice on the card, e.g. 2d6 for the Sword of Destiny. Roll them, add the pips, multiply by the number printed on the card (×100 for most of them), and enter the total.</li>
+          <li><b>The total comes off the defending house.</b> Most attacks simply remove that many points. Two of them — the Net of Entrapment and the Cloak of Invisibility — steal instead, so the same total also lands on the attacker as a gain. <a href="#" data-help-go="duel-steal">Taking points vs. stealing them →</a></li>
+          <li><b>Either way, the attack item is spent.</b> A correct guess by the defender still costs the attacker their weapon — that's what makes guessing right worth something. The defense item is used up too, whether it blocked the attack or not.</li>
+        </ol>
+        <p class="help-callout">Worked example: Gryffindor is quietly holding the Shield of Protection (bought Tuesday, told to nobody). Slytherin spends 450 points on the Sword of Destiny and throws it at Gryffindor on Friday. The Shield is revealed — it blocks the Sword — no dice get rolled, and no points move either way. Slytherin is out the 450 points it spent on the sword; Gryffindor is out its Shield; nobody lost a single point in the fight itself.</p>
+        <p>One attack doesn't follow the roll-then-subtract pattern above at all: the Legendary Ice Axe doesn't remove points, it freezes. See <a href="#" data-help-go="duel-freeze">Frozen: what the Legendary Ice Axe does</a>.</p>
+      `;
+    },
+  },
+  {
+    id: 'duel-items', cat: 'shop', title: 'The weapon list: every attack and its counter',
+    keywords: 'duel weapon list attacks defenses counters sword shield net gauntlet cloak bow catapult staff ra warhorse eye horus stone shroud time turner bag of holding prices cost',
+    body: () => {
+      const duel = isDuelNow();
+      const FALLBACK_ATTACKS = [
+        { id: 'sword', emoji: '🗡️', name: 'The Sword of Destiny', cost: 450, effect: { kind: 'damage', dice: '2d6', mult: 100 }, counteredBy: ['shield'] },
+        { id: 'net', emoji: '🕸️', name: 'Net of Entrapment', cost: 600, effect: { kind: 'steal', dice: '2d6', mult: 100 }, counteredBy: ['gauntlet'] },
+        { id: 'iceaxe', emoji: '🪓', name: 'The Legendary Ice Axe', cost: 500, effect: { kind: 'freeze', dice: '1d6' }, counteredBy: ['shield'] },
+        { id: 'cloak', emoji: '🫥', name: 'Cloak of Invisibility', cost: 400, effect: { kind: 'steal', dice: '1d6', mult: 100, anonymous: true }, counteredBy: ['bow'] },
+        { id: 'catapult', emoji: '🪨', name: 'The Catapult', cost: 1000, effect: { kind: 'damage', dice: '3d6', mult: 100, targets: 2 }, counteredBy: [] },
+        { id: 'staffra', emoji: '☀️', name: 'The Staff of Ra', cost: 700, effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['eye'] },
+        { id: 'warhorse', emoji: '🐎', name: 'Warhorse', cost: 700, effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['bow'] },
+      ];
+      const FALLBACK_DEFENSES = [
+        { id: 'shield', emoji: '🛡️', name: 'The Shield of Protection', cost: 500, blocks: ['sword', 'iceaxe'] },
+        { id: 'gauntlet', emoji: '🧤', name: 'Gauntlet of Defense', cost: 400, blocks: ['net'] },
+        { id: 'bow', emoji: '🏹', name: 'Bow of Seeking', cost: 400, blocks: ['cloak', 'warhorse'] },
+        { id: 'eye', emoji: '👁️', name: 'The Eye of Horus', cost: 500, blocks: ['staffra'] },
+      ];
+      const FALLBACK_UTILITY = [
+        { id: 'stone', emoji: '🔮', name: 'The Stone of Seeing', cost: 1000, desc: 'Reveals what another House has chosen to do this week.' },
+        { id: 'shroud', emoji: '🌫️', name: 'The Shroud of Secrecy', cost: 500, desc: 'Hides your actions from every other House for one week.' },
+        { id: 'timeturner', emoji: '⏳', name: 'The Time Turner', cost: 1000, desc: 'Go back and change your items after you have been attacked.' },
+        { id: 'bagofholding', emoji: '🎒', name: 'The Bag of Holding', cost: 500, desc: 'An extra weapon slot — carry two attack or two defense items at once.' },
+      ];
+      const attacks = duelItemsBySlot('attack') || FALLBACK_ATTACKS;
+      const defenses = duelItemsBySlot('defense') || FALLBACK_DEFENSES;
+      const utility = duelItemsBySlot('utility') || FALLBACK_UTILITY;
+      const defenseNameOf = (id) => (defenses.find((d) => d.id === id) || {}).name || id;
+      const attackNameOf = (id) => (attacks.find((a) => a.id === id) || {}).name || id;
+      const effectLabel = (it) => {
+        const e = it.effect || {};
+        if (e.kind === 'freeze') return `Freeze ${esc(e.dice || '1d6')} days`;
+        const dice = `${esc(e.dice || '')} × ${e.mult || 1}`;
+        if (e.kind === 'steal') return `Steal ${dice}${e.anonymous ? ' (anonymous)' : ''}`;
+        if (e.targets && e.targets > 1) return `Damage ${dice} to ${e.targets} houses`;
+        return `Damage ${dice}`;
+      };
+      const attackRows = attacks.map((it) => {
+        const counters = (it.counteredBy || []).map(defenseNameOf);
+        return `<tr><td>${esc(it.emoji || '')} <b>${esc(it.name)}</b></td><td class="help-nowrap">${it.cost} pts</td><td>${effectLabel(it)}</td><td>${counters.length ? esc(counters.join(', ')) : '<span class="help-muted">nothing</span>'}</td></tr>`;
+      }).join('');
+      const defenseRows = defenses.map((it) => {
+        const stops = (it.blocks || []).map(attackNameOf);
+        return `<tr><td>${esc(it.emoji || '')} <b>${esc(it.name)}</b></td><td class="help-nowrap">${it.cost} pts</td><td>${esc(stops.join(', '))}</td></tr>`;
+      }).join('');
+      const utilRows = utility.map((it) => `<li>${esc(it.emoji || '')} <b>${esc(it.name)}</b> — <span class="help-nowrap">${it.cost} pts</span> — ${esc(it.desc || '')}</li>`).join('');
+      return `
+        ${!duel ? `<p class="help-warn">This lists Mr. D's rules' items, which are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b>. The table below shows what ships by default; if you edited this shop while Mr. D's rules were active, your own version is what you will see once you switch back. Switch any time in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
+        <p class="help-lede">Every attack has exactly one defense that stops it completely — nothing else does. Buy the right one and hold it, and the attack that lands on you does nothing at all.</p>
+        <table class="help-table">
+          <thead><tr><th>Attack</th><th>Cost</th><th>Effect</th><th>Countered by</th></tr></thead>
+          <tbody>${attackRows}</tbody>
+        </table>
+        <table class="help-table">
+          <thead><tr><th>Defense</th><th>Cost</th><th>Stops</th></tr></thead>
+          <tbody>${defenseRows}</tbody>
+        </table>
+        <p>Utility items don't attack or defend — they change what a house can see or do:</p>
+        <ul class="help-list">${utilRows}</ul>
+        <p class="help-callout">Three prices above differ from Mr. D's own written rules, on purpose: a season simulated with his original numbers showed the <b>Sword of Destiny</b>, the <b>Staff of Ra</b> and the <b>Warhorse</b> each cost more to buy than they typically won back, so all three were priced down before term started — Sword of Destiny is <b>450</b> pts here (his document says 600), Staff of Ra is <b>700</b> pts (his document says 1000), and Warhorse is <b>700</b> pts (his document says 1000). Every price above is still only a starting point — open <b>🗝️ Admin → 🔮 Shop</b> and change any of them back to his originals, or to anything else, in a few taps. See <a href="#" data-help-go="shop-create">Creating your own shop item</a>.</p>
+        <p>For the full sequence of a throw — reveal, counter, roll, apply — see <a href="#" data-help-go="duel-flow">Mr. D's rules: how a Battle Day plays out</a>.</p>
+      `;
+    },
+  },
+  {
+    id: 'duel-loadout', cat: 'shop', title: 'One attack, one defense — and the Bag of Holding',
+    keywords: 'duel loadout slot limit one attack one defense bag of holding two utility hold armoury',
+    body: () => {
+      const duel = isDuelNow();
+      return `
+        ${!duel ? `<p class="help-warn">This describes Mr. D's rules, which are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b>, which has no holding limit like this at all. Switch back in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
+        <p class="help-lede">Under Mr. D's rules, a house may hold exactly <b>one attack item and one defense item</b> at the same time — no more, no matter how many points it has banked.</p>
+        <p>Try to buy a second sword while the first is still sitting unused, and the Magic Shop will not allow it — the house has to use or lose what it already holds first. This is not about affording it; it is a hard limit on how much a house may be carrying at once, so nobody quietly stockpiles five swords over a month and unloads them all in one afternoon.</p>
+        <p>The <b>Bag of Holding</b> (500 pts, a utility item) raises that limit to <b>two</b> of each — two attacks and two defenses held at once. It does not expire and it is not spent the way an attack or a defense is; once a house owns it, the higher limit simply applies from then on.</p>
+        <p>Defenses are usually bought well ahead of a fight and held quietly — a house might buy the Shield of Protection on a Monday and not need it until Thursday. Attacks can be bought at any point too, including moments before they are thrown, since nothing happens until an attack is actually spent against a target. <a href="#" data-help-go="duel-flow">The full sequence of a Battle Day throw →</a></p>
+        <p class="help-callout">Utility items — the Stone of Seeing, the Shroud of Secrecy, the Time Turner, and the Bag of Holding itself — do not count against the one-attack-one-defense limit at all. A house can hold as many of those as it can afford.</p>
+      `;
+    },
+  },
+  {
+    id: 'duel-freeze', cat: 'shop', title: 'Frozen: what the Legendary Ice Axe does',
+    keywords: 'freeze frozen ice axe legendary days cannot earn points duel',
+    body: () => {
+      const duel = isDuelNow();
+      return `
+        ${!duel ? `<p class="help-warn">This describes Mr. D's rules, which are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b>, which has no freeze effect at all. Switch back in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
+        <p class="help-lede">The Legendary Ice Axe is the one attack in Mr. D's rules that does not remove points at all. Instead, it freezes the target house so it cannot earn any points for a length of time decided by the roll.</p>
+        <p>If the Ice Axe gets through — meaning the target was not holding the Shield of Protection — roll <b>1d6</b> in front of the class. That is the number of days the house is frozen for, starting that day. A frozen house keeps every point it already has; it simply cannot add to that total from anything until the freeze lifts.</p>
+        <p>The Shield of Protection stops the Ice Axe exactly like it stops the Sword of Destiny: if the target is holding one, the freeze never happens, and the Ice Axe is simply spent for nothing.</p>
+        <p>A freeze only affects the one house that got hit. Quests, awards, the Die of Destiny and every other house's attacks keep working normally in the meantime.</p>
+      `;
+    },
+  },
+  {
+    id: 'duel-steal', cat: 'shop', title: 'Taking points vs. stealing them',
+    keywords: 'steal net entrapment cloak invisibility damage remove vs stealing duel points gap anonymous',
+    body: () => {
+      const duel = isDuelNow();
+      return `
+        ${!duel ? `<p class="help-warn">This describes Mr. D's rules, which are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b>, which has its own version of steal instead. See <a href="#" data-help-go="shop-effects">What each type of item does</a>. Switch back in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
+        <p class="help-lede">Most attacks in Mr. D's rules simply remove points from whoever they hit — the total rolled comes off their side and that is the end of it. Two attacks work differently: they steal.</p>
+        <p>The <b>Net of Entrapment</b> and the <b>Cloak of Invisibility</b> take the rolled total off the target <b>and</b> hand that same total to the attacker. Every other attack — the Sword of Destiny, the Catapult, the Staff of Ra, the Warhorse, and the Legendary Ice Axe (which freezes instead of removing points at all) — only removes; nobody gains from a plain hit.</p>
+        <p>Why it matters when you are running the board: a plain hit changes one house's total. A steal changes two — it moves the gap between the two houses by <b>double</b> the rolled amount, since one side drops and the other rises by the same number. A Net of Entrapment that rolls, say, 700 points does not just cost the target 700 — it also hands the attacker 700, so the standings shift by 1,400 points in a single throw.</p>
+        <p>The Cloak of Invisibility steals <b>anonymously</b> — the points move, but nobody is told who took them, not even you, unless the target had spent the Bow of Seeking, which finds the Cloak specifically and stops it. The Net of Entrapment is not anonymous; everyone sees who threw it.</p>
+        <p>Blocked is blocked either way: if the target is holding the correct defense, a steal cancels completely, exactly like a plain attack — no points move for anyone.</p>
       `;
     },
   },
@@ -698,7 +891,7 @@ const TOPICS = [
         <p>Nothing happens automatically. The plaque shows a button for each house — tap the house you want it to land on and the points are awarded, logged with the reason "Die of Destiny: <i>outcome</i>".</p>
         <p><b>One award per roll.</b> Once you have tapped, the buttons stop responding until the next roll, so a double-tap cannot pay twice.</p>
         <p>Rows with <b>"no points"</b> are story beats, not scoring — on a Misfortune-type roll you simply pick who goes next.</p>
-        <p>On a <b>mythic</b> roll (the top of the die) the house gets its points and you also get to grant one <b>Mythic relic</b>, once per roll. <a href="#" data-help-go="shop-mythic">About relics →</a></p>
+        <p>On a <b>mythic</b> roll (the top of the die) the house gets its points and you also get to grant one <b>Mythic relic</b>, once per roll — provided at least one is currently configured in the shop. ${isDuelNow() ? "Under <b>Mr. D's rules</b> (the active rule set right now), none are, by default — " : ''}<a href="#" data-help-go="shop-mythic">About relics →</a></p>
       `;
     },
   },
@@ -714,7 +907,7 @@ const TOPICS = [
         <li><b>Quests</b> — confirm completions, edit the quest catalogue.</li>
         <li><b>Shop</b> — edit the Magic Shop items.</li>
         <li><b>Place of the Week</b> — destinations, weekly scheduling, presentations, test flights.</li>
-        <li><b>⚔️ Battle Day</b> — everything that only matters for a fight: the prize rule and its number, the hit-point settings that decide how tough each house is to beat, the punching-down toggle, and a live <b>🛡️ Active Defenses</b> board showing every house's shield and damage-halving status with a <b>Clear</b> button if one needs resetting early. <a href="#" data-help-go="battle-hp">More →</a></li>
+        <li><b>⚔️ Battle Day</b> — pick which rule set runs the fight, <b>Mr. D's rules</b> or <b>Hit points</b>, plus the settings that belong to whichever one is active: the prize rule, its number and the hit-point toughness settings for Hit points; nothing extra to set for Mr. D's rules beyond its own shop items. A live <b>🛡️ Active Defenses</b> board shows every house's Hit-points shield and damage-halving status, with a <b>Clear</b> button if one needs resetting early. <a href="#" data-help-go="battle-day">More →</a></li>
         <li><b>❓ Help</b> — opens this handbook, straight to the section you need.</li>
         <li><b>⚙️ Settings</b> — term dates, theme, backups, your own Maps key, and the reset button. <a href="#" data-help-go="admin-settings">More →</a></li>
       </ul>
@@ -802,7 +995,7 @@ const TOPICS = [
     body: () => `
       <ul class="help-list">
         <li><b>Term Timeline</b> — the Monday your term starts and how many weeks it runs. This drives "Week N of M" in the top bar and the term totals. ${termLine()}</li>
-        <li><b>⚔️ Battle rules</b> — how Battle Day's hit points and prizes work: the prize rule (half the gap, share of their total, or a fixed amount) and its number, whether houses may "punch down" on a house with fewer points, and the hit-point settings that decide how tough each house is to beat. Includes a live preview of what any two houses would win right now. <a href="#" data-help-go="battle-hp">More →</a></li>
+        <li><b>⚔️ Battle rules</b> — settings for <b>Hit points</b> mode: the prize rule (half the gap, share of their total, or a fixed amount) and its number, whether houses may "punch down" on a house with fewer points, and the hit-point settings that decide how tough each house is to beat. Includes a live preview of what any two houses would win right now. Only matters while Battle Day is set to Hit points — <a href="#" data-help-go="battle-day">both rule sets, and how to switch →</a></li>
         <li><b>Display &amp; Theme</b> — dark or light, and optional seasonal decoration. <a href="#" data-help-go="theme">More →</a></li>
         <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
         <li><b>⚡ Quick award buttons</b> — the one-tap awards that appear on the Records screen. Edit the labels and point values to match what you actually say in class.</li>
