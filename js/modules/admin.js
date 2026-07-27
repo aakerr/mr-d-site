@@ -3671,6 +3671,14 @@ async function savePotw() {
     const u = (f.pres.url || '').trim();
     if (!u) { toast('Enter a Google Slides embed URL.'); return; }
     if (!normalizeGslides(u)) { toast('That must be a docs.google.com presentation URL.'); return; }
+    // An /edit link is the EDITOR. It loads, so nothing looks broken — the class
+    // just gets the toolbar, the slide filmstrip and the speaker-notes box
+    // instead of the presentation. Caught here because the symptom gives no clue
+    // about the cause.
+    if (/\/edit\b/.test(u) || /\/d\/[^/]+\/?$/.test(u)) {
+      toast('That is the editing link — the class would see the Slides toolbar. In Slides use File → Share → Publish to web, then paste that link.');
+      return;
+    }
   }
   // Quick-link buttons: every row with a title or URL needs a real link.
   const linksRaw = (f.links || []).map((l) => ({ title: l.title.trim(), url: l.url.trim() })).filter((l) => l.title || l.url);

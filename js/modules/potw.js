@@ -34,6 +34,7 @@ let presIdleTimer = null;     // hides the nav chrome after PRES_IDLE_MS
 let gsClickHandler = null;    // gslides only: returns focus to Google's player
 let flyMusicEl = null;        // flyover background track (element returned by ctx.audio.play)
 let flyFadeTimer = null;      // interval id ramping flyMusicEl.volume down to 0
+let flyFadeMs = 0;            // duration of the fade in flight, so a faster one can overtake it
 let deckInfo = null;          // resolved deck for this voyage (null = no presentation)
 let deckPromise = null;       // memoizes resolveDeck() for the current voyage
 let previewMode = false;      // TEST FLIGHT: fly + orbit only, no intro/reveal/deck/lesson
@@ -732,7 +733,19 @@ async function startFlyoverMusic() {
 // Smooth ramp to silence, then stop and release the element. Idempotent.
 function fadeOutFlyoverMusic(ms = FLYOVER_FADE_MS) {
   const el = flyMusicEl;
-  if (!el || flyFadeTimer) return;
+  if (!el) return;
+  // A SHORTER fade must be able to overtake a longer one already running.
+  // Arrival starts the leisurely 3s fade, then openPresentation() asks for a
+  // fast 900ms one — but it runs after an await, so the slow fade had already
+  // claimed the timer and the old guard made the fast request a no-op. The
+  // music then trailed under the opening slide, which is exactly what the
+  // fast fade exists to prevent.
+  if (flyFadeTimer) {
+    if (ms >= flyFadeMs) return;              // already fading at least this fast
+    clearInterval(flyFadeTimer);
+    flyFadeTimer = null;
+  }
+  flyFadeMs = ms;
   const from = Number(el.volume) || 0;
   const t0 = Date.now();
   flyFadeTimer = setInterval(() => {
@@ -751,6 +764,7 @@ function stopAmbientIfAny() {
 
 function stopFlyoverMusic() {
   if (flyFadeTimer) { clearInterval(flyFadeTimer); flyFadeTimer = null; }
+  flyFadeMs = 0;
   const el = flyMusicEl;
   flyMusicEl = null;
   if (!el) return;
@@ -1133,7 +1147,9 @@ async function openPresentation(deck) {
   // after this point should be coming from the presentation itself.
   fadeOutFlyoverMusic(900);
   try { stopAmbientIfAny(); } catch (e) { /* ambience isn't assigned to POTW anyway */ }
-  try { ctxRef.audio.sfx('coin'); } catch (e) {}
+  // (No sound here. 'coin' is the REWARD chime — nothing was earned by opening
+  // a deck, and a stray chime over the teacher's first sentence just reads as
+  // a glitch. The visual transition is the cue.)
 
   // Hide the lesson card while presenting (ambient orbit keeps running).
   const lesson = overlayEl.querySelector('.potw-lesson');
