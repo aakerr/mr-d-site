@@ -19,15 +19,15 @@ export const CONFIG = {
   // Intro videos the teacher picks from (dropdown in Admin → Place of the Week).
   // Add more here and they appear in the dropdown automatically.
   //
-  // The LOCAL files are listed first and one of them is the default, on
-  // purpose. A school computer may have no internet, and a YouTube embed also
-  // flashes its own pause glyph on launch — a plain <video> does neither.
-  // The YouTube entries stay as a fallback for a machine without the files.
+  // LOCAL FILES ONLY. The YouTube presets that used to live here are gone on
+  // purpose: they need internet the classroom may not have, and an embed flashes
+  // its own pause glyph on launch, which was a long-standing complaint. Every
+  // entry here should be a file that ships in /videos.
+  // A teacher can still paste a YouTube link against an individual destination
+  // in Admin — that is a per-destination choice, not the shipped default.
   POTW_INTRO_VIDEOS: [
-    { id: 'intro-01', label: 'Intro 1 (on this computer)', url: 'videos/potw-intro-01.mp4' },
-    { id: 'intro-02', label: 'Intro 2 (on this computer)', url: 'videos/potw-intro-02.mp4' },
-    { id: 'rock',     label: 'Rock (YouTube)',             url: 'https://www.youtube.com/embed/hdM9z3pdJBQ' },
-    { id: 'classic',  label: 'Classic (YouTube)',          url: 'https://www.youtube.com/embed/3LU6vgJJNZE' },
+    { id: 'intro-01', label: 'Intro 1', url: 'videos/potw-intro-01.mp4' },
+    { id: 'intro-02', label: 'Intro 2', url: 'videos/potw-intro-02.mp4' },
   ],
   POTW_DEFAULT_VIDEO_ID: 'intro-01',
 

@@ -320,7 +320,14 @@ function injectStyles() {
      A fixed height makes both crests identical, so every row lines up across
      the two cards by construction. The give is now in .duel-items, which is
      the one element allowed its own scrollbar. */
-  .duel-crest{position:relative;flex:0 0 auto;height:clamp(64px,11vh,150px);
+  /* 11vh was too timid. It came from the same edit that stopped the crest
+     shrinking, where the priority was keeping the strike list above the fold —
+     but it left the shields small on the one screen that is meant to feel like
+     an event, and smaller than they had been before. 15vh puts them back at
+     roughly their original size on a 720p window and lets them grow properly on
+     a 1080p board (79px -> 108px, and 119px -> 162px). The strike list is the
+     element allowed to scroll, so it is the one that gives. */
+  .duel-crest{position:relative;flex:0 0 auto;height:clamp(72px,15vh,220px);
     aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
     filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}
@@ -334,7 +341,14 @@ function injectStyles() {
   .duel-swap-btn:hover{border-color:var(--side-accent,#9ca3af);color:#e5e7eb;}
 
   /* offensive item list */
-  .duel-items{width:100%;flex:1 1 auto;min-height:64px;display:grid;align-content:start;
+  /* "safe center" is doing real work here. A house often holds one or two
+     weapons, and start-aligned they sat at the top of a tall card with a lot of
+     nothing under them — the container was full, which is why a height check
+     said the card was fine while it plainly was not. Centring matches the
+     defender's panel opposite. The "safe" keyword is the important half: when
+     the list DOES overflow, centring alone would push the first row above the
+     scroll area where it can never be reached, so it falls back to start. */
+  .duel-items{width:100%;flex:1 1 auto;min-height:64px;display:grid;align-content:safe center;
     grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;
     overflow-y:auto;padding-right:.15rem;}
   .duel-item-cell{display:flex;flex-direction:column;min-width:0;}
@@ -367,7 +381,15 @@ function injectStyles() {
     padding:1rem .5rem;border:1px dashed #4b5563;border-radius:.85rem;}
 
   /* defender: active defenses */
-  .duel-def{flex:0 0 auto;width:100%;display:flex;flex-direction:column;gap:.4rem;}
+  /* Takes the leftover height instead of leaving it as bare card. The two cards
+     stretch to equal height — that is what keeps every row aligned across them —
+     but the defender has no strike list to fill with, so on a 1080p board it was
+     62% empty: 480px of nothing under the content. Measured, both resolutions.
+     Filling it HERE rather than by centring the whole column is deliberate: the
+     head block must stay at the same offset on both cards or the crest, points
+     and HP stop lining up, which was the whole point of the mirrored layout. */
+  .duel-def{flex:1 1 auto;width:100%;display:flex;flex-direction:column;
+    justify-content:center;gap:.4rem;min-height:0;}
   .duel-def-row{display:flex;align-items:center;gap:.5rem;border-radius:.8rem;
     padding:.55rem .7rem;font-weight:700;font-size:.88rem;line-height:1.25;}
   .duel-def-row b{font-weight:800;}

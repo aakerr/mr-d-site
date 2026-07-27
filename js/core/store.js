@@ -610,8 +610,39 @@ function load() {
         if (!(Number(exp) > Date.now())) delete merged.shields[id];
       }
       merged.potwBounties = merged.potwBounties && typeof merged.potwBounties === 'object' ? merged.potwBounties : {};
-      if (!Array.isArray(merged.settings.introVideos) || !merged.settings.introVideos.length) {
-        merged.settings.introVideos = (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
+      // This list is what the Admin dropdown actually offers, and it is SAVED
+      // state. The old rule only refilled it when it was EMPTY, so a browser
+      // that had saved once kept its original list for ever — which is how the
+      // intro videos ended up unusable: /videos files were shipped and made the
+      // default, but the saved list still held only the two YouTube presets, so
+      // the dropdown could not offer the new files and 'intro-01' resolved to
+      // nothing at all. Mesopotamia appeared to work only because an unrelated
+      // fallback further down happened to point at the same file.
+      //
+      // Now: keep whatever the teacher has added, backfill anything newly
+      // shipped by id, and retire the two YouTube presets by id — the profiles
+      // that used them were remapped to the local files above, and they are the
+      // reason the classroom needed internet at all. Only those two exact ids
+      // are dropped; a YouTube link the teacher pasted himself is untouched.
+      {
+        const RETIRED = new Set(['rock', 'classic']);
+        const saved = Array.isArray(merged.settings.introVideos) ? merged.settings.introVideos : [];
+        const kept = saved.filter((v) => v && v.id && !RETIRED.has(v.id));
+        for (const v of (CONFIG.POTW_INTRO_VIDEOS || [])) {
+          if (!kept.some((k) => k.id === v.id)) kept.push({ ...v });
+        }
+        merged.settings.introVideos = kept.length ? kept : (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
+      }
+      // A profile still pointing at a retired preset (or at an id that no longer
+      // exists at all) would resolve to an empty URL and silently fall through
+      // to whatever the fallback chain offers. Point those at the default.
+      {
+        const ids = new Set((merged.settings.introVideos || []).map((v) => v.id));
+        for (const p of Object.values(merged.potw.profiles || {})) {
+          if (p && !p.videoUrl && p.introVideoId && !ids.has(p.introVideoId)) {
+            p.introVideoId = CONFIG.POTW_DEFAULT_VIDEO_ID;
+          }
+        }
       }
       // Teacher's house edits are applied IN PLACE onto the shared HOUSES
       // objects, so every module holding a reference sees the new values.
