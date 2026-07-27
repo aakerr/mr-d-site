@@ -780,6 +780,22 @@ function injectStyles() {
   .dm-capped{color:#fbbf24;font-weight:700;font-family:'Plus Jakarta Sans',system-ui,sans-serif;
     font-size:clamp(.72rem,1.4vw,1rem);letter-spacing:.02em;}
 
+  /* second-target chooser — only the Catapult reaches this today, but it keys
+     off effect.targets so any item the teacher gives two targets gets it too */
+  .duel-two-overlay{position:fixed;inset:0;z-index:78;background:rgba(7,9,18,.78);
+    display:flex;align-items:center;justify-content:center;padding:clamp(.75rem,3vw,2rem);
+    animation:battle-curtain .18s ease-out both;}
+  .duel-two-modal{width:min(560px,100%);max-height:92vh;overflow-y:auto;background:#141225;
+    border:2px solid #f59e0b;border-radius:1.5rem;padding:clamp(1rem,2.4vw,1.75rem);
+    box-shadow:0 24px 70px rgba(0,0,0,.7),0 0 60px rgba(245,158,11,.22);}
+  .duel-two-title{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fbbf24;
+    text-align:center;font-size:clamp(1.2rem,2.6vw,1.8rem);line-height:1.2;}
+  .duel-two-sub{text-align:center;color:#d1d5db;font-size:clamp(.8rem,1.5vw,1rem);
+    margin:.4rem 0 .9rem;line-height:1.45;}
+  .duel-two-cancel{width:100%;margin-top:.8rem;min-height:46px;border-radius:.8rem;
+    border:1px solid #374151;background:#1f2937;color:#d1d5db;font-weight:700;cursor:pointer;}
+  .duel-two-cancel:hover{background:#374151;}
+
   /* mini shop — buy without leaving Battle Day */
   .duel-shop-overlay{position:fixed;inset:0;z-index:75;background:rgba(7,9,18,.72);
     display:flex;align-items:center;justify-content:center;padding:clamp(.75rem,3vw,2rem);
@@ -1993,7 +2009,7 @@ async function rollItemDice(item, house, cap = null) {
 //   1. attack thrown  2. defense revealed  3. countered or not
 //   4. dice rolled (only if not countered)  5. points applied
 // =============================================================================
-async function resolveDuelSequence(challenger, target, item, preview) {
+async function resolveDuelSequence(challenger, target, item, preview, second = null) {
   const store = ctxRef.store;
   const beforeChallenger = store.getTotal(challenger.id, 'term');
   const beforeTarget = store.getTotal(target.id, 'term');
@@ -2157,6 +2173,59 @@ async function resolveDuelSequence(challenger, target, item, preview) {
         await delay(DUEL2_DRAIN_MS + 200);
         if (!rootEl) return;
       }
+
+      // THE SECOND HOUSE. One roll, two victims — re-rolling would double a
+      // sequence that already runs a dozen seconds, and "3d6 x 100 each" reads
+      // fine as both houses taking the same hit. They are struck one at a time:
+      // the defender card simply becomes the second house, so the screen never
+      // has to hold two defenders at once.
+      if (second) {
+        await delay(700);
+        if (!rootEl) return;
+        targetId = second.id;
+        resolving = false; renderDuel(); resolving = true;   // swap the defender card
+        if (!rootEl) return;
+        await delay(600);
+        if (!rootEl) return;
+
+        const chalCrest2 = rootEl.querySelector('[data-crest="challenger"]');
+        const crest2 = rootEl.querySelector('[data-crest="defender"]');
+        const before2 = store.getTotal(second.id, 'term');
+        if (chalCrest2 && crest2 && !reduced) {
+          spawnProjectile(chalCrest2, crest2, { emoji: item.emoji || '⚔️', travel: DUEL2_THROW_MS });
+          await delay(DUEL2_THROW_MS);
+          if (!rootEl) return;
+        }
+        // Its own block check — the second house's defenses are its own.
+        const out2 = store.applyDuelAttack({
+          attackerId: challenger.id, targetId: second.id, itemId: item.id, rolled: roll.total, consume: false });
+        if (crest2 && !reduced) {
+          spawnFx(crest2, `duel-fx-flash duel-fx-flash-${out2.blocked ? 'blue' : 'red'}`, 500);
+          shakeCrest(crest2);
+        }
+        ctxRef.audio.sfx(out2.blocked ? 'sword' : 'thud');
+        screenVignettePulse();
+        if (out2.blocked) {
+          outcomeCard('blocked', '🛡️ COUNTERED!',
+            `${esc(second.name)}'s ${esc(out2.blockedBy?.name || 'defense')} stopped it.`, '');
+          await delay(DUEL2_COUNTER_MS);
+        } else {
+          outcomeCard('hit', '💥 AND ' + esc(second.name.toUpperCase()) + '!',
+            `${esc(item.name)} lands on ${esc(second.name)} as well.`, '');
+          spawnFx(crest2, 'duel-fx-tally duel-fx-tally-dmg', 2200, `−${out2.damage}`);
+          await delay(DUEL2_TALLY_HOLD_MS);
+          if (!rootEl) return;
+          const defCard2 = crest2 ? crest2.closest('.duel-side') : null;
+          if (defCard2 && !reduced) {
+            defCard2.classList.remove('duel-card-hit'); void defCard2.offsetWidth;
+            defCard2.classList.add('duel-card-hit');
+            later(() => defCard2.classList.remove('duel-card-hit'), DUEL2_IMPACT_MS + 200);
+          }
+          animatePoints('defender', before2, store.getTotal(second.id, 'term'), DUEL2_DRAIN_MS);
+          await delay(DUEL2_DRAIN_MS + 200);
+          if (!rootEl) return;
+        }
+      }
     }
     await delay(pointsRolled ? DUEL2_OUTCOME_HOLD_MS - 900 : DUEL2_OUTCOME_HOLD_MS);
   }
@@ -2178,6 +2247,43 @@ async function resolveDuelSequence(challenger, target, item, preview) {
   if (defEl) defEl.textContent = String(beforeTarget);
   animatePoints('challenger', beforeChallenger, afterChallenger, COUNT_MS);
   animatePoints('defender', beforeTarget, afterTarget, COUNT_MS);
+}
+
+// Asks which SECOND house a multi-target item also hits. Resolves to a house id,
+// or null if the teacher backs out — backing out must cost nothing, because this
+// runs before the weapon is spent.
+function pickSecondTarget(store, challenger, firstTarget, item) {
+  return new Promise((resolve) => {
+    const host = document.getElementById('overlay-root') || document.body;
+    const others = Object.values(store.HOUSES)
+      .filter((h) => h.id !== challenger.id && h.id !== firstTarget.id);
+    const el = document.createElement('div');
+    el.className = 'duel-two-overlay';
+    el.innerHTML = `
+      <div class="duel-two-modal" role="dialog" aria-modal="true" aria-label="Choose the second house">
+        <div class="duel-two-title">${esc(item.emoji || '🪨')} ${esc(item.name)} hits TWO houses</div>
+        <div class="duel-two-sub">${esc(challenger.name)} has already aimed at <b>${esc(firstTarget.name)}</b>.
+          Who else does it hit? They are struck one at a time.</div>
+        ${housePickHtml(store, others, 'data-second-target', { attackerId: challenger.id })}
+        <button type="button" class="duel-two-cancel" data-second-cancel>Cancel — do not use it yet</button>
+      </div>`;
+    host.appendChild(el);
+    fxNodes.add(el);
+    const done = (val) => {
+      try { el.remove(); } catch (e) {}
+      fxNodes.delete(el);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    };
+    const onKey = (ev) => { if (ev.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    el.addEventListener('click', (ev) => {
+      if (ev.target === el || ev.target.closest('[data-second-cancel]')) return done(null);
+      const btn = ev.target.closest('[data-second-target]');
+      if (btn && !btn.disabled) done(Number(btn.getAttribute('data-second-target')));
+    });
+    el.querySelector('[data-second-target]:not([disabled])')?.focus();
+  });
 }
 
 async function strikeDuel(itemId) {
@@ -2204,8 +2310,18 @@ async function strikeDuel(itemId) {
     return;
   }
 
+  // A multi-target item needs its second house chosen BEFORE the ceremony
+  // starts, so backing out here costs nothing.
+  let second = null;
+  if ((preview.targets || 1) > 1) {
+    const secondId = await pickSecondTarget(store, challenger, target, preview.item);
+    if (!rootEl) { resolving = false; return; }
+    if (secondId == null) { resolving = false; renderDuel(); return; }
+    second = store.HOUSES[secondId] || null;
+  }
+
   try {
-    await resolveDuelSequence(challenger, target, preview.item, preview);
+    await resolveDuelSequence(challenger, target, preview.item, preview, second);
   } catch (e) {
     console.warn('battle: duel strike sequence failed', e);
   } finally {

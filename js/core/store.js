@@ -1504,7 +1504,10 @@ export const store = {
   // Applies a result the teacher has already SEEN on the dice. The roll is not
   // done here on purpose: the tray on screen is the real roll, and the number
   // the class watched land is the number that must be applied.
-  applyDuelAttack({ attackerId, targetId, itemId, rolled }) {
+  // `consume` exists for multi-target items (the Catapult): the weapon is spent
+  // once, but resolution runs once PER HOUSE so each defender gets its own block
+  // check and its own moment on screen. The second call passes consume:false.
+  applyDuelAttack({ attackerId, targetId, itemId, rolled, consume = true }) {
     const pv = store.previewDuelAttack(attackerId, targetId, itemId);
     if (!pv.ok) return pv;
     const item = pv.item;
@@ -1512,7 +1515,7 @@ export const store = {
     const out = { ok: true, blocked: pv.blocked, item, damage: 0, stolen: 0, frozenDays: 0 };
 
     // The attack is spent either way — that is what makes a correct guess hurt.
-    store.consumeFromInventory(attackerId, itemId);
+    if (consume) store.consumeFromInventory(attackerId, itemId);
     if (pv.blocked) {
       store.consumeFromInventory(targetId, pv.blockedBy.id);
       out.blockedBy = pv.blockedBy;
