@@ -31,6 +31,9 @@ const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
 // physics needs, on top of these.
 const DUEL2_THROW_MS = 900;    // attack item flies across the arena — slow enough to follow
 const DUEL2_PRE_ROLL_MS = 500;     // dice sit in the tray a beat before they are thrown
+const DUEL2_TALLY_HOLD_MS = 700;   // the ±N sits on the crest before the total moves
+const DUEL2_DRAIN_MS = 900;        // a total rolls down (or up) at watchable speed
+const DUEL2_RETURN_MS = 800;       // looted points fly back to the attacker's crest
 const DUEL2_CHARGE_BTN_MS = 620;   // the chosen weapon pulses before anything moves
 const DUEL2_CHARGE_CREST_MS = 620; // then the attacker's own crest winds up
 const DUEL2_IMPACT_MS = 700;       // the defending card takes the hit
@@ -580,6 +583,26 @@ function injectStyles() {
     22%{opacity:1;transform:translate(-50%,-10px) scale(1.25);}
     100%{opacity:0;transform:translate(-50%,-72px) scale(1);}
   }
+  /* The damage number on the crest is the single most important number of the
+     round, and at .62s it flew off before anyone read it. This variant pops,
+     then HOLDS at full size for most of its life before drifting away. */
+  .duel-fx-tally{position:absolute;top:-4%;left:50%;font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-size:clamp(2.9rem,5.4vw,4.6rem);white-space:nowrap;pointer-events:none;z-index:12;
+    animation:duel-fx-tally-kf 2.2s cubic-bezier(.2,.9,.3,1) both;}
+  .duel-fx-tally-dmg{color:#fca5a5;text-shadow:0 4px 18px rgba(0,0,0,.95),0 0 34px rgba(239,68,68,.85);}
+  .duel-fx-tally-gain{color:#86efac;text-shadow:0 4px 18px rgba(0,0,0,.95),0 0 34px rgba(34,197,94,.85);}
+  @keyframes duel-fx-tally-kf{
+    0%{opacity:0;transform:translate(-50%,14px) scale(.55);}
+    12%{opacity:1;transform:translate(-50%,-6px) scale(1.32);}
+    22%{opacity:1;transform:translate(-50%,-10px) scale(1.1);}
+    76%{opacity:1;transform:translate(-50%,-14px) scale(1.1);}
+    100%{opacity:0;transform:translate(-50%,-84px) scale(.94);}
+  }
+  /* While a total is rolling it wears its direction: red on the way down,
+     green on the way up, and back to the house gold the moment it settles. */
+  .duel-points-val{transition:color .28s ease,text-shadow .28s ease;}
+  .duel-points-val.pts-falling{color:#fca5a5!important;text-shadow:0 0 26px rgba(239,68,68,.6);}
+  .duel-points-val.pts-rising{color:#86efac!important;text-shadow:0 0 26px rgba(34,197,94,.6);}
 
   .duel-fx-ring{position:absolute;top:50%;left:50%;width:60%;height:60%;
     border:5px solid rgba(147,197,253,.95);border-radius:50%;
@@ -895,7 +918,7 @@ function injectStyles() {
     .battle-ignite-btn,.battle-sword-a,.battle-sword-b,.battle-vignette,.battle-flash,
     .battle-stamp span,.battle-shake,.battle-ember,
     .duel-proj,.duel-proj-stopped,.duel-fx-flash,.duel-crest-shake,.duel-fx-ring,.duel-fx-ghost,
-    .duel-fx-dmg,.duel-fx-chip,.duel-outcome,.duel-toast,.duel-reduce-flare,
+    .duel-fx-dmg,.duel-fx-tally,.duel-fx-chip,.duel-outcome,.duel-toast,.duel-reduce-flare,
     .duel-reveal-card,.duel-dice-overlay,.duel-shop-overlay,
     .battle-fx-vignette{animation:none;}
   }
@@ -1962,6 +1985,10 @@ async function resolveDuelSequence(challenger, target, item, preview) {
   await delay(DUEL2_REVEAL_MS);
   if (!rootEl) { closeDiceOverlay(); return; }
 
+  // Set once the totals have already been rolled in step 5, so the final beat
+  // knows not to pin them back and replay the same count a second time.
+  let pointsRolled = false;
+
   // Step 3 — the counter check. A correct counter cancels the attack
   // completely: no damage, no dice. This is the best moment in his game, so
   // it gets the biggest treatment on screen: a screen shake, a blue flash and
@@ -2007,14 +2034,55 @@ async function resolveDuelSequence(challenger, target, item, preview) {
         `${esc(target.name)} cannot earn points for ${out.frozenDays} day${out.frozenDays === 1 ? '' : 's'}.`,
         `${roll.label}: ${roll.total}`);
     } else {
-      spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${out.damage}`);
       const mult = Math.max(1, Number(item.effect.mult) || 1);
       const stealNote = item.effect.kind === 'steal' ? ` ${esc(challenger.name)} looted <b>${out.stolen} pts</b>.` : '';
       outcomeCard('hit', '💥 DIRECT HIT!',
         `${esc(challenger.name)} struck ${esc(target.name)} with ${esc(item.name)}.${stealNote}`,
         `${roll.label}: ${roll.total}${mult > 1 ? ` × ${mult}` : ''} = ${out.damage} pts`);
+
+      // THE TALLY. The damage lands on the crest as a big red −N, holds long
+      // enough to actually be read, and only then does the defender's total
+      // start draining underneath it. Nothing has re-rendered since the strike
+      // began (renderDuel is gated on `resolving`), so the number on screen is
+      // still the pre-strike one and can simply be rolled to its new value.
+      pointsRolled = true;
+      spawnFx(crest, 'duel-fx-tally duel-fx-tally-dmg', 2200, `−${out.damage}`);
+      await delay(DUEL2_TALLY_HOLD_MS);
+      if (!rootEl) return;
+      // The defending card rocks WHILE its total comes down, so the shake and
+      // the falling number read as one event rather than two.
+      const defCard = crest ? crest.closest('.duel-side') : null;
+      if (defCard && !reduced) {
+        defCard.classList.remove('duel-card-hit'); void defCard.offsetWidth;
+        defCard.classList.add('duel-card-hit');
+        later(() => defCard.classList.remove('duel-card-hit'), DUEL2_IMPACT_MS + 200);
+      }
+      animatePoints('defender', beforeTarget, store.getTotal(target.id, 'term'), DUEL2_DRAIN_MS);
+      await delay(DUEL2_DRAIN_MS + 200);
+      if (!rootEl) return;
+
+      // A steal is not damage — the points go SOMEWHERE. So the item flies back
+      // the way it came, and the attacker's crest gets the mirror of what the
+      // defender just took: a green +N, then their own total climbing.
+      const gained = store.getTotal(challenger.id, 'term') - beforeChallenger;
+      if (gained > 0) {
+        const chalCrest = rootEl.querySelector('[data-crest="challenger"]');
+        if (crest && chalCrest && !reduced) {
+          spawnProjectile(crest, chalCrest, { emoji: item.emoji || '⚔️', travel: DUEL2_RETURN_MS });
+          await delay(DUEL2_RETURN_MS);
+          if (!rootEl) return;
+          ctxRef.audio.sfx('coin');
+          shakeCrest(chalCrest);
+        }
+        if (chalCrest) spawnFx(chalCrest, 'duel-fx-tally duel-fx-tally-gain', 2200, `+${gained}`);
+        await delay(DUEL2_TALLY_HOLD_MS);
+        if (!rootEl) return;
+        animatePoints('challenger', beforeChallenger, beforeChallenger + gained, DUEL2_DRAIN_MS);
+        await delay(DUEL2_DRAIN_MS + 200);
+        if (!rootEl) return;
+      }
     }
-    await delay(DUEL2_OUTCOME_HOLD_MS);
+    await delay(pointsRolled ? DUEL2_OUTCOME_HOLD_MS - 900 : DUEL2_OUTCOME_HOLD_MS);
   }
   if (!rootEl) return;
 
@@ -2027,20 +2095,11 @@ async function resolveDuelSequence(challenger, target, item, preview) {
   renderDuel();
   const afterChallenger = store.getTotal(challenger.id, 'term');
   const afterTarget = store.getTotal(target.id, 'term');
+  if (pointsRolled) return;   // step 5 already walked both totals to their new values
   const chalEl = rootEl.querySelector('[data-points="challenger"]');
   if (chalEl) chalEl.textContent = String(beforeChallenger);
   const defEl = rootEl.querySelector('[data-points="defender"]');
   if (defEl) defEl.textContent = String(beforeTarget);
-  // The defending card rocks WHILE its total is coming down, so the shake and
-  // the falling number read as the same event rather than two.
-  if (!reduced && afterTarget !== beforeTarget) {
-    const defCard = rootEl.querySelector('[data-crest="defender"]')?.closest('.duel-side');
-    if (defCard) {
-      defCard.classList.remove('duel-card-hit'); void defCard.offsetWidth;
-      defCard.classList.add('duel-card-hit');
-      later(() => defCard.classList.remove('duel-card-hit'), DUEL2_IMPACT_MS + 200);
-    }
-  }
   animatePoints('challenger', beforeChallenger, afterChallenger, COUNT_MS);
   animatePoints('defender', beforeTarget, afterTarget, COUNT_MS);
 }
@@ -2125,7 +2184,15 @@ function animatePoints(side, from, to, durationMs) {
   const readEl = () => (rootEl ? rootEl.querySelector(`[data-points="${side}"]`) : null);
   const el = readEl();
   if (!el) return;
-  if (from === to || prefersReducedMotion()) { el.textContent = String(to); return; }
+  // A number that is moving should say which way. Red while it drains, green
+  // while it climbs, house gold again the instant it stops — the colour is the
+  // whole point, so it is cleared on the same tick the count finishes and on
+  // any early bail-out, never left stuck mid-strike.
+  const dirClass = to < from ? 'pts-falling' : 'pts-rising';
+  const clearDir = () => { const n = readEl(); if (n) n.classList.remove('pts-falling', 'pts-rising'); };
+  if (from === to || prefersReducedMotion()) { el.textContent = String(to); clearDir(); return; }
+  el.classList.remove('pts-falling', 'pts-rising');
+  el.classList.add(dirClass);
   const steps = 14;
   const stepMs = Math.max(16, Math.round(durationMs / steps));
   let i = 0;
@@ -2137,6 +2204,7 @@ function animatePoints(side, from, to, durationMs) {
     const eased = 1 - (1 - t) * (1 - t);
     node.textContent = String(Math.round(from + (to - from) * eased));
     if (t < 1) later(tick, stepMs);
+    else later(clearDir, 260);   // let the settled number sit red/green a moment, then home
   };
   el.textContent = String(from);
   tick();
