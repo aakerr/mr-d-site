@@ -108,6 +108,93 @@ const SFX_SLOTS = {
 // next week. Shields and reductions are deliberately NOT stockpiled — they are
 // timed protection that starts the moment it is bought — and wildcards resolve
 // on purchase because the gamble IS the purchase.
+// ---- combat modes -----------------------------------------------------------
+// TWO complete rule sets, switchable in Admin and never merged.
+//
+//   'duel' — Mr. D's own game, and the default. One attack and one defense item
+//            per house per week, chosen in secret and revealed together. Every
+//            attack has a specific counter; if the defender picked it, the
+//            attack does nothing at all. Damage is rolled on real dice
+//            (2d6 x100 and so on) and comes straight off the target's points.
+//
+//   'hp'   — the hit-points model built earlier: strikes remove HP rather than
+//            points, at zero HP the winner takes a prize and the loser keeps
+//            everything. Kept whole rather than deleted, because it solves a
+//            real problem his rules do not: it cannot widen the gap between
+//            houses, and a class can never be knocked down for being ahead.
+//
+// Each mode owns its own shop catalog (see shop.byMode), so switching swaps the
+// items as well as the rules, and switching back finds the teacher's edits to
+// THAT mode intact.
+const COMBAT_MODES = {
+  duel: { label: "Mr. D's rules", blurb: 'One attack and one defense a week, revealed together. The right defense cancels the attack outright. Damage is rolled on dice and comes off the target’s points.' },
+  hp:   { label: 'Hit points',    blurb: 'Houses have hit points that refill each Battle Day. Strikes remove HP, never points; the winner takes a prize and the loser keeps every point they earned.' },
+};
+const DEFAULT_COMBAT_MODE = 'duel';
+
+// Points per step of bonus HP (see getMaxHp). 50,000 because the whole economy
+// was rescaled x100 to meet Mr. D's costs — the old 500 was the same fraction
+// of the old scale.
+const HP_POINTS_PER_STEP = 50000;
+
+// Mr. D's items, transcribed from his own document. `counters` is the whole
+// game: an attack landing on a house holding the listed defense does NOTHING.
+// Damage is expressed as dice because he rolls it live on the board.
+function defaultDuelCatalog() {
+  return [
+    // ---- attacks ----
+    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: '', cost: 600,  slot: 'attack',
+      effect: { kind: 'damage', dice: '2d6', mult: 100 }, counteredBy: ['shield'],
+      desc: 'Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.' },
+    { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: '', cost: 600,  slot: 'attack',
+      effect: { kind: 'steal', dice: '2d6', mult: 100 }, counteredBy: ['gauntlet'],
+      desc: 'Steal 2d6 × 100 points and add them to your own total. The Gauntlet of Defense stops it.' },
+    { id: 'iceaxe',     name: 'The Legendary Ice Axe',    emoji: '🪓', image: '', cost: 500,  slot: 'attack',
+      effect: { kind: 'freeze', dice: '1d6' }, counteredBy: ['shield'],
+      desc: 'Freeze a House so it cannot earn points for 1d6 days. The Shield of Protection stops it.' },
+    { id: 'cloak',      name: 'Cloak of Invisibility',    emoji: '🫥', image: '', cost: 400,  slot: 'attack',
+      effect: { kind: 'steal', dice: '1d6', mult: 100, anonymous: true }, counteredBy: ['bow'],
+      desc: 'Steal 1d6 × 100 points without anyone learning who did it. The Bow of Seeking finds you.' },
+    { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: '', cost: 1000, slot: 'attack',
+      effect: { kind: 'damage', dice: '3d6', mult: 100, targets: 2 }, counteredBy: [],
+      desc: 'Hit TWO Houses for 3d6 × 100 points each. Nothing defends against it.' },
+    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: '', cost: 1000, slot: 'attack',
+      effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['eye'],
+      desc: 'A blast of concentrated sunlight for 3d6 × 100 points. The Eye of Horus stops it.' },
+    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: '', cost: 1000, slot: 'attack',
+      effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['bow'],
+      desc: 'A charging warhorse for 3d6 × 100 points. The Bow of Seeking brings it down.' },
+
+    // ---- defenses ----
+    { id: 'shield',     name: 'The Shield of Protection', emoji: '🛡️', image: '', cost: 500,  slot: 'defense',
+      effect: { kind: 'block' }, blocks: ['sword', 'iceaxe'],
+      desc: 'Stops the Sword of Destiny or the Legendary Ice Axe for one Battle Day.' },
+    { id: 'gauntlet',   name: 'Gauntlet of Defense',      emoji: '🧤', image: '', cost: 400,  slot: 'defense',
+      effect: { kind: 'block' }, blocks: ['net'],
+      desc: 'Stops every attack from the Net of Entrapment.' },
+    { id: 'bow',        name: 'Bow of Seeking',           emoji: '🏹', image: '', cost: 400,  slot: 'defense',
+      effect: { kind: 'block' }, blocks: ['cloak', 'warhorse'],
+      desc: 'Seeks out the Cloak of Invisibility or the Warhorse and stops the attack.' },
+    { id: 'eye',        name: 'The Eye of Horus',         emoji: '👁️', image: '', cost: 500,  slot: 'defense',
+      effect: { kind: 'block' }, blocks: ['staffra'],
+      desc: 'Defends against the Staff of Ra.' },
+
+    // ---- utility ----
+    { id: 'stone',      name: 'The Stone of Seeing',      emoji: '🔮', image: '', cost: 1000, slot: 'utility',
+      effect: { kind: 'reveal' },
+      desc: 'Reveals what another House has chosen to do this week.' },
+    { id: 'shroud',     name: 'The Shroud of Secrecy',    emoji: '🌫️', image: '', cost: 500,  slot: 'utility',
+      effect: { kind: 'hide' },
+      desc: 'Hides your actions from every other House for one week.' },
+    { id: 'timeturner', name: 'The Time Turner',          emoji: '⏳', image: '', cost: 1000, slot: 'utility',
+      effect: { kind: 'timeturn' },
+      desc: 'Go back and change your items after you have been attacked.' },
+    { id: 'bagofholding', name: 'The Bag of Holding',     emoji: '🎒', image: '', cost: 500,  slot: 'utility',
+      effect: { kind: 'extraslot' },
+      desc: 'An extra weapon slot — carry two attack or two defense items at once.' },
+  ];
+}
+
 const STOCKPILE_KINDS = new Set(['attack', 'steal', 'pierce']);
 
 // Hard ceiling on any single points transaction. A guard against a mistyped
@@ -235,6 +322,38 @@ function defaultQuestCatalog() {
   ];
 }
 
+// The hit-points model's shop, kept intact for the 'hp' combat mode.
+function defaultHpCatalog() {
+  return [
+    // ---- Offensive ----
+    // Descriptions are clamped to THREE lines on the shop card (~120 chars
+    // at the card's width). Longer text is silently cut off mid-sentence,
+    // which is worse than saying less — the shield/halving rules live in
+    // Help and in Admin's matchup table, where they are not truncated.
+    { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 3500, desc: 'Roman siege engines hurl stones. Waits in your armoury for Battle Day, then takes 20 HP off a house you choose.', effect: { kind: 'attack', amount: 2000 } },
+    { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 4500, desc: 'The Byzantine secret that burned on water. Waits in your armoury for Battle Day, then takes 25 HP off a house you pick.', effect: { kind: 'attack', amount: 2500 } },
+    { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 5500, desc: 'Over the Alps into Roman territory. Waits in your armoury for Battle Day, then takes 30 HP off a house you choose.', effect: { kind: 'attack', amount: 3000 } },
+    { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 6500, desc: 'Mirrors burn ships at Syracuse. Waits in your armoury for Battle Day, then takes 35 HP off a house you choose.', effect: { kind: 'attack', amount: 3500 } },
+    { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 5000, desc: 'A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.', effect: { kind: 'steal', amount: 2500 } },
+    // ---- Offensive: pierce (ignores defenses) ----
+    { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 6000, desc: 'Strike unseen. Waits in your armoury for Battle Day, then takes 20 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 2000 } },
+    { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 7000, desc: 'Advance under cover. Waits for Battle Day, then takes 25 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 2500 } },
+    // ---- Defensive ----
+    { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 2500, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
+    { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 3000, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
+    { id: 'shieldwall',name: 'Shield Wall',            emoji: '🪵', image: '', cost: 3500, desc: 'The Viking skjaldborg — no gap for a blade. Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
+    { id: 'moat',      name: 'Moat & Drawbridge',      emoji: '🏰', image: '', cost: 4500, desc: 'Raise the bridge and hold the keep. Blocks incoming attacks for 36 hours.', effect: { kind: 'shield', amount: 36 } },
+    { id: 'greatwall', name: 'The Great Wall',         emoji: '🧱', image: '', cost: 6000, desc: 'Thousands of miles of stone and watchtowers. Blocks incoming attacks for 48 hours.', effect: { kind: 'shield', amount: 48 } },
+    // ---- Wildcards ----
+    { id: 'pandora',   name: "Pandora's Box",          emoji: '📦', image: '', cost: 4000, desc: 'Every evil escapes — but hope remains. Random swing of up to 30 pts, for you or against you.', effect: { kind: 'wild', amount: 3000 } },
+    { id: 'fortuna',   name: "Fortuna's Wheel",        emoji: '🎡', image: '', cost: 3000, desc: 'The Roman goddess of luck spins the wheel. Random swing of up to 20 pts, either way.', effect: { kind: 'wild', amount: 2000 } },
+    // ---- Mythic rewards (granted by a natural 20, never purchasable) ----
+    { id: 'spynetwork',name: 'Spy Network',            emoji: '🕵️', image: '', cost: 0, mythicOnly: true, desc: 'Your agents hear the plan before it happens. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
+    { id: 'lookout',   name: 'Lookout Tower',          emoji: '🗼', image: '', cost: 0, mythicOnly: true, desc: 'See the dust of an army on the horizon. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
+    { id: 'oracle',    name: 'Oracle of Delphi',       emoji: '🔮', image: '', cost: 0, mythicOnly: true, desc: 'The Pythia foretells the coming blow. Incoming damage is HALVED for 72 hours.', effect: { kind: 'reduce', amount: 72 } },
+  ];
+}
+
 function defaultState() {
   return {
     version: 1,
@@ -263,6 +382,9 @@ function defaultState() {
         .map(([id, d]) => [id, { color: d.color, matchHouse: d.matchHouse }])),
       layouts: Object.fromEntries(Object.keys(LAYOUT_SCREENS).map((id) => [id, DEFAULT_LAYOUT])),
       combat: defaultCombat(),
+      // 'duel' (Mr. D's rules) or 'hp' — see COMBAT_MODES. Changing it swaps the
+      // shop catalog too, via store.setCombatMode().
+      combatMode: DEFAULT_COMBAT_MODE,
       diceProphecy: defaultDiceProphecy(),
       // Teacher recordings per sound (see SFX_SLOTS). '' = use the built-in.
       sfx: Object.fromEntries(Object.entries(SFX_SLOTS).map(([id, s]) => [id, s.file || ''])),
@@ -305,35 +427,19 @@ function defaultState() {
       //   'wild'    — random swing of ±amount in POINTS, resolved at purchase
       //               (never stockpiled — the gamble IS the purchase)
       // mythicOnly items can't be bought; a Nat 20 grants them.
-      catalog: [
-        // ---- Offensive ----
-        // Descriptions are clamped to THREE lines on the shop card (~120 chars
-        // at the card's width). Longer text is silently cut off mid-sentence,
-        // which is worse than saying less — the shield/halving rules live in
-        // Help and in Admin's matchup table, where they are not truncated.
-        { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 35, desc: 'Roman siege engines hurl stones. Waits in your armoury for Battle Day, then takes 20 HP off a house you choose.', effect: { kind: 'attack', amount: 20 } },
-        { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 45, desc: 'The Byzantine secret that burned on water. Waits in your armoury for Battle Day, then takes 25 HP off a house you pick.', effect: { kind: 'attack', amount: 25 } },
-        { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 55, desc: 'Over the Alps into Roman territory. Waits in your armoury for Battle Day, then takes 30 HP off a house you choose.', effect: { kind: 'attack', amount: 30 } },
-        { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 65, desc: 'Mirrors burn ships at Syracuse. Waits in your armoury for Battle Day, then takes 35 HP off a house you choose.', effect: { kind: 'attack', amount: 35 } },
-        { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 50, desc: 'A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.', effect: { kind: 'steal', amount: 25 } },
-        // ---- Offensive: pierce (ignores defenses) ----
-        { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 60, desc: 'Strike unseen. Waits in your armoury for Battle Day, then takes 20 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 20 } },
-        { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 70, desc: 'Advance under cover. Waits for Battle Day, then takes 25 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 25 } },
-        // ---- Defensive ----
-        { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 25, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
-        { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 30, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
-        { id: 'shieldwall',name: 'Shield Wall',            emoji: '🪵', image: '', cost: 35, desc: 'The Viking skjaldborg — no gap for a blade. Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
-        { id: 'moat',      name: 'Moat & Drawbridge',      emoji: '🏰', image: '', cost: 45, desc: 'Raise the bridge and hold the keep. Blocks incoming attacks for 36 hours.', effect: { kind: 'shield', amount: 36 } },
-        { id: 'greatwall', name: 'The Great Wall',         emoji: '🧱', image: '', cost: 60, desc: 'Thousands of miles of stone and watchtowers. Blocks incoming attacks for 48 hours.', effect: { kind: 'shield', amount: 48 } },
-        // ---- Wildcards ----
-        { id: 'pandora',   name: "Pandora's Box",          emoji: '📦', image: '', cost: 40, desc: 'Every evil escapes — but hope remains. Random swing of up to 30 pts, for you or against you.', effect: { kind: 'wild', amount: 30 } },
-        { id: 'fortuna',   name: "Fortuna's Wheel",        emoji: '🎡', image: '', cost: 30, desc: 'The Roman goddess of luck spins the wheel. Random swing of up to 20 pts, either way.', effect: { kind: 'wild', amount: 20 } },
-        // ---- Mythic rewards (granted by a natural 20, never purchasable) ----
-        { id: 'spynetwork',name: 'Spy Network',            emoji: '🕵️', image: '', cost: 0, mythicOnly: true, desc: 'Your agents hear the plan before it happens. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
-        { id: 'lookout',   name: 'Lookout Tower',          emoji: '🗼', image: '', cost: 0, mythicOnly: true, desc: 'See the dust of an army on the horizon. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
-        { id: 'oracle',    name: 'Oracle of Delphi',       emoji: '🔮', image: '', cost: 0, mythicOnly: true, desc: 'The Pythia foretells the coming blow. Incoming damage is HALVED for 72 hours.', effect: { kind: 'reduce', amount: 72 } },
-      ],
-      seeded: ['catapult','greekfire','elephants','heatray','trojan','cloak','fogbank','phalanx','aegis','shieldwall','moat','greatwall','pandora','fortuna','spynetwork','lookout','oracle'],
+      catalog: defaultDuelCatalog(),
+      // Which shipped items this browser has already been shown, per mode, so
+      // an item the teacher DELETED stays deleted instead of reappearing on
+      // every reload — and so a newly shipped one still arrives.
+      seeded: {
+        duel: defaultDuelCatalog().map((i) => i.id),
+        hp: defaultHpCatalog().map((i) => i.id),
+      },
+      // The OTHER mode's catalog, parked. Each mode keeps its own items and its
+      // own edits, so switching swaps the shop wholesale and switching back
+      // finds everything as the teacher left it. `catalog` above is always
+      // whichever mode is currently active; this is the one waiting its turn.
+      parked: { hp: defaultHpCatalog(), duel: null },
     },
     // Planner events (admin panel). One record per calendar item:
     // { id, date:'YYYY-MM-DD', endDate?, type:'term-start'|'term-end'|'vacation'|'test'|'quiz'|'homework'|'itinerary'|'note',
@@ -574,14 +680,43 @@ function load() {
       // to delete stays deleted instead of reappearing on every reload.
       // NOTE: read this off the SAVED object — `merged` would have inherited the
       // default's full seeded list via the spread and suppressed every new item.
-      merged.shop.seeded = Array.isArray(saved.shop?.seeded)
-        ? saved.shop.seeded
-        : (Array.isArray(saved.shop?.catalog) ? saved.shop.catalog.map((i) => i.id) : []);
-      for (const item of def.shop.catalog) {
-        if (!merged.shop.seeded.includes(item.id)) {
-          merged.shop.catalog.push({ ...item });
-          merged.shop.seeded.push(item.id);
+      // Combat modes arrived after some browsers had saved. Anything saved
+      // before then IS the hit-points catalog — that is all there was — so it
+      // becomes the 'hp' side, edits and deletions intact, and Mr. D's rules
+      // come in as the new active mode. `seeded` was a flat array then and is
+      // per-mode now.
+      const savedMode = COMBAT_MODES[merged.settings.combatMode] ? merged.settings.combatMode : null;
+      const flatSeeded = Array.isArray(saved.shop?.seeded) ? saved.shop.seeded : null;
+      if (!savedMode || flatSeeded) {
+        const oldCatalog = Array.isArray(saved.shop?.catalog) && saved.shop.catalog.length
+          ? saved.shop.catalog : defaultHpCatalog();
+        merged.shop.parked = { hp: oldCatalog, duel: null };
+        merged.shop.catalog = defaultDuelCatalog();
+        merged.shop.seeded = {
+          hp: flatSeeded || oldCatalog.map((i) => i.id),
+          duel: defaultDuelCatalog().map((i) => i.id),
+        };
+        merged.settings.combatMode = DEFAULT_COMBAT_MODE;
+        // Held items and damage belong to the mode they happened in.
+        merged.inventory = {};
+        merged.hp = {};
+      }
+      if (!merged.shop.seeded || Array.isArray(merged.shop.seeded)) merged.shop.seeded = { duel: [], hp: [] };
+      if (!merged.shop.parked || typeof merged.shop.parked !== 'object') merged.shop.parked = { hp: null, duel: null };
+
+      // Introduce newly shipped items for the ACTIVE mode only; the parked one
+      // is topped up when it next becomes active.
+      {
+        const mode = COMBAT_MODES[merged.settings.combatMode] ? merged.settings.combatMode : DEFAULT_COMBAT_MODE;
+        const shipped = mode === 'duel' ? defaultDuelCatalog() : defaultHpCatalog();
+        const seen = Array.isArray(merged.shop.seeded[mode]) ? merged.shop.seeded[mode] : [];
+        for (const item of shipped) {
+          if (!seen.includes(item.id)) {
+            merged.shop.catalog.push({ ...item });
+            seen.push(item.id);
+          }
         }
+        merged.shop.seeded[mode] = seen;
       }
       // The shop catalog is SAVED STATE, not source. Editing a description in
       // this file therefore does NOT reach a browser that has already saved —
@@ -596,15 +731,22 @@ function load() {
       // or edited themselves is never overwritten. The marker makes it a
       // one-time correction rather than a permanent override — after this runs,
       // their edits are safe again.
+      // Scoped to the HIT-POINTS catalog on purpose. OLD_SHOP_DESCS holds that
+      // model's wording, and two ids — 'catapult' and 'cloak' — exist in BOTH
+      // catalogs as completely different items. Matching by id alone would let
+      // this rewrite Mr. D's Catapult with the Catapult Volley's description.
+      // The two catalogs never meet anywhere else; this is the one place that
+      // could have crossed them.
       if (Number(merged.shop.descRev) !== SHOP_DESC_REV) {
-        const defItemById = Object.fromEntries(def.shop.catalog.map((i) => [i.id, i]));
-        merged.shop.catalog = merged.shop.catalog.map((item) => {
-          const d = defItemById[item.id];
+        const hpById = Object.fromEntries(defaultHpCatalog().map((i) => [i.id, i]));
+        const refresh = (list) => (Array.isArray(list) ? list.map((item) => {
+          const d = hpById[item.id];
           if (!d || typeof item.desc !== 'string') return item;
           const stale = OLD_SHOP_DESCS[item.id];
-          const untouched = stale ? stale.includes(item.desc.trim()) : false;
-          return untouched ? { ...item, desc: d.desc } : item;
-        });
+          return (stale && stale.includes(item.desc.trim())) ? { ...item, desc: d.desc } : item;
+        }) : list);
+        if (merged.settings.combatMode === 'hp') merged.shop.catalog = refresh(merged.shop.catalog);
+        merged.shop.parked.hp = refresh(merged.shop.parked.hp);
         merged.shop.descRev = SHOP_DESC_REV;
       }
       merged.planner = { ...def.planner, ...(merged.planner || {}) };
@@ -808,10 +950,17 @@ export const store = {
 
   // Bigger totals mean a tougher house — a mild brake on everyone piling on
   // the leader every week.
+  //
+  // The step is HP_POINTS_PER_STEP, not the literal 500 it used to be. When the
+  // shop was rescaled x100 to meet Mr. D's costs, every point value in the app
+  // moved with it; a 500-point step would now trigger on pocket change and hand
+  // a mid-table house hundreds of hit points. The setting is still called
+  // hpPer500 because that is what the teacher reads in Admin — "per 500 points"
+  // at the old scale is "per 50,000" at this one, and the label there says so.
   getMaxHp(houseId) {
     const c = store.getCombat();
     const pts = Math.max(0, store.getTotal(houseId, 'term'));
-    return Math.max(1, Math.round(c.hpBase + c.hpPer500 * Math.floor(pts / 500)));
+    return Math.max(1, Math.round(c.hpBase + c.hpPer500 * Math.floor(pts / HP_POINTS_PER_STEP)));
   },
 
   // state.hp holds DAMAGE TAKEN, not current hit points. Storing "current"
@@ -1187,6 +1336,42 @@ export const store = {
 
   // ----- Magic Shop catalog (teacher-editable in Admin) -----
 
+  COMBAT_MODES,
+
+  getCombatMode() {
+    const m = state.settings.combatMode;
+    return COMBAT_MODES[m] ? m : DEFAULT_COMBAT_MODE;
+  },
+
+  // Swaps the whole shop, not just a flag. The active catalog is parked under
+  // the mode it belongs to and the incoming one is unparked, so a teacher's
+  // edits to either survive any number of switches. Nothing is deleted and
+  // nothing is merged — the two rule sets never see each other's items.
+  //
+  // Points, ledger, quests and everything else are deliberately untouched: the
+  // ledger is the term's record and switching how combat works is not a reason
+  // to rewrite it. Both catalogs are priced at the same scale so a house's
+  // points mean the same thing either way.
+  setCombatMode(mode) {
+    const next = COMBAT_MODES[mode] ? mode : DEFAULT_COMBAT_MODE;
+    const cur = store.getCombatMode();
+    if (next === cur) return next;
+    if (!state.shop.parked || typeof state.shop.parked !== 'object') state.shop.parked = {};
+    state.shop.parked[cur] = state.shop.catalog;
+    const incoming = state.shop.parked[next];
+    state.shop.catalog = Array.isArray(incoming) && incoming.length
+      ? incoming
+      : (next === 'duel' ? defaultDuelCatalog() : defaultHpCatalog());
+    state.shop.parked[next] = null;
+    state.settings.combatMode = next;
+    // A house's chosen items belong to the mode they were chosen in; carrying
+    // them across would leave ids that the new catalog has never heard of.
+    state.inventory = {};
+    state.hp = {};
+    emit();
+    return next;
+  },
+
   getShopItems() {
     return state.shop.catalog;
   },
@@ -1194,10 +1379,23 @@ export const store = {
   // Kinds the combat engine actually implements. Anything else is rejected so
   // the Admin form can never save an item the app won't honour.
   SHOP_KINDS: ['attack', 'steal', 'shield', 'pierce', 'reduce', 'wild'],
+  // Mr. D's rules use their own verbs. 'damage' and 'steal' roll dice, 'freeze'
+  // stops a house scoring, 'block' is a defense, and the rest are utilities.
+  DUEL_KINDS: ['damage', 'steal', 'freeze', 'block', 'reveal', 'hide', 'timeturn', 'extraslot'],
 
+  shopKindsForMode(mode) {
+    return (mode || store.getCombatMode()) === 'duel' ? store.DUEL_KINDS : store.SHOP_KINDS;
+  },
+
+  // NOTE: this rebuilds the item field by field, so ANY field not named here is
+  // silently dropped on save — the same trap saveQuest() has. That is why the
+  // duel fields are listed explicitly: an edit to the Sword of Destiny would
+  // otherwise come back with no dice, no slot and no counter, and the whole
+  // rock-paper-scissors layer would quietly stop working.
   saveShopItem(item) {
     const kind = item?.effect?.kind;
-    if (!item?.name || !store.SHOP_KINDS.includes(kind)) return null;
+    const mode = store.getCombatMode();
+    if (!item?.name || !store.shopKindsForMode(mode).includes(kind)) return null;
     const mythicOnly = !!item.mythicOnly;
     // Mythic relics are granted by a natural 20, never bought — force cost 0.
     // Everything else needs a real price.
@@ -1207,8 +1405,20 @@ export const store = {
       id: item.id || `si-${Date.now()}`,
       name: item.name, desc: item.desc || '', emoji: item.emoji || '✨', image: item.image || '',
       cost, mythicOnly,
-      effect: { kind, amount: Math.max(1, Math.round(Number(item.effect.amount) || 1)) },
+      effect: { kind },
     };
+    if (mode === 'duel') {
+      const e = item.effect || {};
+      if (e.dice) it.effect.dice = String(e.dice).trim();
+      if (Number.isFinite(Number(e.mult))) it.effect.mult = Math.max(1, Math.round(Number(e.mult)));
+      if (Number.isFinite(Number(e.targets))) it.effect.targets = Math.max(1, Math.round(Number(e.targets)));
+      if (e.anonymous) it.effect.anonymous = true;
+      it.slot = ['attack', 'defense', 'utility'].includes(item.slot) ? item.slot : 'utility';
+      if (Array.isArray(item.counteredBy)) it.counteredBy = item.counteredBy.slice();
+      if (Array.isArray(item.blocks)) it.blocks = item.blocks.slice();
+    } else {
+      it.effect.amount = Math.max(1, Math.round(Number(item.effect.amount) || 1));
+    }
     const i = state.shop.catalog.findIndex((x) => x.id === it.id);
     if (i >= 0) state.shop.catalog[i] = it; else state.shop.catalog.push(it);
     emit();
