@@ -177,6 +177,10 @@ function defaultCombat() {
     punchingDown: false,// may a house attack one with FEWER points?
     hpBase: 100,        // everyone starts here
     hpPer500: 10,       // extra HP per 500 points held
+    // The ± buttons on Battle Day's teacher-scoring row. This was hardcoded to
+    // 10 in battle.js, which made it the one point value on the whole screen
+    // he could not change without editing source.
+    teacherScore: 10,
   };
 }
 
@@ -668,6 +672,8 @@ export const store = {
     next.prizeFlat    = clamp(next.prizeFlat, 0, MAX_DELTA, d.prizeFlat);
     next.hpBase       = clamp(next.hpBase, 1, 10000, d.hpBase);
     next.hpPer500     = clamp(next.hpPer500, 0, 10000, d.hpPer500);
+    // At 0 the buttons would be dead controls, so the floor is 1.
+    next.teacherScore = clamp(next.teacherScore, 1, MAX_DELTA, d.teacherScore);
     next.punchingDown = !!next.punchingDown;
     store.updateSettings({ combat: next });
   },

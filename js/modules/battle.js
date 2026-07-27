@@ -917,6 +917,9 @@ function arenaHtml(challenger, target) {
 
 function teacherRowHtml(store) {
   const houses = Object.values(store.HOUSES);
+  // Teacher-set in Admin → Battle Day. Both the label and the value the button
+  // carries come from the same number, so they can never drift apart.
+  const tScore = store.getCombat().teacherScore;
   return `
     <div class="duel-teacher">
       <div class="duel-teacher-title">👩‍🏫 Teacher scoring — not a house attack
@@ -931,8 +934,8 @@ function teacherRowHtml(store) {
               <div class="duel-tchip-pts">${store.getTotal(h.id, 'term')} pts</div>
             </div>
             <div class="duel-tchip-btns">
-              <button type="button" class="duel-tbtn duel-tbtn-up" data-teacher="10" data-house="${h.id}" title="Victory +10">+10</button>
-              <button type="button" class="duel-tbtn duel-tbtn-down" data-teacher="-10" data-house="${h.id}" title="Defeat −10">−10</button>
+              <button type="button" class="duel-tbtn duel-tbtn-up" data-teacher="${tScore}" data-house="${h.id}" title="Victory +${tScore}">+${tScore}</button>
+              <button type="button" class="duel-tbtn duel-tbtn-down" data-teacher="-${tScore}" data-house="${h.id}" title="Defeat −${tScore}">−${tScore}</button>
             </div>
           </div>`).join('')}
       </div>
