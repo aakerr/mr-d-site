@@ -677,7 +677,11 @@ function itemCard(store, s, item, buyerId) {
       </div>`;
   }
 
-  if ((kind === 'attack' || kind === 'pierce') && s.targetPicker === item.id) {
+  // Stockpiled kinds (attack/steal/pierce, per store.isStockpiled) never need
+  // a target at purchase time — they're banked in the armoury and spent on
+  // Battle Day — so the target picker only ever opens for a hypothetical
+  // non-stockpiled attack/pierce item (none exist in the current catalog).
+  if (!store.isStockpiled(item) && (kind === 'attack' || kind === 'pierce') && s.targetPicker === item.id) {
     const targets = otherHouses(store, buyerId);
     return `
       <div class="shop-card" data-card="${esc(item.id)}">
@@ -699,6 +703,10 @@ function itemCard(store, s, item, buyerId) {
 
   // attack / pierce (no picker open) / steal / wild all use the plain BUY card.
   const boughtCount = CONSUMABLE_KINDS.has(kind) ? boughtThisWeekCount(store, buyerId, item.name) : 0;
+  // Stockpiled items (attack/steal/pierce) show what the house already holds
+  // in its armoury from earlier purchases this week — the "you already have
+  // ammo banked" signal store.countOwned exists for.
+  const armouryCount = store.isStockpiled(item) ? store.countOwned(buyerId, item.id) : 0;
   return `
     <div class="shop-card" data-card="${esc(item.id)}">
       <div class="shop-cost-badge">${item.cost} pts</div>
@@ -706,7 +714,10 @@ function itemCard(store, s, item, buyerId) {
       <div class="shop-card-name" title="${esc(item.name)}">${esc(item.name)}</div>
       ${kindTag}
       <div class="shop-flavor" title="${esc(item.desc)}">${esc(item.desc)}</div>
-      <div class="shop-card-status">${boughtCount > 0 ? `<div class="shop-bought-badge">Bought ×${boughtCount} this week</div>` : ''}</div>
+      <div class="shop-card-status">
+        ${armouryCount > 0 ? `<div class="shop-bought-badge">×${armouryCount} in your armoury</div>` : ''}
+        ${boughtCount > 0 ? `<div class="shop-bought-badge">Bought ×${boughtCount} this week</div>` : ''}
+      </div>
       <button type="button" class="shop-buy-btn" data-buy="${esc(item.id)}" ${affordable ? '' : 'disabled'}>BUY</button>
     </div>`;
 }
@@ -743,19 +754,30 @@ function confirmModalHtml(store, s) {
   let bodyHtml = '';
   let confirmLabel = 'Confirm Purchase';
 
-  if (kind === 'steal') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to steal <b>${amount} pts</b> from the leading rival, <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
-  } else if (kind === 'attack') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to deduct <b>${amount} pts</b> from <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
-  } else if (kind === 'pierce') {
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to strike <b>${target ? esc(target.name) : '—'}</b> for <b>${amount} pts</b>.${pierceNoteHtml(store, target)}`;
-  } else if (kind === 'shield') {
+  if (kind === 'shield') {
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to raise the ${esc(item.name)}, blocking incoming attacks for <b>${amount} hour${amount === 1 ? '' : 's'}</b>.`;
   } else if (kind === 'reduce') {
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to activate ${esc(item.name)}, halving incoming damage for <b>${amount} hour${amount === 1 ? '' : 's'}</b>.`;
   } else if (kind === 'wild') {
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to open ${esc(item.name)} — a d20 roll decides the fate, up to <b>±${amount} pts</b>. Watch the die land!`;
     confirmLabel = '🎲 Take the Risk!';
+  } else if (store.isStockpiled(item)) {
+    // Offensive items (attack/steal/pierce) are stockpiled now — buying one
+    // banks it in the armoury for Battle Day instead of firing at a target.
+    const owned = store.countOwned(buyerId, item.id);
+    const ownedNote = owned > 0 ? ` <b>${esc(buyer.name)}</b> already holds <b>${owned}</b> of these in the armoury.` : '';
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to add <b>${esc(item.name)}</b> to the armoury — it's saved to use on <b>Battle Day</b>, not fired now.${ownedNote}`;
+  } else if (kind === 'steal') {
+    // Unreachable while store.STOCKPILE_KINDS includes 'steal' (it always
+    // does today) — kept only so a future non-stockpiled steal kind still
+    // gets a sensible confirm message instead of a blank modal.
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to steal <b>${amount} pts</b> from the leading rival, <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
+  } else if (kind === 'attack') {
+    // Unreachable while store.STOCKPILE_KINDS includes 'attack' — see note above.
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to deduct <b>${amount} pts</b> from <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
+  } else if (kind === 'pierce') {
+    // Unreachable while store.STOCKPILE_KINDS includes 'pierce' — see note above.
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to strike <b>${target ? esc(target.name) : '—'}</b> for <b>${amount} pts</b>.${pierceNoteHtml(store, target)}`;
   }
 
   return `
@@ -1274,7 +1296,15 @@ async function resolvePurchase(s) {
     store.activateShield(buyerId, amount);
   } else if (kind === 'reduce') {
     store.activateReduction(buyerId, amount);
+  } else if (store.isStockpiled(item)) {
+    // Buying an offensive item (attack/steal/pierce) no longer fires it — it
+    // goes into the buyer's armoury and is spent later, on Battle Day. No
+    // target, no store.applyAttack call, no loot.
+    store.addToInventory(buyerId, item.id);
   } else if (kind === 'attack' || kind === 'pierce') {
+    // Unreachable while store.STOCKPILE_KINDS includes these kinds (it
+    // always does today) — kept only so a future non-stockpiled item still
+    // resolves as a live attack instead of silently doing nothing.
     result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: kind === 'pierce', label: item.name });
   } else if (kind === 'steal') {
     // The ONE combat rule resolves shield/reduction on the deduction; the
@@ -1307,8 +1337,15 @@ async function resolvePurchase(s) {
     showBanner(`${buyer.name} activated ${item.name}! ${emoji}`);
     return;
   }
+  if (store.isStockpiled(item)) {
+    const owned = store.countOwned(buyerId, item.id);
+    showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${owned}) — ready for Battle Day! ${emoji}`);
+    return;
+  }
 
-  // attack / steal / pierce share the same outcome-driven fx.
+  // attack / steal / pierce share the same outcome-driven fx. Unreachable
+  // while store.STOCKPILE_KINDS covers these kinds (it always does today) —
+  // kept only so a future non-stockpiled item still gets combat fx/banner.
   if (result.outcome === 'blocked') {
     audio.sfx('sword');
     blockFx(targetChip);
@@ -1371,6 +1408,15 @@ export default {
           return;
         }
         if (kind === 'shield' || kind === 'reduce' || kind === 'wild') {
+          s.confirm = { itemId, buyerId, targetId: null };
+          doRender();
+          return;
+        }
+        // Stockpiled offensive items (attack/steal/pierce, per
+        // store.isStockpiled) skip target selection entirely — buying one
+        // just banks it in the armoury for Battle Day, so BUY goes straight
+        // to the confirm modal with no target.
+        if (store.isStockpiled(item)) {
           s.confirm = { itemId, buyerId, targetId: null };
           doRender();
           return;

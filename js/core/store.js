@@ -73,6 +73,13 @@ const SFX_SLOTS = {
   roll:      { label: 'Dice rattle',        hint: 'The Die of Destiny tumbling.' },
 };
 
+// Offensive items are STOCKPILED: buying one puts it in the house's armoury
+// rather than firing it on the spot, so a house can buy on Friday and strike
+// next week. Shields and reductions are deliberately NOT stockpiled — they are
+// timed protection that starts the moment it is bought — and wildcards resolve
+// on purchase because the gamble IS the purchase.
+const STOCKPILE_KINDS = new Set(['attack', 'steal', 'pierce']);
+
 const LAYOUT_SCREENS = {
   quests: { label: 'Quests board' },
   shop:   { label: 'Magic Shop' },
@@ -137,6 +144,8 @@ function defaultState() {
       // teacher can add their own without anyone editing source.
       introVideos: null,
     },
+    // houseId -> { itemId: count }. What each house has bought and not yet used.
+    inventory: {},
     quests: {
       // One quest active per core at a time; completion is teacher-confirmed.
       catalog: defaultQuestCatalog(),
@@ -310,6 +319,7 @@ function load() {
       merged.settings.theme = { ...def.settings.theme, ...(merged.settings.theme || {}) };
       merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
+      if (!merged.inventory || typeof merged.inventory !== 'object') merged.inventory = {};
       {
         const saved = merged.settings.layouts && typeof merged.settings.layouts === 'object'
           ? merged.settings.layouts : {};
@@ -447,6 +457,51 @@ export const store = {
   QUEST_TYPES,
   MODULE_THEMES,
   LAYOUT_SCREENS,
+  STOCKPILE_KINDS,
+
+  // Does buying this item stock it, or fire it immediately?
+  isStockpiled(item) {
+    return !!(item && item.effect && STOCKPILE_KINDS.has(item.effect.kind));
+  },
+
+  // What a house owns, newest catalogue order, with the live item definition
+  // attached. An item the teacher has since deleted from the shop is dropped
+  // rather than rendered as a blank row.
+  getInventory(houseId) {
+    const owned = (state.inventory || {})[houseId] || {};
+    return Object.entries(owned)
+      .filter(([, n]) => Number(n) > 0)
+      .map(([itemId, n]) => {
+        const item = state.shop.catalog.find((i) => i.id === itemId);
+        return item ? { item, count: Math.max(0, Math.round(Number(n) || 0)) } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.item.cost - b.item.cost);
+  },
+
+  countOwned(houseId, itemId) {
+    return Math.max(0, Math.round(Number(((state.inventory || {})[houseId] || {})[itemId]) || 0));
+  },
+
+  addToInventory(houseId, itemId, n = 1) {
+    if (!state.inventory) state.inventory = {};
+    if (!state.inventory[houseId]) state.inventory[houseId] = {};
+    const cur = store.countOwned(houseId, itemId);
+    state.inventory[houseId][itemId] = cur + Math.max(1, Math.round(Number(n) || 1));
+    emit();
+    return state.inventory[houseId][itemId];
+  },
+
+  // Returns false when the house does not actually hold one, so a double-tap
+  // cannot spend an item that is not there.
+  consumeFromInventory(houseId, itemId) {
+    const cur = store.countOwned(houseId, itemId);
+    if (cur <= 0) return false;
+    state.inventory[houseId][itemId] = cur - 1;
+    if (state.inventory[houseId][itemId] <= 0) delete state.inventory[houseId][itemId];
+    emit();
+    return true;
+  },
   SFX_SLOTS,
 
   // '' means "use the built-in sound".

@@ -101,16 +101,6 @@ function challengerHouse() {
   return ctxRef ? ctxRef.store.getActiveHouse() : null;
 }
 
-// Items this house could actually use offensively. Anything malformed (a
-// teacher edit gone wrong in Admin) is skipped rather than rendered broken.
-function offensiveItems(store) {
-  return store.getShopItems()
-    .filter((it) => it && !it.mythicOnly && it.name && Number(it.cost) > 0
-      && it.effect && OFFENSIVE_KINDS.has(it.effect.kind) && Number(it.effect.amount) > 0)
-    .slice()
-    .sort((a, b) => a.cost - b.cost);
-}
-
 // =============================================================================
 // STYLES
 // =============================================================================
@@ -308,7 +298,7 @@ function injectStyles() {
   .duel-item-kind{font-size:.65rem;font-weight:700;letter-spacing:.04em;color:#c4b5fd;
     background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.35);
     border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
-  .duel-item-cost{flex-shrink:0;font-weight:800;font-size:.8rem;color:#1e1b3a;background:#fde68a;
+  .duel-item-cost,.duel-item-count{flex-shrink:0;font-weight:800;font-size:.8rem;color:#1e1b3a;background:#fde68a;
     border-radius:999px;padding:.2rem .5rem;white-space:nowrap;}
   .duel-item-reason{font-size:.7rem;font-weight:700;color:#9ca3af;margin:-.25rem 0 .15rem .1rem;}
   .duel-item-note{font-size:.7rem;font-weight:700;margin:-.25rem 0 .15rem .1rem;}
@@ -626,22 +616,21 @@ function kindTag(kind) {
   return { attack: 'Attack', steal: 'Steal', pierce: 'Pierce' }[kind] || kind;
 }
 
-// One offensive option, with cost, damage, and a plain-English reason when it
-// can't be used right now.
-function itemRowHtml(store, item, treasury, target) {
+// One stockpiled item, with what the strike DOES (damage/steal amount), how
+// many the house is holding, and a plain-English reason when it can't be
+// used right now. Nothing here gates on points any more — if the house owns
+// it, it can throw it; the only blocker left is "no opponent chosen yet".
+function itemRowHtml(store, item, count, target) {
   const kind = item.effect.kind;
   const amount = item.effect.amount;
-  const short = treasury - item.cost;
-  const affordable = short >= 0;
-  const disabled = !affordable || !target;
+  const disabled = !target;
   const dmgText = kind === 'steal' ? `Steal ${amount} pts` : `−${amount} pts`;
 
   let reason = '';
-  if (!affordable) reason = `<div class="duel-item-reason">🔒 Needs ${Math.abs(short)} more points</div>`;
-  else if (!target) reason = `<div class="duel-item-reason">🎯 Choose an opponent first</div>`;
+  if (!target) reason = `<div class="duel-item-reason">🎯 Choose an opponent first</div>`;
 
   let note = '';
-  if (affordable && target) {
+  if (target) {
     if (kind === 'pierce' && (store.isShielded(target.id) || store.hasReduction(target.id))) {
       note = `<div class="duel-item-note duel-note-pierce">🫥 Ignores their defenses — full damage</div>`;
     } else if (store.isShielded(target.id)) {
@@ -663,36 +652,26 @@ function itemRowHtml(store, item, treasury, target) {
           <span class="duel-item-kind">${kindTag(kind)}</span>
         </span>
       </span>
-      <span class="duel-item-cost">${item.cost} pts</span>
+      ${count > 1 ? `<span class="duel-item-count">×${count}</span>` : ''}
     </button>
     ${reason}${note}
     </div>`;
 }
 
 function challengerSideHtml(store, challenger, target) {
-  const treasury = store.getTotal(challenger.id, 'term');
-  // Only what this house can actually strike with RIGHT NOW. The full catalogue
-  // lives one tap away behind the Magic Shop button in the header; repeating it
-  // here — mostly greyed out with "needs 35 more points" — filled the card with
-  // things that cannot be clicked and buried the ones that can. This mirrors
-  // the defender side, which lists real active defences rather than every
-  // shield that exists.
-  const all = offensiveItems(store);
-  const items = all.filter((it) => treasury >= it.cost);
-  const hidden = all.length - items.length;
+  // Battle Day spends from what the house already bought and stockpiled in
+  // the Magic Shop — not from the catalogue, and not from the treasury.
+  // Anything malformed (an item deleted from the shop since it was bought)
+  // is dropped by store.getInventory rather than rendered broken; the
+  // OFFENSIVE_KINDS check is a second belt-and-suspenders filter here.
+  const inventory = store.getInventory(challenger.id)
+    .filter((row) => row.item && row.item.effect && OFFENSIVE_KINDS.has(row.item.effect.kind));
 
   let list;
-  if (!all.length) {
-    list = `<div class="duel-empty">No offensive items in the Magic Shop yet — add some in Admin.</div>`;
-  } else if (!items.length) {
-    // Same shape as the defender's "Undefended" line: state the situation and
-    // what would change it.
-    const cheapest = Math.min(...all.map((i) => i.cost));
-    list = `<div class="duel-empty duel-empty-broke">💰 Nothing affordable yet — the cheapest strike costs
-      <b>${cheapest} pts</b>, and ${esc(challenger.name)} has <b>${treasury}</b>.</div>`;
+  if (!inventory.length) {
+    list = `<div class="duel-empty">No attack items yet. Buy some in the Magic Shop and they'll wait here until Battle Day.</div>`;
   } else {
-    list = items.map((it) => itemRowHtml(store, it, treasury, target)).join('')
-      + (hidden ? `<div class="duel-items-more">${hidden} more in the Magic Shop, once ${esc(challenger.name)} can afford ${hidden === 1 ? 'it' : 'them'}.</div>` : '');
+    list = inventory.map(({ item, count }) => itemRowHtml(store, item, count, target)).join('');
   }
 
   return `
@@ -1008,19 +987,23 @@ async function strike(itemId) {
   const audio = ctxRef.audio;
   const challenger = challengerHouse();
   const target = targetId != null ? store.HOUSES[targetId] : null;
-  const item = offensiveItems(store).find((i) => i.id === itemId);
+  // The item was bought (and its cost paid) in the Magic Shop, possibly days
+  // ago — look it up in what the house is actually holding, not the catalogue.
+  const invRow = challenger ? store.getInventory(challenger.id).find((row) => row.item.id === itemId) : null;
+  const item = invRow ? invRow.item : null;
   if (!item || !challenger || !target) return;
 
   const kind = item.effect.kind;
   const amount = item.effect.amount;
   const pierce = kind === 'pierce';
 
-  // Gate the payout, not the ceremony: choosing the item is free, but nothing
-  // is spent or struck until the teacher approves. `resolving` doubles as the
-  // in-flight guard here — set true before the await so a double-tap on this
-  // or any other item/teacher-scoring button is blocked exactly like it is
-  // during the real mutation below, and it also suspends the store-subscribe
-  // re-render while the pad is up (no optimistic UI change on a refusal).
+  // Gate the strike, not the ceremony: choosing the item is free, but nothing
+  // is consumed or struck until the teacher approves. `resolving` doubles as
+  // the in-flight guard here — set true before the await so a double-tap on
+  // this or any other item/teacher-scoring button is blocked exactly like it
+  // is during the real mutation below, and it also suspends the
+  // store-subscribe re-render while the pad is up (no optimistic UI change on
+  // a refusal).
   resolving = true;
   const ok = await lock.requireUnlock('use this item');
   if (!rootEl) { resolving = false; return; }   // unmounted while the pad was open
@@ -1030,15 +1013,20 @@ async function strike(itemId) {
   const beforeTarget = store.getTotal(target.id, 'term');
 
   // Suspend re-renders so the whole resolution lands in ONE redraw — otherwise
-  // purchase(), applyAttack() and the steal payout each rebuild the DOM and
-  // every fx node we spawn is attached to a soon-to-be-detached element.
-  // (resolving is already true from the gate above; kept true straight through.)
+  // consumeFromInventory(), applyAttack() and the steal payout each rebuild
+  // the DOM and every fx node we spawn is attached to a soon-to-be-detached
+  // element. (resolving is already true from the gate above; kept true
+  // straight through.)
   let result;
   try {
-    if (!store.purchase(challenger.id, item.cost, item.name)) {
+    // Take it out of the stockpile first. This can only fail if someone
+    // double-tapped past the `resolving` guard or the last copy was already
+    // struck elsewhere — either way, bail with no damage, no animation, and
+    // no half-applied state. Nothing below this line runs.
+    if (!store.consumeFromInventory(challenger.id, itemId)) {
       resolving = false;
       renderDuel();
-      toast(`Not enough points — ${item.name} costs ${item.cost}`);
+      toast(`${item.name} is already gone — nothing struck`);
       return;
     }
     result = store.applyAttack({ fromId: challenger.id, toId: target.id, amount, pierce, label: item.name });
@@ -1054,16 +1042,19 @@ async function strike(itemId) {
 
   const afterChallenger = store.getTotal(challenger.id, 'term');
   const afterTarget = store.getTotal(target.id, 'term');
-  const paidChallenger = beforeChallenger - item.cost;
 
-  // Challenger pays up front — visible immediately.
-  animatePoints('challenger', beforeChallenger, paidChallenger, 300);
-  // Defender's total holds until the strike actually lands.
+  // Nothing is paid here any more — the attacker's total only ever moves if
+  // this turns out to be a steal that actually loots points, and that reveal
+  // waits for the hit to land (see landHit). Hold both totals at their
+  // pre-strike values until then instead of animating a deduction that never
+  // happened.
+  const chalEl = rootEl.querySelector('[data-points="challenger"]');
+  if (chalEl) chalEl.textContent = String(beforeChallenger);
   const defEl = rootEl.querySelector('[data-points="defender"]');
   if (defEl) defEl.textContent = String(beforeTarget);
 
   playStrike({ item, kind, amount, result, challenger, target,
-    paidChallenger, afterChallenger, beforeTarget, afterTarget });
+    beforeChallenger, afterChallenger, beforeTarget, afterTarget });
   if (audio) audio.sfx('coin');
 }
 
@@ -1097,10 +1088,10 @@ function playStrike(o) {
       }
       audio.sfx('sword');
       outcomeCard('blocked', '🛡️ BLOCKED',
-        `${esc(o.target.name)} loses <b>no points</b>. ${esc(o.challenger.name)} still paid ${o.item.cost} pts.`,
+        `${esc(o.target.name)} loses <b>no points</b>.`,
         `0 damage`);
-      // totals: only the challenger's spend moved
-      animatePoints('challenger', o.paidChallenger, o.afterChallenger, COUNT_MS);
+      // Nothing changed hands — the item is spent from the stockpile either
+      // way, but no points moved, so there is nothing to animate.
       return;
     }
 
@@ -1145,7 +1136,10 @@ function landHit(o, crest, reduced, tint = 'red') {
   // Damage number is text feedback — always shown (static under reduced motion).
   spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${o.result.applied}`);
   animatePoints('defender', o.beforeTarget, o.afterTarget, COUNT_MS);
-  animatePoints('challenger', o.paidChallenger, o.afterChallenger, COUNT_MS);
+  // Honest animation: for attack/pierce, before === after and this just
+  // redraws the same number. Only a steal actually moves the attacker's
+  // total, and this is where that gain reveals itself.
+  animatePoints('challenger', o.beforeChallenger, o.afterChallenger, COUNT_MS);
 }
 
 // =============================================================================
