@@ -140,10 +140,22 @@ const HP_POINTS_PER_STEP = 50000;
 // Mr. D's items, transcribed from his own document. `counters` is the whole
 // game: an attack landing on a house holding the listed defense does NOTHING.
 // Damage is expressed as dice because he rolls it live on the board.
+//
+// THREE PRICES DIFFER FROM HIS DOCUMENT, and the reason is in the simulation:
+// what matters in a league table is the GAP an attack opens, not whether the
+// attacker ends up richer. Spending 600 to remove 700 from a rival moves the gap
+// 100 your way even though you are poorer. On that measure the Catapult (+1100),
+// the Net (+450) and the Cloak (+125) already earn their keep, but three items
+// cost more than they move:
+//   Sword of Destiny  600 -> 450   (was -75 a week)
+//   Staff of Ra      1000 -> 700   (was -212)
+//   Warhorse         1000 -> 700   (was -212)
+// His originals are in the comments beside each, and every price is editable in
+// Admin, so putting them back is a two-second job if he prefers his own.
 function defaultDuelCatalog() {
   return [
     // ---- attacks ----
-    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: '', cost: 600,  slot: 'attack',
+    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: '', cost: 450,  slot: 'attack',   // his doc: 600
       effect: { kind: 'damage', dice: '2d6', mult: 100 }, counteredBy: ['shield'],
       desc: 'Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.' },
     { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: '', cost: 600,  slot: 'attack',
@@ -158,10 +170,10 @@ function defaultDuelCatalog() {
     { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: '', cost: 1000, slot: 'attack',
       effect: { kind: 'damage', dice: '3d6', mult: 100, targets: 2 }, counteredBy: [],
       desc: 'Hit TWO Houses for 3d6 × 100 points each. Nothing defends against it.' },
-    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: '', cost: 1000, slot: 'attack',
+    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: '', cost: 700, slot: 'attack',   // his doc: 1000
       effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['eye'],
       desc: 'A blast of concentrated sunlight for 3d6 × 100 points. The Eye of Horus stops it.' },
-    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: '', cost: 1000, slot: 'attack',
+    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: '', cost: 700, slot: 'attack',   // his doc: 1000
       effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['bow'],
       desc: 'A charging warhorse for 3d6 × 100 points. The Bow of Seeking brings it down.' },
 
@@ -396,6 +408,10 @@ function defaultState() {
     },
     // houseId -> { itemId: count }. What each house has bought and not yet used.
     inventory: {},
+    // houseId -> epoch ms until which the house cannot earn points (Legendary
+    // Ice Axe). An expiry beats a countdown: nothing has to tick, and it is
+    // still correct after the laptop has been shut for the weekend.
+    frozen: {},
     // houseId -> DAMAGE TAKEN, not current HP. Refilled (cleared) at the start
     // of each Battle Day. Storing "current" looked right until a house won a
     // battle: the prize pushed it over a 500-point boundary, its maximum rose,
@@ -756,6 +772,10 @@ function load() {
       // Drop expired shields so they can't be revived by an old backup.
       for (const [id, exp] of Object.entries(merged.shields)) {
         if (!(Number(exp) > Date.now())) delete merged.shields[id];
+      }
+      merged.frozen = merged.frozen && typeof merged.frozen === 'object' ? merged.frozen : {};
+      for (const [id, until] of Object.entries(merged.frozen)) {
+        if (!(Number(until) > Date.now())) delete merged.frozen[id];
       }
       merged.potwBounties = merged.potwBounties && typeof merged.potwBounties === 'object' ? merged.potwBounties : {};
       // This list is what the Admin dropdown actually offers, and it is SAVED
@@ -1370,6 +1390,135 @@ export const store = {
     state.hp = {};
     emit();
     return next;
+  },
+
+  // ----- Mr. D's duel rules ---------------------------------------------------
+  // Holdings ARE the inventory: a house buys an item and holds it until it is
+  // used. The weekly limit is therefore a cap on what may be HELD, not a
+  // separate booking system — which is also how he describes it, and means the
+  // Magic Shop needs no new concept to enforce it.
+  duelSlotLimits(houseId) {
+    const hasBag = store.countOwned(houseId, 'bagofholding') > 0;
+    return hasBag ? { attack: 2, defense: 2 } : { attack: 1, defense: 1 };
+  },
+
+  duelHeld(houseId, slot) {
+    const cat = state.shop.catalog;
+    return store.getInventory(houseId)
+      .filter(({ item }) => (cat.find((c) => c.id === item.id) || item).slot === slot)
+      .reduce((n, { count }) => n + count, 0);
+  },
+
+  // Why a purchase is refused, in words the teacher can read out.
+  duelCanBuy(houseId, itemId) {
+    const item = state.shop.catalog.find((i) => i.id === itemId);
+    if (!item) return { ok: false, reason: 'That item is not in the shop.' };
+    const slot = item.slot || 'utility';
+    if (slot === 'utility') return { ok: true, reason: '' };
+    const limit = store.duelSlotLimits(houseId)[slot];
+    const held = store.duelHeld(houseId, slot);
+    if (held >= limit) {
+      return { ok: false, reason: limit === 1
+        ? `Only one ${slot} item a week — use or drop the one they already hold. The Bag of Holding raises this to two.`
+        : `That is both ${slot} slots used for the week.` };
+    }
+    return { ok: true, reason: '' };
+  },
+
+  // "2d6" -> { n: 2, sides: 6 }. Anything unparseable falls back to one d6 so a
+  // mistyped item can never throw in front of a class.
+  parseDice(spec) {
+    const m = /^\s*(\d+)\s*d\s*(\d+)\s*$/i.exec(String(spec || ''));
+    return m ? { n: Math.max(1, +m[1]), sides: Math.max(2, +m[2]) } : { n: 1, sides: 6 };
+  },
+
+  // What WOULD happen, without touching anything. The screen shows this before
+  // any dice are rolled, so the class can see the counter land (or not) first.
+  previewDuelAttack(attackerId, targetId, itemId) {
+    const cat = state.shop.catalog;
+    const item = cat.find((i) => i.id === itemId);
+    if (!item) return { ok: false, reason: 'Unknown item.' };
+    if (Number(attackerId) === Number(targetId)) return { ok: false, reason: 'A house cannot attack itself.' };
+    if (store.isFrozen(attackerId)) {
+      return { ok: false, reason: `${HOUSES[attackerId]?.name || 'That house'} is frozen and cannot attack.` };
+    }
+    // The defender's held defense — hidden until this moment, by design.
+    const defense = store.getInventory(targetId)
+      .map(({ item: it }) => cat.find((c) => c.id === it.id) || it)
+      .find((it) => (it.slot === 'defense') && Array.isArray(it.blocks) && it.blocks.includes(item.id));
+    const anyDefense = store.getInventory(targetId)
+      .map(({ item: it }) => cat.find((c) => c.id === it.id) || it)
+      .find((it) => it.slot === 'defense');
+    return {
+      ok: true, item,
+      defenseHeld: anyDefense || null,
+      blocked: !!defense,
+      blockedBy: defense || null,
+      dice: item.effect?.dice || null,
+      mult: item.effect?.mult || 1,
+      targets: item.effect?.targets || 1,
+      steals: item.effect?.kind === 'steal',
+      freezes: item.effect?.kind === 'freeze',
+    };
+  },
+
+  // Applies a result the teacher has already SEEN on the dice. The roll is not
+  // done here on purpose: the tray on screen is the real roll, and the number
+  // the class watched land is the number that must be applied.
+  applyDuelAttack({ attackerId, targetId, itemId, rolled }) {
+    const pv = store.previewDuelAttack(attackerId, targetId, itemId);
+    if (!pv.ok) return pv;
+    const item = pv.item;
+    const attacker = HOUSES[attackerId], target = HOUSES[targetId];
+    const out = { ok: true, blocked: pv.blocked, item, damage: 0, stolen: 0, frozenDays: 0 };
+
+    // The attack is spent either way — that is what makes a correct guess hurt.
+    store.consumeFromInventory(attackerId, itemId);
+    if (pv.blocked) {
+      store.consumeFromInventory(targetId, pv.blockedBy.id);
+      out.blockedBy = pv.blockedBy;
+      emit();
+      return out;
+    }
+
+    if (pv.freezes) {
+      const days = Math.max(1, Math.round(Number(rolled) || 1));
+      store.freezeHouse(targetId, days);
+      out.frozenDays = days;
+      emit();
+      return out;
+    }
+
+    const total = Math.max(0, Math.round(Number(rolled) || 0)) * (item.effect?.mult || 1);
+    out.damage = total;
+    store.addPoints(targetId, -total, {
+      reason: `${item.name}${item.effect?.anonymous ? '' : ` from ${attacker?.name || 'a house'}`}`,
+      tag: 'attack',
+    });
+    if (pv.steals) {
+      out.stolen = total;
+      store.addPoints(attackerId, total, { reason: `${item.name} on ${target?.name || 'a house'}`, tag: 'attack' });
+    }
+    emit();
+    return out;
+  },
+
+  // ----- freeze (Legendary Ice Axe) -------------------------------------------
+  // Stored as an expiry DATE rather than a countdown, so it survives reloads and
+  // does not need anything ticking. Whole school days, per his rules.
+  freezeHouse(houseId, days) {
+    if (!state.frozen || typeof state.frozen !== 'object') state.frozen = {};
+    const until = new Date();
+    until.setHours(0, 0, 0, 0);
+    until.setDate(until.getDate() + Math.max(1, Math.round(days)));
+    state.frozen[houseId] = until.getTime();
+    emit();
+  },
+  isFrozen(houseId) { return (((state.frozen || {})[houseId]) || 0) > Date.now(); },
+  frozenUntil(houseId) { return ((state.frozen || {})[houseId]) || 0; },
+  thawHouse(houseId) {
+    if (state.frozen && state.frozen[houseId]) { delete state.frozen[houseId]; emit(); return true; }
+    return false;
   },
 
   getShopItems() {
