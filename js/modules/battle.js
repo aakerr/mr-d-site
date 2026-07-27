@@ -288,15 +288,15 @@ function injectStyles() {
     align-items:center;justify-content:center;gap:.1rem;}
   .duel-identity{flex:1 1 0;min-width:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:.2rem;}
-  .duel-points-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  .duel-points-lbl{flex:0 0 auto;font-size:clamp(.72rem,1.1vw,.95rem);font-weight:700;letter-spacing:.16em;text-transform:uppercase;
     color:#9ca3af;text-align:center;}
   .duel-points-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
     font-variant-numeric:tabular-nums;line-height:1;
-    font-size:clamp(1.7rem,3.6vw,2.8rem);text-shadow:0 0 26px rgba(253,230,138,.35);}
+    font-size:clamp(2.4rem,4.6vw,4.2rem);text-shadow:0 0 26px rgba(253,230,138,.35);}
   /* Hit points sit BELOW points on the same card, same visual treatment, but
      tinted to the house's own accent colour rather than the shared gold — HP
      is what a strike removes, so it reads as "this house's own meter". */
-  .duel-hp-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  .duel-hp-lbl{flex:0 0 auto;font-size:clamp(.72rem,1.1vw,.95rem);font-weight:700;letter-spacing:.16em;text-transform:uppercase;
     color:#9ca3af;text-align:center;margin-top:.1rem;}
   /* Wrapper exists so the bar below can be exactly as wide as the number
      above it: the wrapper has no width of its own, so it shrinks to the
@@ -306,7 +306,7 @@ function injectStyles() {
   .duel-hp-wrap{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;}
   .duel-hp-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;
     font-variant-numeric:tabular-nums;line-height:1;text-align:center;white-space:nowrap;
-    font-size:clamp(1.1rem,2.2vw,1.6rem);text-shadow:0 0 18px currentColor;}
+    font-size:clamp(2rem,3.8vw,3.4rem);text-shadow:0 0 18px currentColor;}
   .duel-hp-bar{flex:0 0 auto;width:100%;height:7px;border-radius:999px;
     background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);overflow:hidden;margin:.25rem 0 .1rem;}
   .duel-hp-fill{height:100%;border-radius:999px;transition:width .45s ease;}
@@ -327,12 +327,12 @@ function injectStyles() {
      roughly their original size on a 720p window and lets them grow properly on
      a 1080p board (79px -> 108px, and 119px -> 162px). The strike list is the
      element allowed to scroll, so it is the one that gives. */
-  .duel-crest{position:relative;flex:0 0 auto;height:clamp(72px,15vh,220px);
+  .duel-crest{position:relative;flex:0 0 auto;height:clamp(115px,22vh,320px);
     aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
     filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}
   .duel-name{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;text-align:center;line-height:1.1;
-    font-size:clamp(1.05rem,2vw,1.5rem);color:var(--side-accent,#f9fafb);}
+    font-size:clamp(1.45rem,2.7vw,2.3rem);color:var(--side-accent,#f9fafb);}
   .duel-section-lbl{flex:0 0 auto;width:100%;text-align:center;font-size:.7rem;font-weight:800;letter-spacing:.16em;
     text-transform:uppercase;color:#9ca3af;border-top:1px solid #374151;padding-top:.5rem;margin-top:.15rem;}
   .duel-swap-btn{flex:0 0 auto;min-height:36px;padding:0 .8rem;border-radius:.7rem;background:transparent;
