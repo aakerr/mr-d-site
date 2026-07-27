@@ -34,8 +34,14 @@ js/integrations/classroom.js   — Google Classroom scaffold, UNWIRED (see below
 data/schema.json       — JSON Schema for persisted state. STALE as of this doc: it
                           predates settings.lock, settings.moduleThemes,
                           settings.ambient, the quest catalog's type/icon/penalty
-                          fields, and shop.seeded. Treat store.js as the source of
-                          truth, not this file.
+                          fields, shop.seeded, state.hp (per-house Battle Day
+                          damage taken), state.inventory (per-house armoury of
+                          bought-but-unthrown weapons), settings.combat (prize
+                          rule, punching-down, hpBase/hpPer500 — see
+                          defaultCombat() in store.js), the shop catalog's
+                          pierce/reduce/wild effect.kind values, and the
+                          attack/battle transaction tags. Treat store.js as the
+                          source of truth, not this file.
 images/{camelot,atlantis,valhalla,rivendell}-shield.png   — house crests
 images/header-{camelot,atlantis,valhalla,rivendell}.jpg   — house hero banners
 images/class-shield.png                                    — class crest (topbar brand)
@@ -90,8 +96,9 @@ while remaining fully addressable via `registry.navigate(id)`.
 - `store.getActiveHouse()` → house object for active core, or null when 'all'
 - `store.addPoints(houseId, delta, { reason, tag })` — delta clamped to ±9999,
   logs a timestamped transaction. THE ONLY WAY to change points (except
-  `awardAll`, `purchase`, and `applyAttack`, which all funnel through the same
-  transaction log).
+  `awardAll`, `purchase`, `applyAttack`, and `awardBattleWin`, which all funnel
+  through the same transaction log). `awardBattleWin` is now the primary
+  point-mover for Battle Day — see the combat API below.
 - `store.awardAll(delta, { reason, tag })` — applies `delta` to every house at once.
 - `store.getTotal(houseId, scope)` / `store.getTotals(scope)` — scope `'term'`
   (default, all-time) or `'week'` (current Monday-anchored week).
@@ -115,7 +122,72 @@ while remaining fully addressable via `registry.navigate(id)`.
   `reductionRemainingMs` / `clearReduction` — partial "damage reduction" effect
   (distinct from a full shield).
 - `store.applyAttack({ fromId, toId, amount, pierce, label })` — central combat
-  resolver; applies shield/reduction/pierce rules and logs the result.
+  resolver; applies shield/reduction/pierce rules and logs the result **against
+  points**. Still correct and still used, but now ONLY by the teacher's manual
+  scoring row on Battle Day — shop purchases and duel strikes route through the
+  HP-based combat API below instead.
+
+#### Battle Day combat API (hit points, armoury, prizes)
+Separate from the points system above. **Hit points (HP)** are a Battle-Day-only
+meter that a strike removes; **points** only move once a house's HP reaches
+zero, and only the winner's total moves — the loser's points are never
+touched. See "Non-obvious traps" below for why `state.hp` stores *damage
+taken* rather than current HP.
+- `store.getHp(houseId)` → current HP, computed as `getMaxHp(houseId) -
+  damage taken`, floored at 0. Never read `state.hp` directly — it holds
+  damage, not HP.
+- `store.getMaxHp(houseId)` → `hpBase + hpPer500 * floor(termPoints / 500)`
+  (from `getCombat()`), so a house sitting on more points is harder to knock
+  out.
+- `store.damageHp(houseId, amount)` → applies damage (never below 0 HP),
+  returns `{ before, after, defeated }`. Called from `battle.js`'s
+  `resolveHpAttack`, which reproduces `applyAttack`'s shield → reduction →
+  pierce order but resolves against HP instead of points.
+- `store.resetAllHp()` → clears `state.hp` for every house — a full heal.
+  Called once, when the Battle Day cinematic ignites, before the duel screen
+  ever renders, so nobody starts a session already wounded from an earlier
+  fight.
+- `store.getInventory(houseId)` → `[{ item, count }]`, the house's armoury —
+  offensive items (`attack`/`steal`/`pierce`) bought in the Magic Shop but not
+  yet thrown — sorted by cost, live catalog item attached, any item since
+  deleted from the shop silently dropped rather than rendered broken.
+- `store.countOwned(houseId, itemId)` / `store.addToInventory(houseId,
+  itemId, n=1)` / `store.consumeFromInventory(houseId, itemId)` — armoury
+  read/write. `consumeFromInventory` returns `false` and mutates nothing if
+  the house doesn't actually hold one, so a double-tapped strike button can't
+  spend a weapon that isn't there.
+- `store.isStockpiled(item)` → whether `item.effect.kind` is in
+  `STOCKPILE_KINDS` (`Set(['attack', 'steal', 'pierce'])`) — i.e. whether
+  buying it banks it in the armoury instead of firing immediately. Shields
+  and damage-reduction items are deliberately NOT stockpiled (their timed
+  protection starts the moment they're bought); wildcards resolve at purchase
+  too, because the gamble IS the purchase.
+- `store.canAttack(attackerId, defenderId)` → `{ ok, reason }` — enforces the
+  "punching down" setting: off by default, a house may only attack one
+  currently holding *more* points than itself.
+- `store.previewPrize(attackerId, defenderId)` → what the attacker would win
+  in points if the defender's HP hit zero right now, under whichever
+  `PRIZE_RULES` rule is active. Never negative; never touches the defender.
+- `store.awardBattleWin(winnerId, loserId)` → credits the winner
+  `previewPrize`'s result via `addPoints` (tag `'battle'`) and returns what
+  was **actually** credited post-`MAX_DELTA`-clamp — not the raw calculated
+  prize. Callers must not just re-display `previewPrize`'s number after
+  calling this; a prize could theoretically be clamped down. The loser's
+  points are never touched.
+- `store.getCombat()` / `store.updateCombat(patch)` — the Battle rules
+  settings (Admin → Settings → ⚔️ Battle rules): `{ prizeRule, gapShare,
+  prizePercent, prizeFlat, punchingDown, hpBase, hpPer500 }`. All clamping
+  (0–100 for the two percentages, 0–`MAX_DELTA` for `prizeFlat`, 1–10000 for
+  `hpBase`, 0–10000 for `hpPer500`) happens inside `updateCombat`, not in the
+  Admin form — every caller (Admin, backup restore, a future preset) shares
+  the same guarantee and must not re-clamp independently.
+- `store.PRIZE_RULES` → `{ gap, percent, flat }`, each `{ label, blurb }`, for
+  building the Admin rule picker (`gap` = half the point gap and the default;
+  `percent` = share of the loser's total, compounds hard, not the advised
+  choice; `flat` = fixed amount every win).
+- `store.STOCKPILE_KINDS` → the `Set(['attack', 'steal', 'pierce'])` used by
+  `isStockpiled`.
+
 - `store.getMythicRewards()` / `grantMythicItem(houseId, itemId)` — Nat-20 free
   item grants on the Die of Destiny.
 - `store.getTermInfo()` → `{ week, totalWeeks, label }` e.g. "Week 4 of 9-Week Term"
@@ -415,6 +487,22 @@ module's own colour win over the house colour. Out of the box that means:
    surfaces this explicitly per-category in its undo confirm dialog
    (`tagWarning()`) — if you add a new transaction `tag`, consider whether it
    needs its own warning there too.
+
+7. **`state.hp` stores damage taken, not current HP — this is deliberate, not
+   a bug waiting to be "fixed."** It looks backwards until you hit the exact
+   scenario it exists to prevent: a house's HP *ceiling* (`getMaxHp`) moves
+   with its points (`hpBase + hpPer500 * floor(termPoints / 500)`), and a
+   Battle Day win pays out in points. If `state.hp` stored "current HP"
+   directly, the moment a win pushed a house over a 500-point boundary, its
+   maximum would rise **and** its untouched "current" value would suddenly
+   read as, say, `120/130` — the house appears freshly wounded for having
+   just won a fight without taking a single hit. Storing *damage taken*
+   instead means a change in points moves the maximum and the current value
+   together, with no correction pass needed: `store.getHp(houseId)` always
+   derives current HP as `getMaxHp(houseId) - (state.hp[houseId] || 0)`,
+   floored at 0. If you touch `damageHp` / `getHp` / `resetAllHp`, keep them
+   working in terms of damage taken — never introduce a field that stores an
+   absolute "current HP" number, or this bug comes back.
 
 ## Houses (canonical — do not restyle)
 | Core | House | accent | image |

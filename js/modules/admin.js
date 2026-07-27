@@ -1011,31 +1011,31 @@ function confirmQuestFail(core) {
 // and the live preview, so the teacher reads the same words in both places.
 const EFFECTS = {
   attack: {
-    label: '⚔️ Attack', group: 'Offensive', amountLabel: 'Points deducted from target',
-    explain: 'Deducts points from a house you choose.',
-    does: 'The buyer picks a rival house and knocks points off their score.',
-    defense: 'A Shield stops it completely; a half-damage relic cuts it in half.',
-    example: 'Greek Fire: 45 pts to take 25 from a rival — but a Shield Wall stops it cold.',
-    range: 'Most attacks land between 10 and 40 points.',
-    sentence: (n) => `Takes ${n} points from a house you choose. Blocked by shields. Halved by a half-damage relic.`,
+    label: '⚔️ Attack', group: 'Offensive', amountLabel: 'HP removed by a strike on Battle Day',
+    explain: 'Buys a weapon. It does nothing right away — it goes into the buying house\'s armoury and waits for Battle Day.',
+    does: 'The cost buys the item and stores it in the buying house\'s armoury. No target is picked at purchase, and no house loses anything yet. On Battle Day, the house can spend it as a strike against whichever house it is fighting, and the strike removes hit points (HP) — never points — from that house.',
+    defense: 'On Battle Day, a Shield on the house being struck blocks the strike completely, so no HP is lost. A half-damage relic cuts the HP lost in half instead.',
+    example: 'Greek Fire: 45 pts to buy the weapon and bank it in the armoury. On Battle Day, a strike with it takes 25 HP off whichever house it fights — unless a Shield Wall stops it cold.',
+    range: 'Most attack weapons take 10 to 40 HP off the house they strike.',
+    sentence: (n) => `Stores this weapon in the buying house's armoury until Battle Day — no target is picked and no house loses anything at purchase. On Battle Day, the house can spend it as a strike that removes ${n} HP (never points) from whichever house it is fighting. A Shield on that house blocks the strike completely. A half-damage relic cuts the HP lost in half instead.`,
   },
   steal: {
-    label: '🐴 Steal', group: 'Offensive', amountLabel: 'Points stolen from leader',
-    explain: 'Takes points from the leading house and gives them to the buyer.',
-    does: 'Points come off whichever house is in first place and go to the buyer.',
-    defense: 'Still an attack — a Shield on the leader stops it; a half-damage relic halves it.',
-    example: 'Trojan Horse: 50 pts to move 25 points from the leader onto your own score.',
-    range: 'Most steals land between 10 and 30 points.',
-    sentence: (n) => `Takes ${n} points from whichever house is leading and gives them to the buyer. Blocked by shields. Halved by a half-damage relic.`,
+    label: '🐴 Steal', group: 'Offensive', amountLabel: 'HP removed by a strike, looted as points on Battle Day',
+    explain: 'Buys a weapon, just like an Attack. Its Battle Day strike also loots points for the attacking house.',
+    does: 'The cost buys the item and stores it in the buying house\'s armoury, same as an Attack — nothing happens at purchase. On Battle Day, when the house spends it as a strike, it removes hit points (HP) from the house it fights AND credits the attacking house points equal to whatever HP damage actually got through: the full amount if undefended, half if a relic reduced it, none if a Shield blocked it.',
+    defense: 'Still a strike — a Shield on the house being struck blocks it completely and the attacker loots nothing; a half-damage relic halves both the HP lost and the points looted.',
+    example: 'Trojan Horse: 50 pts to buy the weapon and bank it in the armoury. On Battle Day, a strike with it takes 25 HP off whichever house it fights and hands the attacking house 25 points of loot — less if a relic softened the blow, none if a Shield stopped it.',
+    range: 'Most steal weapons take 10 to 30 HP off the house they strike.',
+    sentence: (n) => `Stores this weapon in the buying house's armoury until Battle Day — no target is picked and no house loses anything at purchase. On Battle Day, a strike with it removes ${n} HP from whichever house it is fighting, and the attacking house gains points equal to the HP actually dealt (0 if blocked, half if a relic reduced it). A Shield on the defending house blocks the strike (and the loot) completely. A half-damage relic halves both.`,
   },
   pierce: {
-    label: '🫥 Pierce', group: 'Offensive', amountLabel: 'Points deducted (unblockable)',
-    explain: 'An attack that ignores shields AND damage reduction.',
-    does: 'Same as an attack, but no defense can stop or soften it.',
-    defense: 'Ignores BOTH shields and half-damage relics — it always lands in full.',
-    example: 'Invisibility Cloak: 60 pts to take 20 — it gets through even a Great Wall.',
-    range: 'Price these higher than a plain attack, since nothing can stop them.',
-    sentence: (n) => `Takes ${n} points from a house you choose. Cannot be blocked or reduced.`,
+    label: '🫥 Pierce', group: 'Offensive', amountLabel: 'HP removed by a strike (unblockable)',
+    explain: 'Buys a weapon, just like an Attack, but its Battle Day strike ignores shields AND damage reduction.',
+    does: 'Same as an Attack — the cost buys the item and stores it in the armoury, and nothing happens at purchase. On Battle Day, a strike with it removes hit points (HP) from the house it fights, and it always lands in full: no defense can stop or soften it.',
+    defense: 'Ignores BOTH shields and half-damage relics — on Battle Day the strike always removes the full HP amount no matter what the house it fights has equipped.',
+    example: 'Invisibility Cloak: 60 pts to buy the weapon. On Battle Day, a strike with it takes 20 HP off whichever house it fights — it gets through even a Great Wall shield.',
+    range: 'Price these higher than a plain attack weapon, since nothing can stop the strike.',
+    sentence: (n) => `Stores this weapon in the buying house's armoury until Battle Day — no target is picked and no house loses anything at purchase. On Battle Day, a strike with it removes ${n} HP (never points) from whichever house it is fighting, and always lands in full. Cannot be blocked by a Shield or softened by a half-damage relic.`,
   },
   shield: {
     label: '🛡️ Defend', group: 'Defensive', amountLabel: 'Protection duration (hours)',
@@ -1075,10 +1075,10 @@ function effectSummary(effect) {
   switch (effect.kind) {
     case 'shield': return `${e.label} · blocks all attacks for ${n}h`;
     case 'reduce': return `${e.label} · incoming damage halved for ${n}h`;
-    case 'steal':  return `${e.label} · takes ${n} from the leader`;
-    case 'pierce': return `${e.label} · −${n}, ignores shields & reduction`;
+    case 'steal':  return `${e.label} · ${n} HP strike on Battle Day, plus loot`;
+    case 'pierce': return `${e.label} · ${n} HP strike, ignores shields & reduction`;
     case 'wild':   return `${e.label} · random ±${n}`;
-    default:       return `${e.label} · −${n} to a house you choose`;
+    default:       return `${e.label} · ${n} HP strike on Battle Day`;
   }
 }
 
@@ -1166,31 +1166,35 @@ function shopGuideHTML() {
         <summary data-action="shop-guide-toggle">📖 How magic items work</summary>
 
         <div class="admin-guide-body">
-          <p class="admin-guide-p"><b>Attacks and Steals take points away.</b> An Attack hits a house the buyer picks; a Steal takes from whichever house is currently in the lead.</p>
-          <p class="admin-guide-p"><b>Shields stop them completely.</b> While a house has a Shield, attacks against it do nothing at all.</p>
-          <p class="admin-guide-p"><b>Half-damage relics cut them in half.</b> A 20-point hit becomes 10.</p>
-          <p class="admin-guide-p"><b>Pierce items go through BOTH.</b> Nothing stops a Pierce attack — that's why they cost more.</p>
+          <p class="admin-guide-p"><b>Attacks, Steals and Pierce items are weapons, not instant hits.</b> Buying one costs points right away, but nothing happens to any house yet — the item goes into the buying house's armoury and just sits there, kept in reserve until Battle Day.</p>
+          <p class="admin-guide-p"><b>On Battle Day, a house spends a weapon from its armoury as a strike</b> against whichever house it is fighting in that match. A strike removes HIT POINTS (HP), never points. Every house has its own HP total (a base amount plus a bonus for term points earned so far), and HP refills to full at the start of each Battle Day.</p>
+          <p class="admin-guide-p"><b>Shields stop a strike completely.</b> While a house has a Shield, a strike against it removes no HP at all.</p>
+          <p class="admin-guide-p"><b>Half-damage relics cut a strike in half.</b> A strike worth 20 HP becomes 10.</p>
+          <p class="admin-guide-p"><b>Pierce items go through BOTH.</b> Nothing stops a Pierce strike — that's why they cost more.</p>
+          <p class="admin-guide-p"><b>A Steal is an Attack that also loots.</b> Whatever HP a Steal strike actually gets through with — the full amount if undefended, half if reduced, none if blocked — is credited to the attacking house as points. The house being struck never loses points from this, only HP.</p>
+          <p class="admin-guide-p"><b>When a house's HP hits zero, the battle is over.</b> The winning house takes a prize in points; the losing house does not lose any points at all. The size of that prize is set below, under "⚔️ Battle rules".</p>
           <p class="admin-guide-p"><b>Wildcards can help or hurt</b> the house that buys them. It's a gamble, and defenses don't apply.</p>
           <p class="admin-guide-p"><b>Mythic relics can't be bought.</b> The only way to earn one is a natural 20 on the Die of Destiny.</p>
 
           <div class="admin-guide-callout">
-            ⚠️ <b>Defenses only apply to attacks</b> — shop items and Battle Day strikes. Points you give or take yourself, from the House Points screen or the ± button, are <b>never</b> blocked or halved.
+            ⚠️ <b>Shields and half-damage relics only apply to Battle Day strikes.</b> Points you give or take yourself, from the House Points screen or the ± button, are <b>never</b> blocked or halved — and neither are Wildcard swings.
           </div>
 
           <div class="admin-guide-tablewrap">
-            <div class="admin-guide-tabletitle">What actually lands</div>
+            <div class="admin-guide-tabletitle">What a Battle Day strike actually lands (in HP, not points)</div>
+            <p class="admin-guide-p" style="margin-top:0">This shows what happens when a house spends a stockpiled weapon as a strike on Battle Day — not what happens when the weapon is bought. Buying it only banks it in the armoury.</p>
             <table class="admin-matchup">
               <thead>
-                <tr><th>Incoming</th><th>No defense</th><th>Shield</th><th>Half-damage</th></tr>
+                <tr><th>Incoming strike</th><th>No defense</th><th>Shield</th><th>Half-damage</th></tr>
               </thead>
               <tbody>
                 <tr>
-                  <td class="admin-mu-row">Plain attack of 20</td>
-                  <td><b>20</b></td><td class="admin-mu-block">blocked</td><td><b>10</b></td>
+                  <td class="admin-mu-row">Plain attack strike of 20 HP</td>
+                  <td><b>−20 HP</b></td><td class="admin-mu-block">blocked</td><td><b>−10 HP</b></td>
                 </tr>
                 <tr>
-                  <td class="admin-mu-row">Pierce attack of 20</td>
-                  <td><b>20</b></td><td><b>20</b></td><td><b>20</b></td>
+                  <td class="admin-mu-row">Pierce strike of 20 HP</td>
+                  <td><b>−20 HP</b></td><td><b>−20 HP</b></td><td><b>−20 HP</b></td>
                 </tr>
               </tbody>
             </table>
@@ -1286,7 +1290,7 @@ function renderShopModal() {
         <input id="admin-shop-name" class="admin-input" type="text" value="${esc(f.name)}" placeholder="Trojan Horse" />
 
         <label class="admin-flabel" for="admin-shop-desc">Description <span class="admin-faint">(shown to students)</span></label>
-        <textarea id="admin-shop-desc" class="admin-input admin-textarea" rows="2" placeholder="Flavor + what it does, e.g. “Steal 25 points from the leading house.”">${esc(f.desc)}</textarea>
+        <textarea id="admin-shop-desc" class="admin-input admin-textarea" rows="2" placeholder="Flavor + what it does, e.g. “A weapon for Battle Day — strikes for 25 HP and loots whatever gets through.”">${esc(f.desc)}</textarea>
 
         <div class="admin-two">
           <div>

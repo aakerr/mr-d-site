@@ -83,6 +83,51 @@ const SFX_SLOTS = {
 // on purchase because the gamble IS the purchase.
 const STOCKPILE_KINDS = new Set(['attack', 'steal', 'pierce']);
 
+// Hard ceiling on any single points transaction. A guard against a mistyped
+// award (a stray zero on a 50 becomes 500,000), not a game rule — no legitimate
+// classroom award comes near it. Prize settings are clamped to it too, so the
+// app can never promise a prize larger than it is able to pay.
+const MAX_DELTA = 9999;
+
+// Bump when a shipped shop description needs to reach browsers that have
+// already saved their own copy of the catalog. See the migration in load().
+const SHOP_DESC_REV = 3;
+
+// Every description these items have EVER shipped with, recovered from git
+// history (two of them shipped under more than one wording). A saved
+// description matching any of these was written by the app, not the teacher,
+// so it is safe to replace. Anything else is the teacher's own words and is
+// left alone. All of these describe the retired points-damage model.
+const OLD_SHOP_DESCS = {
+  catapult: [
+    'Deduct 20 pts from a target house.',
+    'Roman siege engines hurl stones over the walls. Deduct 20 pts from a house you choose.',
+  ],
+  greekfire: ['The Byzantine secret weapon that burned on water. Deduct 25 pts from a house you choose.'],
+  elephants: ['Over the Alps and into Roman territory. Deduct 30 pts from a house you choose.'],
+  heatray:   ['Mirrors focus the sun on enemy ships at Syracuse. Deduct 35 pts from a house you choose.'],
+  trojan: [
+    'Steal 25 pts from the leading house.',
+    'A gift hiding an army. Steal 25 pts from whichever house is leading.',
+  ],
+  cloak:   ['Strike unseen — ignores shields AND damage reduction. Deduct 20 pts.'],
+  fogbank: ['Advance under cover — ignores shields AND damage reduction. Deduct 25 pts.'],
+};
+
+// Rev 2 was a same-day internal iteration: the wording was right but ran to
+// four lines, and the shop card clamps at three, so students saw it cut off
+// mid-sentence. Listed here only so a browser that saved it still gets the
+// shorter rev-3 text instead of keeping a truncated description for ever.
+Object.assign(OLD_SHOP_DESCS, {
+  catapult:  OLD_SHOP_DESCS.catapult.concat('Roman siege engines hurl stones over the walls. Waits in your armoury until Battle Day, then takes 20 HP off a house you choose. A shield stops it; damage reduction halves it.'),
+  greekfire: OLD_SHOP_DESCS.greekfire.concat('The Byzantine secret weapon that burned on water. Waits in your armoury until Battle Day, then takes 25 HP off a house you choose. A shield stops it; damage reduction halves it.'),
+  elephants: OLD_SHOP_DESCS.elephants.concat('Over the Alps and into Roman territory. Waits in your armoury until Battle Day, then takes 30 HP off a house you choose. A shield stops it; damage reduction halves it.'),
+  heatray:   OLD_SHOP_DESCS.heatray.concat('Mirrors focus the sun on enemy ships at Syracuse. Waits in your armoury until Battle Day, then takes 35 HP off a house you choose. A shield stops it; damage reduction halves it.'),
+  trojan:    OLD_SHOP_DESCS.trojan.concat('A gift hiding an army. Waits in your armoury until Battle Day, then takes 25 HP off the leading house — and you gain points equal to the damage you actually land.'),
+  cloak:     OLD_SHOP_DESCS.cloak.concat('Strike unseen. Waits in your armoury until Battle Day, then takes 20 HP off a house you choose — ignoring shields AND damage reduction. Always lands in full.'),
+  fogbank:   OLD_SHOP_DESCS.fogbank.concat('Advance under cover. Waits in your armoury until Battle Day, then takes 25 HP off a house you choose — ignoring shields AND damage reduction. Always lands in full.'),
+});
+
 // ---- Battle Day combat ------------------------------------------------------
 // Hit points are SEPARATE from house points. Points are the currency (and the
 // scoreboard); HP is what a strike removes. A house is beaten when its HP hits
@@ -200,24 +245,37 @@ function defaultState() {
     },
     shop: {
       // Magic Shop items, teacher-editable in Admin.
+      //
+      // The three offensive kinds are STOCKPILED (see STOCKPILE_KINDS): buying
+      // one pays the cost and banks the weapon in the house's armoury. It is
+      // not fired at anyone until the house spends it on Battle Day, where it
+      // removes HIT POINTS — never points. Descriptions below must say so;
+      // "deduct N pts" was the old model and is a lie to a student reading it.
+      //
       // effect.kind:
-      //   'attack'  — deduct amount from a chosen house
-      //   'steal'   — take amount from the leading house
+      //   'attack'  — Battle Day strike: removes `amount` HP from a chosen house
+      //   'steal'   — as 'attack', and credits the attacker points equal to the
+      //               HP actually dealt (0 if blocked, halved if reduced)
+      //   'pierce'  — as 'attack', but ignores shields AND reductions
       //   'shield'  — block incoming attacks for `amount` hours
       //   'reduce'  — halve incoming damage for `amount` hours (Mythic rewards)
-      //   'pierce'  — attack for `amount` that ignores shields AND reductions
-      //   'wild'    — random swing of ±amount, resolved at purchase
+      //   'wild'    — random swing of ±amount in POINTS, resolved at purchase
+      //               (never stockpiled — the gamble IS the purchase)
       // mythicOnly items can't be bought; a Nat 20 grants them.
       catalog: [
         // ---- Offensive ----
-        { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 35, desc: 'Roman siege engines hurl stones over the walls. Deduct 20 pts from a house you choose.', effect: { kind: 'attack', amount: 20 } },
-        { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 45, desc: 'The Byzantine secret weapon that burned on water. Deduct 25 pts from a house you choose.', effect: { kind: 'attack', amount: 25 } },
-        { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 55, desc: 'Over the Alps and into Roman territory. Deduct 30 pts from a house you choose.', effect: { kind: 'attack', amount: 30 } },
-        { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 65, desc: 'Mirrors focus the sun on enemy ships at Syracuse. Deduct 35 pts from a house you choose.', effect: { kind: 'attack', amount: 35 } },
-        { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 50, desc: 'A gift hiding an army. Steal 25 pts from whichever house is leading.', effect: { kind: 'steal', amount: 25 } },
+        // Descriptions are clamped to THREE lines on the shop card (~120 chars
+        // at the card's width). Longer text is silently cut off mid-sentence,
+        // which is worse than saying less — the shield/halving rules live in
+        // Help and in Admin's matchup table, where they are not truncated.
+        { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 35, desc: 'Roman siege engines hurl stones. Waits in your armoury for Battle Day, then takes 20 HP off a house you choose.', effect: { kind: 'attack', amount: 20 } },
+        { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 45, desc: 'The Byzantine secret that burned on water. Waits in your armoury for Battle Day, then takes 25 HP off a house you pick.', effect: { kind: 'attack', amount: 25 } },
+        { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 55, desc: 'Over the Alps into Roman territory. Waits in your armoury for Battle Day, then takes 30 HP off a house you choose.', effect: { kind: 'attack', amount: 30 } },
+        { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 65, desc: 'Mirrors burn ships at Syracuse. Waits in your armoury for Battle Day, then takes 35 HP off a house you choose.', effect: { kind: 'attack', amount: 35 } },
+        { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 50, desc: 'A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.', effect: { kind: 'steal', amount: 25 } },
         // ---- Offensive: pierce (ignores defenses) ----
-        { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 60, desc: 'Strike unseen — ignores shields AND damage reduction. Deduct 20 pts.', effect: { kind: 'pierce', amount: 20 } },
-        { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 70, desc: 'Advance under cover — ignores shields AND damage reduction. Deduct 25 pts.', effect: { kind: 'pierce', amount: 25 } },
+        { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 60, desc: 'Strike unseen. Waits in your armoury for Battle Day, then takes 20 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 20 } },
+        { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 70, desc: 'Advance under cover. Waits for Battle Day, then takes 25 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 25 } },
         // ---- Defensive ----
         { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 25, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
         { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 30, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
@@ -446,6 +504,30 @@ function load() {
           merged.shop.seeded.push(item.id);
         }
       }
+      // The shop catalog is SAVED STATE, not source. Editing a description in
+      // this file therefore does NOT reach a browser that has already saved —
+      // it keeps its own copy for ever. When Battle Day moved from points to
+      // hit points, every shipped weapon still promised "Deduct 20 pts from a
+      // house you choose", which is now simply untrue: it removes HP, and the
+      // loser of a battle loses no points at all.
+      //
+      // So: refresh the descriptions of SHIPPED items once, keyed off a
+      // revision marker. Only items whose text still matches a previous
+      // shipped default are touched, so a description the teacher has written
+      // or edited themselves is never overwritten. The marker makes it a
+      // one-time correction rather than a permanent override — after this runs,
+      // their edits are safe again.
+      if (Number(merged.shop.descRev) !== SHOP_DESC_REV) {
+        const defItemById = Object.fromEntries(def.shop.catalog.map((i) => [i.id, i]));
+        merged.shop.catalog = merged.shop.catalog.map((item) => {
+          const d = defItemById[item.id];
+          if (!d || typeof item.desc !== 'string') return item;
+          const stale = OLD_SHOP_DESCS[item.id];
+          const untouched = stale ? stale.includes(item.desc.trim()) : false;
+          return untouched ? { ...item, desc: d.desc } : item;
+        });
+        merged.shop.descRev = SHOP_DESC_REV;
+      }
       merged.planner = { ...def.planner, ...(merged.planner || {}) };
       if (!Array.isArray(merged.planner.events)) merged.planner.events = [];
       if (!Array.isArray(merged.transactions)) merged.transactions = [];
@@ -512,9 +594,26 @@ export const store = {
   PRIZE_RULES,
 
   getCombat() { return { ...defaultCombat(), ...(store.getSettings().combat || {}) }; },
+  // Clamps live HERE, not in the Admin form. The form is one caller among
+  // several (backup restore, migrations, a future preset), and it clamped
+  // inconsistently — prizeFlat had a floor but no ceiling, so a stray keystroke
+  // could set a 15,000-point prize that addPoints would silently cut to 9,999
+  // while the victory card announced the full number.
   updateCombat(patch) {
     const next = { ...store.getCombat(), ...(patch || {}) };
     if (!PRIZE_RULES[next.prizeRule]) next.prizeRule = 'gap';
+    const clamp = (v, lo, hi, dflt) => {
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+    };
+    const d = defaultCombat();
+    next.gapShare     = clamp(next.gapShare, 0, 100, d.gapShare);
+    next.prizePercent = clamp(next.prizePercent, 0, 100, d.prizePercent);
+    // MAX_DELTA is the real ceiling — a prize above it cannot be paid in full.
+    next.prizeFlat    = clamp(next.prizeFlat, 0, MAX_DELTA, d.prizeFlat);
+    next.hpBase       = clamp(next.hpBase, 1, 10000, d.hpBase);
+    next.hpPer500     = clamp(next.hpPer500, 0, 10000, d.hpPer500);
+    next.punchingDown = !!next.punchingDown;
     store.updateSettings({ combat: next });
   },
 
@@ -576,15 +675,17 @@ export const store = {
   },
 
   // The loser keeps every point they earned; only the winner's total moves.
+  // Returns what was ACTUALLY credited, not what was calculated. addPoints
+  // clamps to MAX_DELTA, so returning the raw prize let the victory card
+  // announce a number the ledger never received.
   awardBattleWin(winnerId, loserId) {
     const prize = store.previewPrize(winnerId, loserId);
-    if (prize > 0) {
-      store.addPoints(winnerId, prize, {
-        reason: `Battle won vs ${HOUSES[loserId] ? HOUSES[loserId].name : 'rival'}`,
-        tag: 'battle',
-      });
-    }
-    return prize;
+    if (prize <= 0) return 0;
+    const tx = store.addPoints(winnerId, prize, {
+      reason: `Battle won vs ${HOUSES[loserId] ? HOUSES[loserId].name : 'rival'}`,
+      tag: 'battle',
+    });
+    return tx ? tx.delta : 0;
   },
 
   // Does buying this item stock it, or fire it immediately?
@@ -715,7 +816,7 @@ export const store = {
   },
 
   addPoints(houseId, delta, { reason = '', tag = '' } = {}) {
-    delta = Math.max(-9999, Math.min(9999, Math.round(Number(delta) || 0)));
+    delta = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(delta) || 0)));
     if (!delta || !HOUSES[houseId]) return null;
     const tx = { id: `tx-${Date.now()}-${state.transactions.length}`, ts: Date.now(), houseId: Number(houseId), delta, reason, tag };
     state.transactions.push(tx);

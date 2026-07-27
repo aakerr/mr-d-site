@@ -4,8 +4,9 @@
   "description": "Schema for the app state stored in localStorage under key 'mrd-classroom-os-v1'. Mirrors the complete structure written by js/core/store.js defaultState().",
   "type": "object",
   "required": [
-    "version", "activeCore", "settings", "quests", "shop", "planner",
-    "transactions", "shields", "itineraries", "homework", "potw"
+    "version", "activeCore", "settings", "inventory", "hp", "quests", "shop",
+    "planner", "potwBounties", "transactions", "shields", "defenses",
+    "itineraries", "homework", "potw"
   ],
   "properties": {
     "version": {
@@ -22,8 +23,8 @@
     },
     "settings": {
       "type": "object",
-      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings).",
-      "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride"],
+      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings). A handful of sub-objects here (moduleThemes, layouts, combat, sfx, introVideos) ship as null in a brand-new state and are only filled in with real objects the first time store.js's load() function runs its migration over a saved state — see each field's own description below for exactly what it is seeded with.",
+      "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride", "soundEnabled", "ambient", "lock", "awardPresets", "houses"],
       "properties": {
         "termStart": {
           "type": "string",
@@ -58,8 +59,228 @@
           "type": "string",
           "description": "Teacher's own Google Maps API key (blank = use bundled default).",
           "example": ""
+        },
+        "soundEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for all sound effects and voice lines (Admin → Sound). Turning it off silences everything, regardless of what 'sfx' or 'ambient' below are individually set to."
+        },
+        "ambient": {
+          "type": "object",
+          "description": "Quiet per-screen background music loops (see js/core/ambient.js). Off by default — this is opt-in, and the teacher turns it on in Admin.",
+          "required": ["enabled", "volume", "tracks"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Master switch for ambient loops."
+            },
+            "volume": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.25,
+              "description": "Ambient playback volume, 0 (silent) to 1 (full)."
+            },
+            "tracks": {
+              "type": ["object", "null"],
+              "description": "moduleId -> audio source for that screen's loop. null/missing falls back to CONFIG.AMBIENT_TRACKS' shipped defaults.",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "lock": {
+          "type": "object",
+          "description": "Teacher PIN lock (js/core/lock.js), which can gate actions like using a Magic Shop item or overriding a Battle Day result.",
+          "required": ["pinHash", "len", "minutes"],
+          "properties": {
+            "pinHash": {
+              "type": "string",
+              "default": "",
+              "description": "Hashed PIN. An empty string means the lock is OFF, which is the default — the app must never lock a teacher out of a fresh install."
+            },
+            "len": {
+              "type": "integer",
+              "default": 4,
+              "description": "Number of digits in the PIN, so the on-screen PIN pad knows when an entry is complete."
+            },
+            "minutes": {
+              "type": "integer",
+              "default": 15,
+              "description": "Minutes of inactivity after which the lock re-engages and a PIN is required again."
+            }
+          }
+        },
+        "moduleThemes": {
+          "type": ["object", "null"],
+          "description": "Per-screen accent colour overrides (Admin → Appearance), for the three screens whose colour is actually configurable: 'dashboard' (Home screen), 'quests' (Quests board), and 'houses' (Records). Every other screen (Magic Shop, Battle Day, Dice, Council, POTW) has its palette baked into the CSS on purpose, so listing them here would show a control that does nothing. null in a state that predates this setting or has never been migrated; store.js load() seeds any screen the saved state has never seen with its shipped default, without disturbing a screen the teacher has already customised.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["color", "matchHouse"],
+            "properties": {
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Hex accent colour for this screen, used when 'matchHouse' is false."
+              },
+              "matchHouse": {
+                "type": "boolean",
+                "description": "If true, ignore 'color' and follow the currently active house's own accent instead. The Home screen ships this as true so it always feels like 'your' house's dashboard; the Quests board ships it false on purpose — the house accents already cover red/blue/amber/green, and a quest board that borrows them would look like a different app every period."
+              }
+            }
+          },
+          "example": {
+            "dashboard": { "color": "#f59e0b", "matchHouse": true },
+            "quests": { "color": "#b45309", "matchHouse": false },
+            "houses": { "color": "#f59e0b", "matchHouse": true }
+          }
+        },
+        "layouts": {
+          "type": ["object", "null"],
+          "description": "Per-screen display mode for the two screens that support both a scrolling grid and a horizontal carousel: 'quests' and 'shop'. Grid (the default) suits scanning ~20 quests or items at a glance; carousel suits a teacher standing at a smartboard swiping through one card at a time instead of scrolling with a mouse. null in a state that predates this setting; store.js load() fills in 'grid' for any screen not yet set.",
+          "properties": {
+            "quests": { "type": "string", "enum": ["grid", "carousel"], "default": "grid" },
+            "shop": { "type": "string", "enum": ["grid", "carousel"], "default": "grid" }
+          }
+        },
+        "combat": {
+          "type": ["object", "null"],
+          "description": "Battle Day combat tuning (Admin → Combat). null in a brand-new, never-yet-saved state; store.js load() merges it over store.defaultCombat()'s defaults the first time a saved state is loaded. store.updateCombat() is the ONLY way the app writes this object, and it clamps every numeric field on save (see each field's min/max below) so a stray keystroke in Admin can never save an unpayable prize or an unreachable HP value.",
+          "required": ["prizeRule", "gapShare", "prizePercent", "prizeFlat", "punchingDown", "hpBase", "hpPer500"],
+          "properties": {
+            "prizeRule": {
+              "type": "string",
+              "enum": ["gap", "percent", "flat"],
+              "default": "gap",
+              "description": "Which formula decides the winner's prize (in POINTS) when a house's HP is reduced to zero on Battle Day. Hit points are separate from house points — points are the scoreboard/currency, HP is what a strike removes, and the LOSER NEVER LOSES POINTS no matter which rule is chosen; only the winner's total moves. 'gap' (default): the winner takes half the point gap they were behind by (see 'gapShare') — self-limiting, since the prize shrinks to nothing as the trailing house catches up. Simulated over a 9-week term with houses earning unequally, the best-behaved house still won the term and the point spread narrowed. 'percent': the winner takes a percentage of the DEFENDER's total points (see 'prizePercent') — this compounds hard (simulated prizes grew from 281 to 1671 points across a term) and the WORST-behaved house won the simulated term; it is offered because a teacher may expect this style of rule, not because it is advised. 'flat': every win pays the same fixed number of points (see 'prizeFlat') — predictable and never compounds, but if set below the cost of the cheapest shop weapon, nobody will ever bother attacking."
+            },
+            "gapShare": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50,
+              "description": "Percent of the point gap between attacker and defender awarded to the winner, when prizeRule is 'gap'. Clamped to 0-100 by store.updateCombat()."
+            },
+            "prizePercent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 25,
+              "description": "Percent of the defeated house's total points awarded to the winner, when prizeRule is 'percent'. Clamped to 0-100 by store.updateCombat()."
+            },
+            "prizeFlat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9999,
+              "default": 150,
+              "description": "Fixed number of points awarded to the winner, when prizeRule is 'flat'. Clamped to 0-9999 by store.updateCombat() — 9999 is MAX_DELTA, the hard ceiling on any single points transaction in the whole app (a guard against a mistyped award, like a stray zero turning a 50-point award into 500,000 — not a game rule). A prize configured above that ceiling could never actually be paid in full, so the setting itself is capped there too."
+            },
+            "punchingDown": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether a house is allowed to attack another house that currently holds FEWER term points than it does. Off by default: without this guard, the leading house could farm the last-place house every Battle Day, which is the failure mode a classroom would regret most."
+            },
+            "hpBase": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 100,
+              "description": "Base max HP every house starts a Battle Day cycle with, before any points-based bonus is added. Clamped to 1-10000 by store.updateCombat()."
+            },
+            "hpPer500": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 10,
+              "description": "Extra max HP granted per 500 TERM points a house currently holds — maxHp = hpBase + hpPer500 * floor(points / 500), see store.getMaxHp(). A mild brake on everyone piling onto the current point leader every week: the richer a house gets, the tougher it is to finish off in combat. Clamped to 0-10000 by store.updateCombat()."
+            }
+          }
+        },
+        "sfx": {
+          "type": ["object", "null"],
+          "description": "Teacher-recorded sound replacements per effect slot (Admin → Sound). null in a state that has never been through store.js load()'s migration; once loaded, it is always an object with EVERY slot below present, each holding either '' (use the built-in synth tone, or — for 'battlecry' — true silence) or a path under /sfx pointing at the teacher's own recording. An unassigned slot never leaves the app silent, except 'battlecry' on purpose: it is a spoken voice line ('It's Battle Day. Attack!'), and a synthesized beep would be worse than nothing, so it just stays quiet until the teacher records one.",
+          "properties": {
+            "battlecry": { "type": "string", "default": "sfx/battle_day.mp3", "description": "Battle Day war-cry line, played as the Battle Day cinematic slams in. No synth fallback — blank means silence, not a beep." },
+            "sword": { "type": "string", "default": "sfx/swords_clashing.mp3", "description": "A strike landing on another house." },
+            "thud": { "type": "string", "default": "sfx/defensive_block-1.mp3", "description": "A shield holding, or points/HP coming off." },
+            "coin": { "type": "string", "default": "sfx/points_awarded.mp3", "description": "The reward chime when a house scores. This one fires often." },
+            "fanfare": { "type": "string", "default": "sfx/mythical_relic.mp3", "description": "Played when a Mythic relic is claimed on a natural 20." },
+            "roll": { "type": "string", "default": "", "description": "The Die of Destiny tumbling. Ships blank on purpose — the built-in synthesized rattle already covers it." }
+          }
+        },
+        "awardPresets": {
+          "type": "array",
+          "description": "The teacher's most-used point awards, shown as one-tap buttons on the Records screen (Admin-editable). Seeded with five defaults: Bell Ringer done (+5), Homework Hero (+10), Great teamwork (+5), Map Quiz Champion (+50), and Penalty (-5).",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "points", "tag"],
+            "properties": {
+              "id": { "type": "string", "description": "Unique preset ID, e.g. 'ap-bell'." },
+              "label": { "type": "string", "description": "Button label, e.g. 'Bell Ringer done'." },
+              "points": { "type": "integer", "description": "Points to award when the preset is tapped. May be negative (e.g. the Penalty preset)." },
+              "tag": { "type": "string", "default": "manual", "description": "Transaction tag recorded when this preset is used (see transactions[].tag)." }
+            }
+          },
+          "example": [
+            { "id": "ap-bell", "label": "Bell Ringer done", "points": 5, "tag": "manual" },
+            { "id": "ap-penalty", "label": "Penalty", "points": -5, "tag": "manual" }
+          ]
+        },
+        "houses": {
+          "type": "object",
+          "description": "Teacher edits to the four built-in houses — name, motto, accent colour, and artwork (Admin → Houses). Keyed by houseId (1-4). Applied IN PLACE over the shipped house defaults at load time (see applyHouseOverrides() in store.js), so every module already holding a reference to a house object sees the new values immediately, including right after a rename — nothing has to re-fetch. An empty object ({}, the default) means no house has been customised; store.resetHouse() removes a house's entry here to revert it to the pristine shipped default.",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Only the keys the teacher actually changed need be present; anything omitted keeps the shipped default.",
+            "properties": {
+              "name": { "type": "string" },
+              "motto": { "type": "string" },
+              "accent": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Hex accent colour." },
+              "accentSoft": { "type": "string", "description": "RGBA soft-glow colour, auto-derived from 'accent' whenever the teacher changes it — never set independently." },
+              "image": { "type": "string", "description": "Shield crest image path override." },
+              "heroImage": { "type": "string", "description": "Hero banner image path override." }
+            }
+          },
+          "example": {}
+        },
+        "introVideos": {
+          "type": ["array", "null"],
+          "description": "Intro-video presets offered in the POTW (Place of the Week) dropdown, teacher-editable in Admin so a recording can be added without anyone touching source code. null in a state that predates this setting; store.js load() seeds it from CONFIG.POTW_INTRO_VIDEOS the first time it is missing or empty.",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "url"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            }
+          }
         }
       }
+    },
+    "inventory": {
+      "type": "object",
+      "description": "Stockpiled Magic Shop weapons a house has bought but not yet spent — its armoury. Keyed by houseId (1-4); each value is itemId -> count still held. Only shop items whose effect.kind is 'attack', 'steal', or 'pierce' are stockpiled this way (see store.STOCKPILE_KINDS) — buying one banks it here instead of firing it on the spot, so a house can buy on Friday and strike the following week. When the item is actually used (in Battle Day combat, via store.consumeFromInventory()), one copy is removed from here and it deals damage to the target's HIT POINTS, not this armoury. Shields, damage-reduction relics ('shield'/'reduce' kinds), and wildcards ('wild') are deliberately NOT stockpiled — they are timed protection that starts the moment they're bought, or (for wildcards) a gamble that resolves immediately at purchase — so they never appear in this object.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "itemId -> count of that item currently banked, unused, by this house.",
+        "additionalProperties": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of this item currently held. Removed from the object entirely once it drops to zero."
+        }
+      },
+      "example": { "1": { "catapult": 2, "cloak": 1 } }
+    },
+    "hp": {
+      "type": "object",
+      "description": "houseId -> DAMAGE TAKEN so far in the current Battle Day cycle — this is NOT current hit points, which is a deliberate design choice. Storing 'current HP' looked right until a house won a battle: the prize pushed its point total over a 500-point boundary (see settings.combat.hpPer500), its maximum HP rose as a result, and its untouched 'current' HP suddenly read something like 120/130 — it LOOKED wounded purely for having gotten richer. Storing damage taken instead is invariant to the maximum moving: a house's actual remaining HP is always computed on the fly as store.getMaxHp(houseId) - hp[houseId] (see store.getHp()). Cleared back to {} at the start of every Battle Day session (store.resetAllHp()), so no house arrives already half-beaten from a prior week.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Cumulative HP damage taken by this house since the last Battle Day reset."
+      },
+      "example": { "2": 45, "3": 130 }
     },
     "quests": {
       "type": "object",
@@ -71,7 +292,7 @@
           "description": "Available quests (pre-seeded + teacher-edited in Admin).",
           "items": {
             "type": "object",
-            "required": ["id", "points", "title", "desc"],
+            "required": ["id", "points", "title", "desc", "type", "icon", "repeatable"],
             "properties": {
               "id": {
                 "type": "string",
@@ -89,6 +310,28 @@
               "desc": {
                 "type": "string",
                 "description": "Quest description and completion criteria."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["service", "academic", "community", "habit"],
+                "default": "service",
+                "description": "Quest category. Drives filtering on the Quests board and the fallback icon shown on the card when 'icon' is blank. 'service' (Helping the school run) is also the fallback category for anything untyped — a quest the teacher wrote before this field existed, or one restored from an older backup, lands here until they pick a real one. 'academic' = Learning and schoolwork, 'community' = Giving and kindness, 'habit' = Daily and weekly conduct."
+              },
+              "icon": {
+                "type": "string",
+                "default": "",
+                "maxLength": 8,
+                "description": "The emoji shown on this quest's card, so a board of ~20 quests doesn't repeat the same handful of symbols. Blank means 'no icon of its own' — the card falls back to its category's icon instead (see 'type')."
+              },
+              "repeatable": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, any house may accept this quest again after someone else finishes it (e.g. 'attend a school event'). If false, it is a one-shot: it leaves the board for good once any house completes it."
+              },
+              "penalty": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Points deducted from a house that gives up on this quest after accepting it (store.failQuest() — the quest also returns to the board for another house to take). Defaults to half of 'points' if never explicitly set — abandoning a quest should sting without erasing a week's work. Backfilled by store.js load() for any quest saved before this field existed, so it may be briefly absent on a catalog entry a teacher just created in Admin before their first save round-trips."
               }
             }
           },
@@ -97,7 +340,11 @@
               "id": "q-cleanup",
               "points": 30,
               "title": "Campus Cleanup Crew",
-              "desc": "Clean a shared school space during recess or lunch. Proof: before & after photos."
+              "desc": "Clean a shared school space during recess or lunch. Proof: before & after photos.",
+              "type": "service",
+              "icon": "🧹",
+              "repeatable": true,
+              "penalty": 15
             }
           ]
         },
@@ -189,27 +436,32 @@
               },
               "cost": {
                 "type": "integer",
-                "description": "TERM points required to purchase.",
-                "minimum": 1
+                "description": "TERM points required to purchase. Forced to 0 for mythicOnly items — they cannot be bought at all, only granted (see 'mythicOnly').",
+                "minimum": 0
               },
               "desc": {
                 "type": "string",
                 "description": "Item description and effect summary.",
                 "default": ""
               },
+              "mythicOnly": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, this item can never be purchased in the Magic Shop (its cost is forced to 0) — it is granted automatically as a Mythic Triumph reward when a house rolls a natural 20 on the Die of Destiny (see store.getMythicRewards() / store.grantMythicItem()). The three shipped mythic items (Spy Network, Lookout Tower, Oracle of Delphi) are all 'reduce' kind."
+              },
               "effect": {
                 "type": "object",
-                "description": "What the item does when purchased.",
+                "description": "What the item does. NOTE the current combat model: 'attack', 'steal', and 'pierce' items are STOCKPILED on purchase (see the top-level 'inventory' key) rather than firing immediately — they only do damage when actually struck during Battle Day combat, and what they remove is the target's HIT POINTS, never its points directly. The house that loses a Battle Day battle never loses any points at all; only the winner's points move, via a prize (see settings.combat). 'shield', 'reduce', and 'wild' items are NOT stockpiled: buying one takes effect immediately.",
                 "required": ["kind", "amount"],
                 "properties": {
                   "kind": {
                     "type": "string",
-                    "enum": ["attack", "steal", "shield"],
-                    "description": "Effect type: 'attack' (deduct from target), 'steal' (from leader), 'shield' (block attacks)."
+                    "enum": ["attack", "steal", "pierce", "shield", "reduce", "wild"],
+                    "description": "'attack' — stockpiled; when struck on Battle Day, removes 'amount' HIT POINTS from a house the attacker chooses. 'steal' — stockpiled, same HP-damage mechanic as attack, but the target is always whichever house currently leads the standings (not chosen); the attacker additionally gains POINTS equal to whatever HP damage actually landed (the 'loot'), while the target's own points never move. 'pierce' — stockpiled, identical to attack except the strike ignores BOTH a full shield and a damage-reduction relic on the target. 'shield' — NOT stockpiled; buying it immediately blocks all incoming attacks against this house for 'amount' hours. 'reduce' — NOT stockpiled; buying it (or receiving it as a Mythic reward) immediately halves all incoming, non-piercing damage against this house for 'amount' hours. 'wild' — NOT stockpiled; resolves immediately at purchase as a random points swing of up to ±'amount', for or against the buyer — the gamble IS the purchase, so there is nothing left to strike later."
                   },
                   "amount": {
                     "type": "integer",
-                    "description": "Effect magnitude: points for attack/steal, hours for shield.",
+                    "description": "Effect magnitude. For 'attack'/'steal'/'pierce': hit points removed when the stockpiled item is struck on Battle Day. For 'shield'/'reduce': hours the protection lasts from the moment it's bought or granted. For 'wild': the ceiling on the random ± point swing resolved at purchase.",
                     "minimum": 1
                   }
                 }
@@ -223,17 +475,29 @@
               "emoji": "🐴",
               "image": "",
               "cost": 50,
-              "desc": "Steal 25 pts from the leading house.",
+              "desc": "A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.",
+              "mythicOnly": false,
               "effect": { "kind": "steal", "amount": 25 }
             },
             {
               "id": "aegis",
               "name": "Aegis Shield",
-              "emoji": "🛡️",
+              "emoji": "⚡",
               "image": "",
               "cost": 30,
-              "desc": "Blocks incoming attacks for 24 hours.",
+              "desc": "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.",
+              "mythicOnly": false,
               "effect": { "kind": "shield", "amount": 24 }
+            },
+            {
+              "id": "oracle",
+              "name": "Oracle of Delphi",
+              "emoji": "🔮",
+              "image": "",
+              "cost": 0,
+              "desc": "The Pythia foretells the coming blow. Incoming damage is HALVED for 72 hours.",
+              "mythicOnly": true,
+              "effect": { "kind": "reduce", "amount": 72 }
             }
           ]
         }
@@ -339,8 +603,8 @@
           },
           "tag": {
             "type": "string",
-            "description": "Machine-readable category for filtering.",
-            "enum": ["challenge", "manual", "daily", "event", "shop", ""],
+            "description": "Machine-readable category for filtering and for the ledger analytics breakdown (store.getBreakdown()). Real values written by the app today: 'manual' (a teacher tap — award presets, quick adjust with a custom reason, house-wide awards), 'attack' (points looted by a 'steal' shop item, or the legacy direct-points store.applyAttack() path used by teacher-scoring corrections), 'battle' (a Battle Day victory prize), 'dice' (Die of Destiny roll outcome), 'potw' (Place of the Week quiz bounty payout), 'quest' (quest completed or abandoned), 'shop' (a purchase deducting its cost), 'wild' (a wildcard shop item's random points swing), 'quick' (the Quick Adjust control in the top bar, when no custom reason is given). '' is the function default (store.addPoints) for a transaction created without an explicit tag; it should be rare/legacy in practice. Older/unused values that used to appear here ('challenge', 'daily', 'event') have been dropped — nothing in the codebase writes them any more.",
+            "enum": ["manual", "attack", "battle", "dice", "potw", "quest", "shop", "wild", "quick", ""],
             "default": ""
           }
         }
@@ -348,12 +612,27 @@
     },
     "shields": {
       "type": "object",
-      "description": "Active Aegis shields: houseId -> expiry epoch (milliseconds). Lasts 24h once activated.",
+      "description": "houseId -> expiry epoch (milliseconds) for a FULL-BLOCK shield (e.g. Phalanx Formation, Aegis Shield, Moat & Drawbridge, The Great Wall) — this is the legacy/original defensive item, kept as its own top-level key for backward compatibility rather than folded into 'defenses' below. While active, it blocks an incoming attack outright UNLESS the attack is a 'pierce' item, which ignores it entirely (see store.applyAttack / the Battle Day HP-combat resolver). Duration varies per item (12-48 hours depending on which shield was bought), not a fixed 24h. Expired entries are pruned by store.js load() on every load, so an old backup can never revive a shield that should have run out.",
       "additionalProperties": {
         "type": "integer",
-        "description": "Expiry timestamp in milliseconds; if > Date.now(), shield is active."
+        "description": "Expiry timestamp in milliseconds; if > Date.now(), the shield is active."
       },
       "example": { "1": 1719705600000, "3": 1719792000000 }
+    },
+    "defenses": {
+      "type": "object",
+      "description": "houseId -> { reduce: expiry epoch ms }. Damage-HALVING relics — distinct from the full-block 'shields' above. These come from the Mythic-only shop items (Spy Network, Lookout Tower, Oracle of Delphi), granted only when a house rolls a natural 20 on the Die of Destiny, and are never purchasable directly. While active, any non-piercing hit against this house is halved rather than blocked outright (see store.hasReduction() / store.applyAttack()); a 'pierce' item ignores this too, exactly like a full shield. Expired entries are pruned by store.js load() on every load, mirroring the 'shields' cleanup.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Currently only ever holds a 'reduce' key, but is an object (not a bare number) so future defensive relic types can add sibling keys without a breaking migration.",
+        "properties": {
+          "reduce": {
+            "type": "integer",
+            "description": "Expiry timestamp in milliseconds; if > Date.now(), incoming non-piercing damage against this house is halved."
+          }
+        }
+      },
+      "example": { "2": { "reduce": 1719792000000 } }
     },
     "itineraries": {
       "type": "object",
@@ -374,6 +653,31 @@
         "3": { "$ref": "#/definitions/homework" },
         "4": { "$ref": "#/definitions/homework" }
       }
+    },
+    "potwBounties": {
+      "type": "object",
+      "description": "Ledger of paid Place-of-the-Week quiz bounties, so relaunching the same voyage (e.g. after a page reload mid-week, or a teacher re-opening the same destination) can never pay the same bounty twice. Keyed by '<profileKey>|<weekOf>|<questionIndex>' (see store.bountyKey()) rather than just the question index alone, so the SAME question number in a profile that gets re-scheduled to a different week is treated as a brand-new, unpaid bounty.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Record of one paid bounty.",
+        "required": ["houseId", "ts", "points"],
+        "properties": {
+          "houseId": {
+            "type": "integer",
+            "enum": [1, 2, 3, 4],
+            "description": "Which house was paid this bounty."
+          },
+          "ts": {
+            "type": "integer",
+            "description": "Timestamp (Date.now()) when it was paid."
+          },
+          "points": {
+            "type": "integer",
+            "description": "Points awarded for this bounty."
+          }
+        }
+      },
+      "example": { "mesopotamia|2026-06-29|0": { "houseId": 1, "ts": 1719705600000, "points": 10 } }
     },
     "potw": {
       "type": "object",

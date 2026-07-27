@@ -148,6 +148,43 @@ re-run the first-run setup wizard.
   **Per-screen colours** under Known Limitations — only these three screens
   are affected)
 - **Quick award buttons**: edit the one-tap presets shown on Records → Award Routines
+- **⚔️ Battle rules**: how Battle Day decides who wins what. Hit points (HP)
+  are separate from points — points are the currency, HP is just what a
+  strike removes during a fight. When a house's HP hits zero, the fight is
+  over and the winner takes a prize *in points*, decided by the rule below.
+  **The loser never loses a point**, no matter which rule you pick.
+  - **Prize rule** — three ways to size the winner's prize:
+    - **Half the gap** (the default): the winner takes half the point gap
+      between the two houses. This shrinks on its own as the trailing house
+      catches up — simulated over a 9-week term, the best-behaved house still
+      won overall and the point spread between houses actually narrowed.
+      Pick this if you want battles to matter without letting them run away
+      with the standings.
+    - **Share of their total**: the winner takes a percentage of the
+      defeated house's own points. Use this one carefully — it compounds. In
+      that same simulated term, prizes under this rule grew from 281 to
+      1,671 points as the weeks went on, and the *worst*-behaved house ended
+      up winning. It's offered because a teacher may expect it, not because
+      it's the recommended choice.
+    - **Fixed amount**: every win pays exactly the same number of points,
+      term after term — simple and predictable. The one thing to watch: set
+      it below what weapons cost in the Magic Shop and nobody will ever
+      bother attacking, since there's nothing left to gain.
+  - **Punching down** (off by default): whether a house may attack one with
+    *fewer* points than itself. Leave this off unless you have a reason to
+    turn it on — without the guard, the leading house can farm the
+    last-place house every single Friday, which is exactly the outcome this
+    default exists to prevent.
+  - **Starting HP** and **Bonus HP per 500 points held**: sets every house's
+    maximum hit points for the fight (default 100, plus 10 more per full 500
+    points a house holds). A house sitting on more points gets a little
+    tougher to knock out — a mild brake on everyone piling onto whoever is
+    currently winning. HP always refills to this maximum at the start of
+    every Battle Day session; it has nothing to do with day-to-day points.
+  - The card shows a live worked example for each house (e.g. "Camelot has
+    640 points, so 112 HP") and a prize preview between any two houses you
+    pick, both of which update as you type — so you can see exactly what a
+    change does before you save it.
 - **Theme**: Dark mode (light mode not implemented yet); optional seasonal
   ambient particles (falling leaves/snow/etc., based on the calendar date)
 - **Maps API Key**: Leave blank to use the bundled key; paste your own if you prefer
@@ -285,12 +322,17 @@ A cinematic, multi-stage geography voyage.
 > (or become the only layout) in a future update.
 
 ### Battle Day (⚔️)
-A cinematic house-vs-house duel arena. Every strike, from either screen,
-resolves through the same combat rule (`store.applyAttack`), so Battle Day and
-the Magic Shop can never disagree about what a shield or a Pierce item does.
+A cinematic house-vs-house duel arena. Points and hit points are two separate
+things here: **points** are the currency and scoreboard used everywhere else
+in the app; **hit points (HP)** are a Battle-Day-only meter that a strike
+removes. A house is beaten when its HP hits zero — and only then does
+anything happen to anyone's points. **The loser of a fight never loses a
+single point**, whatever else happens.
 
 **Landing Page** (inside the app window):
 - Red, pulsing "IGNITE BATTLE" button
+- Tapping it refills **every house's HP to full** for the session, so nobody
+  starts a Friday battle already wounded from an earlier fight
 
 **Full-Screen Cinematic Overlay**:
 - **Swords-clash animation**: Dual swords slam together with screen shake
@@ -300,50 +342,83 @@ the Magic Shop can never disagree about what a shield or a Pierce item does.
 **The Duel**:
 - **Choose the challenger** (defaults to whichever house is active in the top
   bar), then **choose their opponent** — tapping a house shows its points and
-  whether it's currently shielded or damage-reduced
-- **Pick a strike**: the challenger's screen lists every *offensive* Magic Shop
-  item (Attack, Steal, Pierce) they can afford, priced in their own term
-  points — there is no separate, free "±10 attack" button; every strike costs
-  points from the challenger's own total, same as buying from the shop
-  directly
-- Before you tap, the app tells you plainly whether the strike will be
-  **blocked** by the target's shield, **halved** by their damage-reduction
-  relic, or **ignores both** if it's a Pierce item
-- **"🔮 Open Magic Shop"** button jumps straight to the shop to buy an
-  offensive item or a defense before the duel
+  whether it's currently shielded or damage-reduced. If "Punching down" is
+  switched off in Admin → Settings → ⚔️ Battle rules (the default), a house
+  with fewer points than the challenger still shows up here but is visibly
+  locked, with the reason spelled out
+- **Pick a strike**: the challenger's screen lists every *offensive* item
+  (Attack, Steal, Pierce) already sitting in that house's **armoury** —
+  weapons it bought ahead of time in the Magic Shop. **Nothing is purchased
+  or priced live during the duel** — if the armoury is empty, the screen says
+  so and points you at the shop instead
+- Each strike removes **hit points**, never house points, from the target.
+  Before you tap, the app tells you plainly whether the strike will be
+  **blocked** entirely by the target's shield, **halved** by their
+  damage-reduction relic, or **ignores both** if it's a Pierce item
+- Both houses' **Points** and **Hit Points** are shown side by side on their
+  cards throughout the fight — the points numbers don't move at all until
+  somebody's HP reaches zero
+- Once an opponent is chosen, the screen also shows the **prize on the
+  table** — what the attacker stands to win in points if this fight ends the
+  defender's HP, based on whichever prize rule you've set (see **⚔️ Battle
+  rules** under Settings, below)
+- **At zero HP**, the fight ends on the spot: the winner is credited the
+  prize in points and the loser's point total does not change at all
+- **"🔮 Open Magic Shop"** button jumps straight to the shop to stock up on a
+  weapon for next time, or buy a defense before this duel
 - **Teacher scoring row**: a separate, always-visible ±10 per house for you to
-  award or deduct directly — labeled "not a house attack," but a deduction here
-  still respects that house's shield/relic, same as any other attack
-- Point text floats up with color-coding (green gain, red loss), plus sound
-  effects and screen shake on each strike
+  award or deduct points directly — labeled "not a house attack." This is the
+  one path on this screen that still moves points immediately rather than
+  through HP and a battle prize; a deduction here still respects that house's
+  shield/relic, same as any other attack
+- Point/HP text floats up with color-coding (green gain, red loss), plus
+  sound effects and screen shake on each strike
 
 ### Magic Shop (🔮)
 - **Item Catalog**: Browse teacher-editable items (updated live from Admin),
   grouped as Offensive / Defensive / Wildcard
 - **Purchase Flow**:
-  - Tap an item to see its cost, plain-English effect, and (for offensive
-    items) whether your intended target is shielded or reduced before you commit
+  - Tap an item to see its cost and plain-English effect
   - **Balance Check**: Greyed out if you don't have enough TERM points
-  - **Choose Target** (Attack/Steal/Pierce only): Tap the target house
-  - **Confirm**: Tap "Buy" → points deducted immediately, item effect applied
+  - **Offensive items (Attack, Steal, Pierce) are NOT used at purchase.** No
+    target is chosen here at all — buying one just deducts the cost and banks
+    the weapon in your house's **armoury**, where it waits, unused, until you
+    actually throw it on Battle Day. The confirm dialog says so plainly
+    ("saved to use on Battle Day, not fired now"), and the card shows how many
+    of that weapon your house is already holding
+  - **Defensive items (Shield, Halve Damage) and Wildcards act immediately**:
+    a Shield or damage-reduction relic starts protecting your house the
+    instant you buy it; a Wildcard's dice roll and points swing resolve on
+    the spot
+  - **Confirm**: Tap "Buy" → points deducted immediately. For a Shield/Halve
+    Damage/Wildcard the effect also happens immediately; for an offensive
+    item, the weapon is added to your armoury instead of firing anywhere
 - **Item Effects** (six kinds, set per item in Admin → Shop):
-  - **⚔️ Attack**: Deduct N points from a house you choose — blocked by a
-    shield, halved by a damage-reduction relic
-  - **🐴 Steal**: Take N points from whichever house currently leads and give
-    them to the buyer — still a real attack, so shields and reduction apply
-    to the leader
-  - **🫥 Pierce**: Same as Attack, but ignores BOTH shields and damage
-    reduction — it always lands in full. Price these higher; nothing stops them
-  - **🛡️ Defend (Shield)**: Blocks every incoming Attack/Steal for N hours
-    (default 24h). A Pierce item still gets through
-  - **🕵️ Halve damage**: Cuts incoming damage in half for N hours — usually a
-    Mythic (Nat 20) reward rather than something bought outright
-  - **🎲 Wildcard**: A random points swing of up to N, which may help OR hurt
-    the buyer — not an attack, so shields/relics don't apply
+  - **⚔️ Attack**: Bought now, thrown later. On Battle Day it removes N **hit
+    points** from whichever house you strike — blocked by a shield, halved by
+    a damage-reduction relic
+  - **🐴 Steal**: Bought now, thrown later. On Battle Day it removes N hit
+    points from your target AND credits you N points — whatever damage
+    actually got through (less if their relic halved it, zero if their shield
+    blocked it)
+  - **🫥 Pierce**: Same as Attack, but on Battle Day it ignores BOTH shields
+    and damage reduction — it always lands in full. Price these higher;
+    nothing stops them
+  - **🛡️ Defend (Shield)**: Applies the instant you buy it — blocks every
+    incoming strike for N hours (default 24h). A Pierce item still gets
+    through
+  - **🕵️ Halve damage**: Applies the instant you buy it — cuts incoming
+    damage in half for N hours. Usually a Mythic (Nat 20) reward rather than
+    something bought outright
+  - **🎲 Wildcard**: Resolves immediately with a d20 roll — a random points
+    swing of up to N, which may help OR hurt the buyer on the spot. Not an
+    attack, so shields/relics never apply to it
 - **Mythic-only items**: an item can be flagged "Mythic reward only" in Admin
   (cost forced to 0) — it can't be bought, only granted to a house that rolls
   a natural 20 on the Die of Destiny (see below)
-- **Transaction Log**: Every purchase is logged with tag "shop"
+- **Transaction Log**: Every purchase is logged with tag "shop." A weapon
+  actually thrown on Battle Day is logged separately with tag "attack" (and,
+  if it wins the fight, a second entry with tag "battle" for the prize)
 
 ### Die of Destiny (🎲)
 Classroom d20 roller with a 3D physics simulation and outcome table.
@@ -481,13 +556,20 @@ The app uses a simple plugin architecture.
 All state lives in localStorage under the key `mrd-classroom-os-v1`. This includes:
 - Transaction log (all point changes)
 - House shields and damage-reduction relics (active protections)
+- **Hit points** — each house's current Battle Day damage taken. Refills
+  (clears) to full at the start of every Battle Day session; unrelated to
+  points day-to-day
+- **Armoury** — each house's stockpile of Magic Shop weapons (Attack, Steal,
+  Pierce) that have been bought but not yet thrown in a duel
 - Quests (catalog, active, completed, per-quest type/icon/give-up penalty)
 - Magic Shop catalog (teacher edits)
 - Planner events
 - POTW profiles & scheduling
 - Settings — term dates, theme (incl. seasonal effects), backup folder handle,
   Teacher PIN (hashed, plus the plain-text recovery code), per-screen accent
-  colours, quick award presets, and per-screen ambient music assignments
+  colours, quick award presets, per-screen ambient music assignments, and the
+  **⚔️ Battle rules** (prize rule and its number, punching down, starting HP
+  and bonus HP per 500 points)
 - Student quiz responses
 
 ### Media (Videos, PDFs, Images)
@@ -521,9 +603,13 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
 
 ### Schema Reference
 See `data/schema.json` for the JSON Schema documenting the persisted state.
-**Caveat**: this schema file has not kept pace with every feature below (the
-Teacher PIN, per-screen colours, ambient music, and the quests' type/icon/
-give-up-penalty fields aren't in it yet) — `js/core/store.js` is the
+**Caveat**: this schema file has not kept pace with every feature below —
+the Teacher PIN, per-screen colours, ambient music, the quests' type/icon/
+give-up-penalty fields, **hit points** (`state.hp`), each house's **armoury**
+(`state.inventory`), the **⚔️ Battle rules** combat settings
+(`settings.combat` — prize rule, punching down, starting/bonus HP), the
+Magic Shop's `pierce`/`reduce`/`wild` effect kinds, and the `attack`/`battle`
+transaction tags are all missing from it — `js/core/store.js` is the
 authoritative source for the current shape of saved state.
 
 ---

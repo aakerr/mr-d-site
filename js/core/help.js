@@ -196,7 +196,7 @@ const TOPICS = [
         <li><b>Quests</b> — points land when <i>you</i> confirm a quest as complete.</li>
         <li><b>Place of the Week</b> — quiz bounties pay the house that answers first.</li>
         <li><b>Die of Destiny</b> — you tap the outcome button to apply the roll.</li>
-        <li><b>Magic Shop and Battle Day</b> — purchases, attacks and steals all move points.</li>
+        <li><b>Magic Shop and Battle Day</b> — buying an item spends its cost in points right away, but that is all buying does. When a house later uses a stockpiled weapon as a strike on Battle Day it removes hit points, not points, and only the battle's winner is paid a points prize at the end. <a href="#" data-help-go="battle-hp">How that works →</a></li>
       </ul>
       <p>All of them go through the same log, so nothing happens that you cannot see afterwards.</p>
     `,
@@ -498,9 +498,9 @@ const TOPICS = [
         <li>Open the <b>Magic Shop</b> tile.</li>
         <li>Pick the house that is buying.</li>
         <li>Tap an item. Items the house cannot afford are greyed out.</li>
-        <li>If it is an attack, pick the target house.</li>
-        <li>Confirm. The cost comes off immediately and the effect happens straight away.</li>
+        <li>Confirm. The cost comes off immediately.</li>
       </ol>
+      <p>What happens next depends on what was bought. A <b>shield</b> or a damage-halving relic starts protecting the house the instant you confirm, and a <b>wildcard</b> rolls its dice right there in the shop and applies the result on the spot. But an <b>attack item</b> — an attack, a steal or a pierce weapon — does none of that yet. Nobody picks a target at the shop counter, and nothing happens to anyone's points or hit points there. Buying one of these simply adds it to that house's <b>armoury</b> — a stockpile of weapons waiting to be used — ready to be spent as a strike on <a href="#" data-help-go="battle-day">Battle Day</a>. <a href="#" data-help-go="battle-hp">How strikes and hit points work →</a></p>
       <p>Items are paid for with <b>term</b> points, not this week's points. Every purchase is logged with the reason "Bought: <i>item name</i>".</p>
     `,
   },
@@ -509,14 +509,15 @@ const TOPICS = [
     keywords: 'attack steal shield pierce reduce wild effect types items list',
     body: () => {
       const rows = [
-        ['Attack', 'attack', 'Takes points off a house you choose. Can be blocked or halved by defences.'],
-        ['Steal', 'steal', 'Takes points off whichever house is leading and gives the buyer exactly what was actually taken — nothing if it was blocked, half if it was halved.'],
-        ['Shield', 'shield', 'Blocks all incoming attacks on the buyer for a number of hours.'],
-        ['Pierce', 'pierce', 'An attack that ignores shields AND halving. Always lands in full.'],
-        ['Halve (Mythic)', 'reduce', 'Halves all incoming damage for a number of hours. Cannot be bought — only granted by a natural 20.'],
-        ['Wildcard', 'wild', 'A random swing, for the buyer or against them, up to the listed amount.'],
+        ['Attack', 'attack', 'Buying one doesn’t hit anyone. It goes straight into the buyer’s armoury as a weapon saved for Battle Day. Only when that house later spends it there as a strike does it remove hit points (HP) from whoever it lands on — and even then a shield can block it outright, or a halving relic cut it down.'],
+        ['Steal', 'steal', 'Also stockpiled at purchase, just like an attack — nothing happens until it’s spent as a strike on Battle Day. When it lands, it takes HP off whichever house is leading, and the buyer’s own house is credited points equal to whatever HP the strike actually took — nothing if it was blocked, half if it was halved.'],
+        ['Shield', 'shield', 'Starts protecting the buyer the instant you buy it, blocking every incoming strike for a number of hours.'],
+        ['Pierce', 'pierce', 'Stockpiled at purchase like any other attack item. When it’s spent as a strike, it ignores shields AND halving — it always removes its full HP amount.'],
+        ['Halve (Mythic)', 'reduce', 'Halves all incoming strike damage for a number of hours, starting the moment it’s granted. Cannot be bought — only granted by a natural 20.'],
+        ['Wildcard', 'wild', 'A random swing, for the buyer or against them, up to the listed amount — this one still happens immediately at the shop counter with its own dice roll. It is never stockpiled.'],
       ];
       return `
+        <p class="help-lede">Attack, Steal and Pierce work differently from everything else in the shop: buying one of these weapons does not do anything to anyone yet. It only fills the buyer's armoury. Nothing about points or hit points changes until that weapon is actually used as a strike on <a href="#" data-help-go="battle-day">Battle Day</a>.</p>
         <table class="help-table">
           <thead><tr><th>Type</th><th>What it does</th><th>In the shop right now</th></tr></thead>
           <tbody>
@@ -528,7 +529,7 @@ const TOPICS = [
             }).join('')}
           </tbody>
         </table>
-        <p class="help-callout">You can change any of these, or invent your own — see <a href="#" data-help-go="shop-create">Creating your own item</a>.</p>
+        <p class="help-callout">You can change any of these, or invent your own — see <a href="#" data-help-go="shop-create">Creating your own item</a>. For the full rules on hit points and how a strike plays out, see <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a>.</p>
       `;
     },
   },
@@ -536,33 +537,36 @@ const TOPICS = [
     id: 'shop-matchups', cat: 'shop', title: 'How attacks and defences interact',
     keywords: 'matchup blocked shield halved pierce combat rules damage interaction which wins',
     body: `
-      <p class="help-lede">There is one rule, applied in this order: <b>a shield blocks the whole attack; otherwise a halving defence cuts it in half; a pierce ignores both.</b></p>
-      <p>Take a plain <b>20-point attack</b> (the Catapult Volley) against a house that is:</p>
+      <p class="help-lede">This is about the moment a weapon is actually <b>used</b> — a strike on Battle Day — not about buying it. Buying an attack, steal or pierce item only stockpiles it in the buyer's armoury; nothing below happens until that weapon is spent as a strike. There is one rule for what happens then, applied in this order: <b>a shield blocks the whole strike; otherwise a halving defence cuts it in half; a pierce ignores both.</b></p>
+      <p>Take a plain <b>20-HP strike</b> (from the Catapult Volley, spent out of the armoury) landing on a house that is:</p>
       <table class="help-table">
-        <thead><tr><th>Target's defence</th><th>Plain 20-point attack</th><th>20-point <b>pierce</b></th></tr></thead>
+        <thead><tr><th>Target's defence</th><th>Plain 20-HP strike</th><th>20-HP <b>pierce</b> strike</th></tr></thead>
         <tbody>
-          <tr><td>No defence</td><td><b>20</b> points lost</td><td><b>20</b> points lost</td></tr>
-          <tr><td>Shielded</td><td><b>Blocked</b> — 0 lost</td><td><b>20</b> points lost</td></tr>
-          <tr><td>Damage halved (Mythic relic)</td><td><b>10</b> points lost</td><td><b>20</b> points lost</td></tr>
-          <tr><td>Shielded <i>and</i> halved</td><td><b>Blocked</b> — 0 lost</td><td><b>20</b> points lost</td></tr>
+          <tr><td>No defence</td><td><b>20</b> HP lost</td><td><b>20</b> HP lost</td></tr>
+          <tr><td>Shielded</td><td><b>Blocked</b> — 0 lost</td><td><b>20</b> HP lost</td></tr>
+          <tr><td>Damage halved (Mythic relic)</td><td><b>10</b> HP lost</td><td><b>20</b> HP lost</td></tr>
+          <tr><td>Shielded <i>and</i> halved</td><td><b>Blocked</b> — 0 lost</td><td><b>20</b> HP lost</td></tr>
         </tbody>
       </table>
-      <p>A pierce always lands in full, which is why pierce items cost more than plain attacks of the same size.</p>
-      <p><b>Steals</b> follow exactly the same rule, and the thief only ever gains what the target actually lost — a blocked steal gains nothing.</p>
+      <p>Halving always rounds to the nearest whole HP, and a strike that gets through at all still takes at least <b>1 HP</b> off — a halved hit can never round all the way down to nothing.</p>
+      <p>A pierce always lands in full, which is why pierce weapons cost more than plain attacks of the same size.</p>
+      <p><b>Steals</b> follow exactly the same rule when the strike lands. The only difference is what happens to the buyer's own house: it is credited points equal to whatever HP the strike actually took — a blocked steal gains the thief nothing.</p>
       <p>Positive points never route through any of this. You can always award points to a house no matter what defences it has up.</p>
+      <p>Remember, none of this happens at the Magic Shop counter — it all plays out later, when a stockpiled weapon is spent on <a href="#" data-help-go="battle-day">Battle Day</a>. <a href="#" data-help-go="battle-hp">The full walkthrough of hit points, strikes and prizes →</a></p>
     `,
   },
   {
     id: 'shop-blocked', cat: 'shop', title: 'Why was that attack blocked?',
     keywords: 'blocked shield why nothing happened attack failed no damage defence',
     body: `
-      <p>Because the target had a shield running. A shield blocks <b>every</b> ordinary attack until it expires — it is not a chance, it is a certainty.</p>
+      <p>Because the target had a shield running when the strike landed. Nothing gets checked against a shield when a weapon is <i>bought</i> — buying an attack, steal or pierce item just puts it in the buyer's armoury. The shield check happens later, on <b>Battle Day</b>, at the exact moment a house spends that stockpiled weapon as a strike. A shield blocks <b>every</b> ordinary strike aimed at its house until it expires — it is not a chance, it is a certainty.</p>
       <p>To see what is currently protecting whom, open <b>🗝️ Admin</b> and look at <b>🛡️ Active Defenses</b>. It lists every shield and halving effect with the time left, and lets you clear one if a class talked itself into a corner.</p>
       <p>Ways through a shield:</p>
       <ul class="help-list">
-        <li>Buy a <b>pierce</b> item — it ignores shields entirely.</li>
+        <li>Buy a <b>pierce</b> weapon ahead of time and spend it as the strike — it ignores shields entirely.</li>
         <li>Wait for the shield to run out (shields last between 12 and 48 hours depending on the item).</li>
       </ul>
+      <p>Curious exactly how much HP gets through when a strike is only halved, or how a pierce compares? See <a href="#" data-help-go="shop-matchups">How attacks and defences interact</a>.</p>
     `,
   },
   {
@@ -589,10 +593,11 @@ const TOPICS = [
         <li>Open <b>🗝️ Admin → Shop</b>.</li>
         <li>Add a new item, or edit one that exists.</li>
         <li>Give it a <b>name</b>, an <b>emoji</b> (or upload a small picture), and a <b>cost</b> in points.</li>
-        <li>Choose the <b>effect</b>: attack, steal, shield, pierce, halve or wildcard — and the amount (points, or hours for shields and halving).</li>
+        <li>Choose the <b>effect</b>: attack, steal, shield, pierce, halve or wildcard — and the amount. What that amount means depends on the effect: for <b>attack, steal and pierce</b> it is <b>hit points (HP)</b> removed by a strike on Battle Day, not points — buying the item does not take anything from anyone yet, it just adds the weapon to the buyer's armoury for later. For <b>shield</b> and <b>halve</b> the amount is hours of protection. For <b>wildcard</b> the amount is still points, because a wildcard resolves immediately, right at the shop counter, with its own dice roll.</li>
         <li>Write a <b>description</b>. This is the bit students read, so it is worth a sentence of history.</li>
         <li><b>Save.</b> It appears in the shop instantly.</li>
       </ol>
+      <p class="help-callout">Sizing an attack, steal or pierce weapon? Compare the HP amount you're setting against the hit-point totals in <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a> so you know whether 20 HP is a light tap or close to a knockout.</p>
       <p>Two rules the editor enforces so nothing can be saved that the app will not honour: an item must have a real effect type, and anything that is not a Mythic relic must cost more than zero.</p>
       <p>Deleting an item you dislike is permanent — it will not come back on the next reload.</p>
     `,
