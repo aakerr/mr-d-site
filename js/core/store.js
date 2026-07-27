@@ -626,9 +626,52 @@ function load() {
   return defaultState();
 }
 
+// A failed save used to be a console.warn and nothing else. That is the worst
+// possible outcome in a classroom: the award already happened in memory and
+// every screen already repainted showing the new total, so the teacher has no
+// reason to doubt it — and it is gone at the next reload. He has no devtools
+// open and will never see a console warning.
+//
+// Now it says so on screen, once, and stays out of the way after that. Losing
+// a point award silently is worse than an ugly banner.
+let persistFailed = false;
 function persist() {
-  try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(state)); }
-  catch (e) { console.warn('store: persist failed', e); }
+  try {
+    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(state));
+    persistFailed = false;
+  } catch (e) {
+    console.warn('store: persist failed', e);
+    if (!persistFailed) {
+      persistFailed = true;
+      try { showPersistFailure(e); } catch (err) { /* never let the warning break the app */ }
+    }
+  }
+}
+
+// Deliberately built with raw DOM and inline styles rather than the app's own
+// components: whatever just failed may have left the page in an odd state, and
+// this message has to survive that.
+function showPersistFailure(err) {
+  if (typeof document === 'undefined' || document.getElementById('store-persist-error')) return;
+  const quota = err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014);
+  const bar = document.createElement('div');
+  bar.id = 'store-persist-error';
+  bar.setAttribute('role', 'alert');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:14px 18px;'
+    + 'background:#7f1d1d;color:#fff;font:600 15px/1.45 system-ui,sans-serif;'
+    + 'box-shadow:0 -6px 24px rgba(0,0,0,.5);display:flex;gap:14px;align-items:center;';
+  bar.innerHTML = `<span style="font-size:22px">⚠️</span>
+    <span style="flex:1">
+      <b>This device could not save your last change.</b><br>
+      ${quota
+        ? 'The browser’s storage for this app is full. Open the Teacher Admin panel and export a backup, then use Reset to start a fresh term — your backup keeps the old one.'
+        : 'Saving to this browser failed. Anything you change now may be lost when the page reloads.'}
+      Please tell whoever set this up before carrying on.
+    </span>
+    <button type="button" style="flex:0 0 auto;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.5);
+      background:transparent;color:#fff;font:inherit;cursor:pointer">Dismiss</button>`;
+  bar.querySelector('button').addEventListener('click', () => bar.remove());
+  (document.body || document.documentElement).appendChild(bar);
 }
 
 function emit() { persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
