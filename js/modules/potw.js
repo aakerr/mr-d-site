@@ -1491,8 +1491,17 @@ function gslidesEmbedUrl(raw) {
   if (!u) return '';
   try {
     const url = new URL(u, window.location.href);
-    if (!url.searchParams.has('start')) url.searchParams.set('start', 'false');
-    if (!url.searchParams.has('loop')) url.searchParams.set('loop', 'false');
+    // FORCED, not defaulted. Google's "Publish to web" dialog ticks "Start
+    // slideshow as soon as the player loads" by default and offers no "never"
+    // in its auto-advance list — the shortest option is every 3 seconds. Left
+    // alone, a lesson deck flips slides on its own while the teacher is still
+    // talking about the first one. Overriding here means the teacher cannot
+    // get this wrong in Google's dialog, and decks saved before this are
+    // corrected too, since this runs at render time.
+    // Wanting Google's own auto-play is what "⧉ Open full screen" is for.
+    url.searchParams.set('start', 'false');
+    url.searchParams.set('loop', 'false');
+    url.searchParams.set('delayms', '86400000');   // a day, in case anything starts it anyway
     return url.href;
   } catch (e) { return u; }
 }
