@@ -510,7 +510,7 @@ function fallbackRoll(el, mode) {
         numEl.classList.remove('rolling');
         numEl.textContent = values.join('  ');
       }
-      audio.sfx('thud');
+      audio.sfx('diceland');
       resolve(values.map((v) => ({ value: v, display: String(v) })));
     }, 1000);
   });

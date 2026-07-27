@@ -528,8 +528,13 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
     if (v < ROLL.impactMinSpeed) return;
     const now = performance.now();
+    // 'diceland', not 'thud'. This fires on EVERY qualifying impact while the
+    // dice tumble, so it has to be a light tap. It shared the combat slot, and
+    // the moment a teacher recorded a shield-block for Battle Day the tray
+    // started playing a sword hitting a shield several times per roll — heavy,
+    // far too loud, and out of step with the dice actually bouncing.
     if (now - lastImpactSfxT >= ROLL.impactSfxThrottleMs) {
-      audio?.sfx?.('thud');
+      audio?.sfx?.('diceland');
       lastImpactSfxT = now;
     }
     if (v > ROLL.shakeSpeed) triggerShake((v - ROLL.shakeSpeed) / 8);
@@ -660,7 +665,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
   function settle(now) {
     rolling = false;
     pauseAt = now + 900 + ROLL.settleAnticipationMs;
-    audio?.sfx?.('thud');
+    audio?.sfx?.('diceland');   // the die coming to rest — same light tap
     // Fate accounting: we always DISPLAY the real settled face; a target miss
     // (rare numerical divergence) just means the physics face is shown instead.
     for (const d of dice) {

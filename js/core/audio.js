@@ -59,6 +59,13 @@ const SFX = {
     tone({ freq: 120, sweep: 40, type: 'sine', dur: 0.35, gain: 0.5 });
     noise({ dur: 0.15, gain: 0.15, highpass: 200 });
   },
+  // The die settling — a tap, not a blow. Deliberately shorter and much quieter
+  // than thud(): it lands immediately after the rattle finishes, so anything
+  // weighty reads as a second, separate event instead of the end of the roll.
+  diceland() {
+    tone({ freq: 190, sweep: 95, type: 'sine', dur: 0.15, gain: 0.2 });
+    noise({ dur: 0.06, gain: 0.08, highpass: 1400 });
+  },
   coin() {
     tone({ freq: 988, type: 'square', dur: 0.09, gain: 0.15 });
     tone({ freq: 1319, type: 'square', dur: 0.25, delay: 0.09, gain: 0.15 });

@@ -196,7 +196,7 @@ function renderStandings(state, store) {
            instead of scrolling: each is flex-1 inside a fixed-height box, which
            means four always fit at any viewport without tuning row heights
            against a scrollbar. overflow-hidden is a backstop, not the plan. -->
-      <div class="flex flex-col gap-[clamp(4px,1vh,16px)] flex-1 min-h-0 overflow-hidden pr-1">
+      <div class="flex flex-col gap-[clamp(3px,0.5vh,10px)] flex-1 min-h-0 overflow-hidden pr-1">
         ${totals.map((t, i) => {
           const isActive = activeCore !== 'all' && t.house.core === activeCore;
           const pct = Math.max(4, Math.round((Math.max(0, t.total) / max) * 100));
@@ -210,7 +210,7 @@ function renderStandings(state, store) {
                   <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${t.house.name}</span>
                   <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
                 </div>
-                <div class="mt-[clamp(2px,0.6vh,7px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
+                <div class="mt-[clamp(2px,0.4vh,6px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
                   <div class="dash-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
                 </div>
               </div>

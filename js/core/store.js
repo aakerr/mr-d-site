@@ -96,6 +96,11 @@ const SFX_SLOTS = {
   coin:      { label: 'Points awarded',      file: 'sfx/points_awarded.mp3',    hint: 'The reward chime when a house scores. This one fires often.' },
   fanfare:   { label: 'Fanfare',             file: 'sfx/mythical_relic.mp3',    hint: 'Mythic relic claimed on a natural 20.' },
   roll:      { label: 'Dice rattle',         file: '',                          hint: 'The Die of Destiny tumbling. Uses the built-in rattle.' },
+  // Its own slot on purpose. The dice landing used to share "thud" with combat,
+  // so the moment a teacher recorded a shield-block for Battle Day, the Die of
+  // Destiny started landing with a sword hitting a shield — far too heavy, and
+  // out of time with the tumble. One recording, two unrelated moments.
+  diceland:  { label: 'Dice landing',        file: '',                          hint: 'The Die of Destiny settling after its roll. Uses the built-in tap — keep it short, it lands right after the rattle.' },
 };
 
 // Offensive items are STOCKPILED: buying one puts it in the house's armoury
