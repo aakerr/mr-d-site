@@ -52,7 +52,14 @@ const STYLE = `
 .hse-seg-btn[data-on="true"] { background: var(--accent, #f59e0b); color: #0b0f19; }
 
 /* ---- THE TERM ARC ---- */
-.hse-chart { position: relative; width: 100%; height: clamp(92px, 13vh, 210px); }
+/* The Term Arc is the POINT of this screen — it is the one view that shows the
+   whole House Cup race at a glance, and it is what goes on the board in front
+   of a class. It was sized at 13vh, which resolved to ~94px on a 720px window:
+   the plot area collapsed to roughly 58px and the "weeks still to come" label
+   landed on top of the lines. The ledger and the breakdown underneath are
+   reference tables that already scroll internally, so they are what should
+   give up room, not this. */
+.hse-chart { position: relative; width: 100%; height: clamp(150px, 30vh, 380px); }
 .hse-plot { position: absolute; left: 58px; right: 14px; top: 10px; bottom: 26px; }
 .hse-plot-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .hse-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--color-line, #374151); opacity: 0.75; }
@@ -192,14 +199,48 @@ const STYLE = `
 }
 .hse-toast.hse-toast-out { animation: hse-toast-out 220ms ease both; }
 
-@media (min-width: 1280px) {
-  .hse-midrow { height: clamp(172px, 24vh, 330px); }
+/* ---- award bar (replaces the old always-open preset row) + its modal ---- */
+.hse-award-launch {
+  min-height: clamp(44px, 5.5vh, 52px); padding: 0 clamp(16px, 2vw, 22px);
+  border-radius: 0.8rem; font-weight: 800; font-size: clamp(0.85rem, 1.3vw, 0.98rem);
+  color: #0b0f19; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px;
 }
+.hse-award-modal { width: min(560px, 92vw); }
+.hse-award-custom { border-top: 1px dashed var(--color-line, #374151); padding-top: 12px; margin-top: 4px; }
+.hse-input-err { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.35) !important; }
+
+/* ---- ledger toolbar collapsed into a dropdown menu ---- */
+.hse-ledger-menu-btn {
+  min-height: 44px; display: inline-flex; align-items: center; gap: 7px;
+  font-size: 0.88rem; position: relative;
+}
+.hse-ledger-menu-dot {
+  width: 8px; height: 8px; border-radius: 999px; background: var(--accent, #f59e0b);
+  display: inline-block; box-shadow: 0 0 0 2px var(--color-card, #111827);
+}
+.hse-ledger-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  width: min(300px, 82vw); display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--color-card, #111827); border: 1px solid var(--color-line, #374151);
+  border-radius: 0.85rem; box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+}
+
+/* ---- bottom split: "Where the points came from" (left) / "The Ledger" (right) ----
+   Equal width via grid-cols-2, equal height because both children are h-full
+   inside a row whose own height comes from flex-1 on this element — same
+   technique the ledger card already used on its own below the old midrow. */
+/* Takes what is LEFT, and is capped so it cannot take more. Without the cap it
+   grew to 430px of largely empty table while the Term Arc above it sat at 100px
+   — the reference material dominating the headline. Both panels scroll their
+   own contents, so a smaller share costs rows on screen, not information. */
+.hse-splitrow { flex: 1 1 auto; min-height: 0; max-height: clamp(190px, 34vh, 460px); }
+
 /* 1280x720 smartboards are the tight case: trim the chrome that is nice-to-have
-   rather than load-bearing so all four panels still fit without page scroll,
-   with at least 6 ledger rows visible. The chart loses the most (it stays
-   readable much smaller); ledger rows lose the least (text stays >=14px,
-   the undo target stays a real touch target, and award buttons stay >=44px). */
+   rather than load-bearing so all four panels still fit without page scroll.
+   PRIORITY, and this was got backwards once: the Term Arc is the headline and
+   keeps its height; the ledger and breakdown give way. They scroll internally,
+   so what they lose is rows-on-screen, not information — whereas a 44px chart
+   (which is what 6vh resolved to here) loses the thing the screen is for. */
 @media (max-height: 820px) {
   .hse-page { padding: 4px !important; gap: 4px !important; }
   .hse-card { padding: 6px 9px !important; }
@@ -210,12 +251,13 @@ const STYLE = `
   .hse-pill-total { font-size: 0.9rem; }
   .hse-stack { height: 20px; }
   .hse-eyebrow { font-size: 0.8rem; }
-  .hse-chart { height: clamp(44px, 6vh, 120px) !important; }
-  .hse-plot { top: 3px !important; bottom: 16px !important; }
+  .hse-chart { height: clamp(150px, 28vh, 300px) !important; }
+  .hse-plot { top: 6px !important; bottom: 20px !important; }
   .hse-seg { padding: 2px; gap: 3px; }
   .hse-seg-btn { min-height: 28px; padding: 0 8px; font-size: 0.875rem; }
-  .hse-midrow { height: clamp(132px, 18.5vh, 260px) !important; }
   .hse-hide-short { display: none !important; }
+  .hse-award-launch { min-height: 40px; padding: 0 12px; font-size: 0.85rem; }
+  .hse-ledger-menu-btn { min-height: 34px; font-size: 0.82rem; }
   .hse-insight { font-size: 0.88rem; padding: 5px 9px; }
   .hse-target { padding: 3px 8px; }
   .hse-preset { min-height: 44px; font-size: 0.86rem; }
@@ -340,6 +382,8 @@ function initInternalState(store) {
     cat: 'all',                         // ledger category filter
     from: '', to: '', search: '',       // ledger date range + reason search
     confirmTxId: null,
+    awardModalOpen: false,              // Award Points modal (presets + custom amount)
+    ledgerMenuOpen: false,              // ledger's search/filter/export dropdown
     lastActiveCore: store.getState().activeCore,
   };
 }
@@ -684,46 +728,96 @@ function renderBreakdown(store, s) {
 }
 
 // ============================================================================
-// 4. AWARD ROUTINES — the teacher's one-tap presets
+// 4. AWARD ROUTINES — the teacher's one-tap presets, now behind one launcher
 // ============================================================================
+// The row of preset buttons used to sit here permanently, full height, taking
+// as much vertical room as the breakdown panel beside it. It now collapses to
+// a single slim bar; tapping it opens a modal with the same presets plus a
+// custom amount field. The reclaimed height goes to the breakdown/ledger split
+// below.
 
-function renderAwards(store, s) {
+function targetChip(store, s) {
   const allMode = s.scope === 'all';
   const house = allMode ? null : store.HOUSES[Number(s.scope)];
   const accent = allMode ? '#f59e0b' : house.accent;
   const soft = allMode ? 'rgba(245,158,11,0.35)' : house.accentSoft;
-  const presets = store.getAwardPresets();
-
-  const target = allMode
+  return allMode
     ? `<div class="hse-target hse-allmode" style="border-color:${accent}; color:${accent};">
          <span>🏰</span><span>Awarding ALL FOUR HOUSES</span>
        </div>`
     : `<div class="hse-target" style="border-color:${accent}; background:${soft}; color:${accent};">
          ${houseImg(house, 'h-6 w-auto object-contain')}<span>Awarding ${escapeHtml(house.name)}</span>
        </div>`;
+}
+
+function renderAwardBar(store, s) {
+  const allMode = s.scope === 'all';
+  const house = allMode ? null : store.HOUSES[Number(s.scope)];
+  const accent = allMode ? '#f59e0b' : house.accent;
+  const targetName = allMode ? 'ALL FOUR HOUSES' : house.name;
 
   return `
-    <div class="hse-card hse-in p-3 xl:p-4 flex flex-col gap-2.5 h-full min-h-0 relative" id="hse-award-anchor">
-      <div class="flex items-start justify-between gap-2 flex-wrap">
-        <div>
+    <div class="hse-card hse-in p-2.5 xl:p-3 flex items-center gap-3 shrink-0 flex-wrap relative" id="hse-award-anchor">
+      <div class="flex items-center gap-2.5 min-w-0">
+        ${allMode ? '<span class="text-2xl leading-none">🏰</span>' : houseImg(house, 'h-8 w-auto object-contain shrink-0')}
+        <div class="leading-tight min-w-0">
           <div class="hse-eyebrow">Award Routines</div>
-          <div class="hse-sub hse-hide-short">One tap. Everything lands in the ledger below.</div>
+          <div class="hse-sub truncate hse-hide-short">Awarding <b style="color:${accent}">${escapeHtml(targetName)}</b> — presets or a custom amount</div>
         </div>
       </div>
-      ${target}
-      <div class="flex-1 min-h-0 overflow-y-auto hse-scroll pr-1 grid grid-cols-2 gap-2 content-start">
-        ${presets.length ? presets.map((p) => {
-          const up = p.points >= 0;
-          return `<button type="button" class="hse-btn hse-preset ${allMode ? 'hse-allmode' : ''}" data-preset="${escapeHtml(p.id)}"
-            style="${up
-              ? `background:${allMode ? 'transparent' : soft}; border-color:${accent}; color:var(--color-text);`
-              : 'background:rgba(239,68,68,0.14); border-color:rgba(239,68,68,0.5); color:var(--color-text);'}">
-            <span class="truncate">${escapeHtml(p.label)}</span>
-            <span class="shrink-0 font-extrabold" style="color:${up ? accent : '#f87171'}">${signed(p.points)}${allMode ? ' ea' : ''}</span>
-          </button>`;
-        }).join('') : '<div class="hse-sub">No presets yet — add them in Admin → Settings.</div>'}
+      <button type="button" class="hse-btn hse-award-launch ml-auto" data-award-open
+        style="background:${accent}; border-color:${accent};">
+        <span aria-hidden="true">⚡</span><span>Award Points</span>
+      </button>
+    </div>`;
+}
+
+function renderAwardModal(store, s) {
+  if (!s.awardModalOpen) return '';
+  const allMode = s.scope === 'all';
+  const house = allMode ? null : store.HOUSES[Number(s.scope)];
+  const accent = allMode ? '#f59e0b' : house.accent;
+  const soft = allMode ? 'rgba(245,158,11,0.35)' : house.accentSoft;
+  const presets = store.getAwardPresets();
+
+  return `
+    <div class="hse-modal-bg" data-action="hse-award-modal-close"></div>
+    <div class="hse-modal hse-award-modal" role="dialog" aria-modal="true" aria-labelledby="hse-award-modal-title">
+      <div class="hse-modal-head">
+        <div id="hse-award-modal-title" class="hse-modal-title">Award Points</div>
+        <button type="button" class="hse-modal-x" data-action="hse-award-modal-close" aria-label="Close">✕</button>
       </div>
-      <div class="hse-sub hse-hide-short">Presets are edited in <b>Admin → Settings</b>. Mistake? Undo it in the ledger below.</div>
+      <div class="hse-modal-body">
+        ${targetChip(store, s)}
+        <div class="hse-eyebrow" style="margin-top:14px; margin-bottom:8px;">Quick presets</div>
+        <div class="grid grid-cols-2 gap-2">
+          ${presets.length ? presets.map((p) => {
+            const up = p.points >= 0;
+            return `<button type="button" class="hse-btn hse-preset ${allMode ? 'hse-allmode' : ''}" data-preset="${escapeHtml(p.id)}"
+              style="${up
+                ? `background:${allMode ? 'transparent' : soft}; border-color:${accent}; color:var(--color-text);`
+                : 'background:rgba(239,68,68,0.14); border-color:rgba(239,68,68,0.5); color:var(--color-text);'}">
+              <span class="truncate">${escapeHtml(p.label)}</span>
+              <span class="shrink-0 font-extrabold" style="color:${up ? accent : '#f87171'}">${signed(p.points)}${allMode ? ' ea' : ''}</span>
+            </button>`;
+          }).join('') : '<div class="hse-sub">No presets yet — add them in Admin → Settings.</div>'}
+        </div>
+        <div class="hse-award-custom">
+          <div class="hse-eyebrow" style="margin-bottom:8px;">Custom amount</div>
+          <div class="flex items-end gap-2 flex-wrap">
+            <label class="flex flex-col gap-1">
+              <span class="hse-sub">Points (+ or −)</span>
+              <input type="number" id="hse-award-amount" class="hse-input" style="width:110px" placeholder="e.g. 10 or -5" step="1" inputmode="numeric" aria-label="Custom point amount, positive or negative" />
+            </label>
+            <label class="flex-1 flex flex-col gap-1" style="min-width:160px">
+              <span class="hse-sub">Reason (optional)</span>
+              <input type="text" id="hse-award-reason" class="hse-input w-full" placeholder="e.g. Extra credit" maxlength="120" aria-label="Reason for this award" />
+            </label>
+            <button type="button" class="hse-btn hse-modal-btn hse-award-apply" data-award-custom-submit
+              style="background:${accent}; border-color:${accent}; color:#0b0f19;">Award</button>
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -796,27 +890,48 @@ function renderLedgerStats(store, s) {
 function renderLedger(store, s) {
   const cats = categoriesInUse(store);
   const dirty = s.cat !== 'all' || s.from || s.to || s.search;
+  const menuOpen = !!s.ledgerMenuOpen;
+  // Search, category/date filters and export used to sit inline in the header —
+  // that only worked when the ledger had the full page width. Now that it
+  // shares a half-width split with the breakdown panel, they collapse into one
+  // dropdown anchored at the top-right of this header; every control below
+  // keeps its original id/data-filter attribute, so the existing change/input/
+  // click wiring in mount() needs no changes at all.
+  const toolbar = `
+    <div class="ml-auto relative shrink-0">
+      <button type="button" class="hse-btn hse-input hse-ledger-menu-btn font-bold" data-ledger-menu-toggle
+        aria-haspopup="true" aria-expanded="${menuOpen}">
+        <span aria-hidden="true">🔍</span><span>Search, sort &amp; export</span>
+        ${dirty ? '<span class="hse-ledger-menu-dot" aria-hidden="true" title="Filters active"></span>' : ''}
+      </button>
+      ${menuOpen ? `
+      <div class="hse-ledger-menu hse-in" role="menu">
+        <label class="sr-only" for="hse-cat">Category</label>
+        <select id="hse-cat" class="hse-input w-full" data-filter="cat" aria-label="Filter by category">
+          <option value="all"${s.cat === 'all' ? ' selected' : ''}>All categories</option>
+          ${cats.map((c) => `<option value="${c}"${s.cat === c ? ' selected' : ''}>${escapeHtml(catMeta(c).name)}</option>`).join('')}
+        </select>
+        <div class="flex gap-2">
+          <input type="date" class="hse-input flex-1 min-w-0" data-filter="from" value="${escapeHtml(s.from)}" aria-label="From date" title="Only show entries on or after this date" />
+          <input type="date" class="hse-input flex-1 min-w-0" data-filter="to" value="${escapeHtml(s.to)}" aria-label="To date" title="Only show entries on or before this date" />
+        </div>
+        <input type="search" id="hse-search" class="hse-input w-full" placeholder="Search reasons…"
+          value="${escapeHtml(s.search)}" aria-label="Search the reason text" />
+        <div class="flex gap-2">
+          <button type="button" class="hse-btn hse-input flex-1 font-bold" data-clear-filters ${dirty ? '' : 'hidden'}>Clear filters</button>
+          <button type="button" class="hse-btn hse-input flex-1 font-extrabold" data-export
+            style="background:var(--accent); border-color:var(--accent); color:#0b0f19;">⬇ Export CSV</button>
+        </div>
+      </div>` : ''}
+    </div>`;
   return `
-    <div class="hse-card hse-in p-3 xl:p-4 flex flex-col gap-2 flex-1 min-h-0" style="min-height:150px;">
-      <div class="flex items-center gap-3 flex-wrap">
-        <div>
+    <div class="hse-card hse-in p-3 xl:p-4 flex flex-col gap-2 h-full min-h-0" style="min-height:150px;">
+      <div class="flex items-center gap-3 flex-wrap relative">
+        <div class="min-w-0">
           <div class="hse-eyebrow">The Ledger${s.scope === 'all' ? '' : ` — ${escapeHtml(store.HOUSES[Number(s.scope)].name)}`}</div>
           <div class="hse-sub" id="hse-ledger-stats">${renderLedgerStats(store, s)}</div>
         </div>
-        <div class="ml-auto flex items-center gap-2 flex-wrap">
-          <label class="sr-only" for="hse-cat">Category</label>
-          <select id="hse-cat" class="hse-input" data-filter="cat" aria-label="Filter by category">
-            <option value="all"${s.cat === 'all' ? ' selected' : ''}>All categories</option>
-            ${cats.map((c) => `<option value="${c}"${s.cat === c ? ' selected' : ''}>${escapeHtml(catMeta(c).name)}</option>`).join('')}
-          </select>
-          <input type="date" class="hse-input" style="width:138px" data-filter="from" value="${escapeHtml(s.from)}" aria-label="From date" title="Only show entries on or after this date" />
-          <input type="date" class="hse-input" style="width:138px" data-filter="to" value="${escapeHtml(s.to)}" aria-label="To date" title="Only show entries on or before this date" />
-          <input type="search" id="hse-search" class="hse-input" style="width:170px" placeholder="Search reasons…"
-            value="${escapeHtml(s.search)}" aria-label="Search the reason text" />
-          <button type="button" class="hse-btn hse-input font-bold" data-clear-filters ${dirty ? '' : 'hidden'}>Clear filters</button>
-          <button type="button" class="hse-btn hse-input font-extrabold" data-export
-            style="background:var(--accent); border-color:var(--accent); color:#0b0f19;">⬇ Export CSV</button>
-        </div>
+        ${toolbar}
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto hse-scroll pr-1" id="hse-ledger-body">${renderLedgerRows(store, s)}</div>
       <div class="hse-sub hse-hide-short">Tap ✕ on any line to undo it — you will be asked to confirm first.</div>
@@ -934,13 +1049,13 @@ function render(root, ctx, s) {
     <div class="hse-page h-full w-full p-3 xl:p-5 flex flex-col gap-3 xl:gap-4 overflow-y-auto hse-scroll">
       ${renderHeader(store, s)}
       ${renderArc(store, s)}
-      <div class="hse-midrow grid grid-cols-1 xl:grid-cols-3 gap-3 xl:gap-4 shrink-0 min-h-0">
-        <div class="xl:col-span-2 min-w-0 min-h-0">${renderBreakdown(store, s)}</div>
-        <div class="min-w-0 min-h-0">${renderAwards(store, s)}</div>
+      ${renderAwardBar(store, s)}
+      <div class="hse-splitrow grid grid-cols-1 xl:grid-cols-2 gap-3 xl:gap-4 min-h-0">
+        <div class="min-w-0 min-h-0 h-full">${renderBreakdown(store, s)}</div>
+        <div class="min-w-0 min-h-0 h-full">${renderLedger(store, s)}</div>
       </div>
-      ${renderLedger(store, s)}
     </div>
-    <div id="hse-modal-root">${renderConfirmModal(store, s)}</div>
+    <div id="hse-modal-root">${renderConfirmModal(store, s) || renderAwardModal(store, s)}</div>
   `;
 }
 
@@ -962,18 +1077,39 @@ export default {
     toastHost.className = 'hse-toast-host';
     document.body.appendChild(toastHost);
 
-    // Full re-render, preserving where the teacher had scrolled the ledger.
+    // Full re-render, preserving where the teacher had scrolled the ledger
+    // and, if they were mid-type in a text field, their caret position and —
+    // for the award modal's amount/reason fields only, which have no `s.*`
+    // backing — whatever they'd typed. A re-render can be triggered by
+    // something unrelated to what's on screen (see the pointer guard below),
+    // so none of that mid-type state may be lost. The search box is exempt
+    // from value restoration: its value already comes straight from
+    // `s.search` on every render, so re-applying a stale captured value here
+    // would fight anything that legitimately just changed it (e.g. Clear
+    // filters resetting s.search to '').
+    const FOCUS_IDS = ['hse-search', 'hse-award-amount', 'hse-award-reason'];
+    const RESTORE_VALUE_IDS = ['hse-award-amount', 'hse-award-reason'];
+    // type="number" (the custom amount field) throws on selectionStart/
+    // setSelectionRange in most browsers — caret restore only applies to the
+    // text-like fields; the number field still gets its value and focus back.
+    const safeCaret = (node) => { try { return node.selectionStart; } catch (e) { return null; } };
     const doRender = () => {
       const prev = el.querySelector('#hse-ledger-body');
       const top = prev ? prev.scrollTop : 0;
-      const search = el.querySelector('#hse-search');
-      const caret = (search && document.activeElement === search) ? search.selectionStart : null;
+      const active = document.activeElement;
+      const activeId = active && FOCUS_IDS.includes(active.id) ? active.id : null;
+      const activeVal = activeId ? active.value : null;
+      const caret = activeId ? safeCaret(active) : null;
       render(el, ctx, s);
       const next = el.querySelector('#hse-ledger-body');
       if (next && top) next.scrollTop = top;
-      if (caret != null) {
-        const box = el.querySelector('#hse-search');
-        if (box) { box.focus(); box.setSelectionRange(caret, caret); }
+      if (activeId) {
+        const box = el.querySelector(`#${activeId}`);
+        if (box) {
+          if (RESTORE_VALUE_IDS.includes(activeId) && activeVal) box.value = activeVal;
+          box.focus();
+          if (caret != null) { try { box.setSelectionRange(caret, caret); } catch (e) { /* type=number: no selection API */ } }
+        }
       }
     };
 
@@ -999,6 +1135,10 @@ export default {
     const award = (points, label, tag) => {
       lock.requireUnlock('award points').then((ok) => {
         if (!ok) return;
+        // Close the modal in the same tick as the store write, so the modal's
+        // own close and the store-triggered re-render land together instead
+        // of as two visible steps.
+        s.awardModalOpen = false;
         const allMode = s.scope === 'all';
         if (allMode) {
           store.awardAll(points, { reason: label, tag: tag || 'manual' });
@@ -1024,10 +1164,41 @@ export default {
       const chartBtn = e.target.closest('[data-chart]');
       if (chartBtn) { s.chartMode = chartBtn.getAttribute('data-chart'); doRender(); return; }
 
+      // ---- Award Points modal: open / close / presets / custom amount ----
+      if (e.target.closest('[data-award-open]')) { s.awardModalOpen = true; doRender(); return; }
+      if (e.target.closest('[data-action="hse-award-modal-close"]')) { s.awardModalOpen = false; doRender(); return; }
+
       const presetBtn = e.target.closest('[data-preset]');
       if (presetBtn) {
         const p = store.getAwardPresets().find((x) => x.id === presetBtn.getAttribute('data-preset'));
         if (p) award(Math.round(Number(p.points) || 0), p.label, p.tag);
+        return;
+      }
+
+      if (e.target.closest('[data-award-custom-submit]')) {
+        const amtEl = el.querySelector('#hse-award-amount');
+        const reasonEl = el.querySelector('#hse-award-reason');
+        const raw = amtEl ? amtEl.value.trim() : '';
+        const points = Math.round(Number(raw));
+        if (!raw || !Number.isFinite(points) || points === 0) {
+          // Same "refused → nothing happens" spirit as the lock: no store
+          // call for a blank/zero/invalid amount, just a quiet visual nudge.
+          if (amtEl) {
+            amtEl.classList.add('hse-input-err');
+            amtEl.focus();
+            setTimeout(() => amtEl.classList.remove('hse-input-err'), 700);
+          }
+          return;
+        }
+        const reason = (reasonEl && reasonEl.value.trim()) || 'Custom award';
+        award(points, reason, 'manual');
+        return;
+      }
+
+      // ---- ledger's search/filter/export menu ----
+      if (e.target.closest('[data-ledger-menu-toggle]')) {
+        s.ledgerMenuOpen = !s.ledgerMenuOpen;
+        doRender();
         return;
       }
 
@@ -1082,6 +1253,15 @@ export default {
         });
         return;
       }
+
+      // ---- fallthrough: nothing above matched, so this is a click "outside"
+      // everything on screen — close the ledger menu if it was open. Placed
+      // last (not gated by a return above) so it never fires on a click that
+      // was already handled as its own action. ----
+      if (s.ledgerMenuOpen && !e.target.closest('.hse-ledger-menu') && !e.target.closest('[data-ledger-menu-toggle]')) {
+        s.ledgerMenuOpen = false;
+        doRender();
+      }
     };
     el.addEventListener('click', clickHandler);
 
@@ -1101,9 +1281,50 @@ export default {
     el.addEventListener('input', inputHandler);
 
     const keyHandler = (e) => {
-      if (e.key === 'Escape' && s.confirmTxId) { s.confirmTxId = null; doRender(); }
+      if (e.key !== 'Escape') return;
+      if (s.confirmTxId) { s.confirmTxId = null; doRender(); return; }
+      if (s.awardModalOpen) { s.awardModalOpen = false; doRender(); return; }
+      if (s.ledgerMenuOpen) { s.ledgerMenuOpen = false; doRender(); return; }
     };
     document.addEventListener('keydown', keyHandler);
+
+    // ---- the actual fix for "sometimes clicking Quick Points does nothing" ----
+    // ROOT CAUSE: store.subscribe() below re-renders this ENTIRE screen (a full
+    // root.innerHTML rebuild) on every store change anywhere in the app — not
+    // just changes made from this screen. The topbar's own separate +/- quick-
+    // award control, or even a single "Award ALL FOUR HOUSES" tap here (which
+    // calls store.addPoints once per house, i.e. four emits in a row), can
+    // land while the teacher's finger/mouse is still down on a button on THIS
+    // screen. When that happens, the element they are pressing is destroyed
+    // and replaced with a freshly-built one before they lift their finger —
+    // and per the browsers' own click-dispatch rules, if the mousedown
+    // target is no longer in the document by mouseup, no click event fires
+    // at all. The tap silently does nothing; the very next, uninterrupted
+    // tap on the newly-built button works fine. (Verified directly: holding
+    // a reference to a live preset button and forcing an unrelated
+    // store.addPoints call proves that button node is torn out of the
+    // document — button.isConnected flips to false — the instant the
+    // unrelated update lands.)
+    // FIX: never let that rebuild happen while a pointer is physically down
+    // anywhere on this screen. Defer it until release, so the pressed
+    // element is guaranteed to still exist when the click resolves.
+    let pointerDownInside = false;
+    let renderDeferred = false;
+    let deferWatchdog = null;
+    const clearWatchdog = () => { if (deferWatchdog) { clearTimeout(deferWatchdog); deferWatchdog = null; } };
+    const onPointerDown = (e) => { if (el.contains(e.target)) pointerDownInside = true; };
+    const onPointerRelease = () => {
+      pointerDownInside = false;
+      clearWatchdog();
+      if (renderDeferred) { renderDeferred = false; doRender(); }
+    };
+    // Pointer Events cover mouse/touch/pen on every browser this app targets;
+    // mousedown/mouseup are added too as a cheap belt-and-braces fallback.
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointerup', onPointerRelease, true);
+    document.addEventListener('pointercancel', onPointerRelease, true);
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('mouseup', onPointerRelease, true);
 
     // Follow the top-bar core switcher: changing class up there should change
     // whose records are on screen. ('All Cores' navigates away to the Council,
@@ -1114,6 +1335,17 @@ export default {
         s.lastActiveCore = core;
         if (core !== 'all' && store.HOUSES[core]) s.scope = store.HOUSES[core].id;
       }
+      if (pointerDownInside) {
+        // Hold the rebuild until the gesture in progress finishes. A watchdog
+        // guards against ever losing a pointerup (e.g. focus leaving the
+        // window mid-press) and leaving the screen silently stale forever.
+        renderDeferred = true;
+        clearWatchdog();
+        deferWatchdog = setTimeout(() => {
+          if (renderDeferred) { renderDeferred = false; pointerDownInside = false; doRender(); }
+        }, 1500);
+        return;
+      }
       doRender();
     });
 
@@ -1122,6 +1354,9 @@ export default {
     this._changeHandler = changeHandler;
     this._inputHandler = inputHandler;
     this._keyHandler = keyHandler;
+    this._onPointerDown = onPointerDown;
+    this._onPointerRelease = onPointerRelease;
+    this._clearWatchdog = clearWatchdog;
     this._unsub = unsub;
     this._toastHost = toastHost;
   },
@@ -1133,6 +1368,18 @@ export default {
       if (this._changeHandler) this._el.removeEventListener('change', this._changeHandler);
       if (this._inputHandler) this._el.removeEventListener('input', this._inputHandler);
     }
+    if (this._onPointerDown) {
+      document.removeEventListener('pointerdown', this._onPointerDown, true);
+      document.removeEventListener('mousedown', this._onPointerDown, true);
+      this._onPointerDown = null;
+    }
+    if (this._onPointerRelease) {
+      document.removeEventListener('pointerup', this._onPointerRelease, true);
+      document.removeEventListener('pointercancel', this._onPointerRelease, true);
+      document.removeEventListener('mouseup', this._onPointerRelease, true);
+      this._onPointerRelease = null;
+    }
+    if (this._clearWatchdog) { this._clearWatchdog(); this._clearWatchdog = null; }
     if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
     if (this._toastHost) { this._toastHost.remove(); this._toastHost = null; }
     this._el = null;
