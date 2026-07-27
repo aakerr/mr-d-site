@@ -170,14 +170,21 @@ function renderHero(state, store) {
       <img src="${h.heroImage}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
            onerror="this.onerror=null;this.style.display='none';" />
       <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-black/10"></div>
-      <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full">
-        ${houseImg(h, 'h-28 xl:h-36 w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]')}
-        <div class="flex-1 min-w-[240px]">
-          <div class="text-white/80 text-xs xl:text-sm font-bold uppercase tracking-[0.25em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">Welcome</div>
-          <h1 class="font-display font-extrabold text-5xl xl:text-7xl tracking-wide text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]">
+      <!-- Crest and text share ONE height (--crest-h) and the text column is
+           justify-between, so "Welcome" pins to the top of the shield and the
+           motto to the bottom, with the two gaps equal by construction rather
+           than by hand-tuned margins. Previously the block sat 11px inside the
+           shield at both ends, and the name/motto gap only LOOKED bigger than
+           the welcome/name one because a 72px line box leaves empty space below
+           the glyphs — margins were never the thing to adjust. -->
+      <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full" style="--crest-h:clamp(7rem,21vh,10.5rem)">
+        ${houseImg(h, 'w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]', 'style="height:var(--crest-h)"')}
+        <div class="flex-1 min-w-[240px] flex flex-col justify-between" style="height:var(--crest-h)">
+          <div class="text-white/80 text-xs xl:text-sm font-bold uppercase tracking-[0.25em] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">Welcome</div>
+          <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:clamp(2.75rem,11vh,6rem)">
             ${h.name.toUpperCase()}!
           </h1>
-          <p class="mt-0.5 text-white/90 text-lg xl:text-xl italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
+          <p class="text-white/90 text-lg xl:text-xl italic leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
         </div>
       </div>
     </div>`;
