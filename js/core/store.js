@@ -412,6 +412,9 @@ function defaultState() {
     // Ice Axe). An expiry beats a countdown: nothing has to tick, and it is
     // still correct after the laptop has been shut for the weekend.
     frozen: {},
+    // houseId -> epoch ms while a Shroud of Secrecy hides their held items from
+    // the Stone of Seeing.
+    shrouded: {},
     // houseId -> DAMAGE TAKEN, not current HP. Refilled (cleared) at the start
     // of each Battle Day. Storing "current" looked right until a house won a
     // battle: the prize pushed it over a 500-point boundary, its maximum rose,
@@ -772,6 +775,10 @@ function load() {
       // Drop expired shields so they can't be revived by an old backup.
       for (const [id, exp] of Object.entries(merged.shields)) {
         if (!(Number(exp) > Date.now())) delete merged.shields[id];
+      }
+      merged.shrouded = merged.shrouded && typeof merged.shrouded === 'object' ? merged.shrouded : {};
+      for (const [id, until] of Object.entries(merged.shrouded)) {
+        if (!(Number(until) > Date.now())) delete merged.shrouded[id];
       }
       merged.frozen = merged.frozen && typeof merged.frozen === 'object' ? merged.frozen : {};
       for (const [id, until] of Object.entries(merged.frozen)) {
@@ -1214,6 +1221,11 @@ export const store = {
   addPoints(houseId, delta, { reason = '', tag = '' } = {}) {
     delta = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(delta) || 0)));
     if (!delta || !HOUSES[houseId]) return null;
+    // A frozen house cannot EARN — that is the whole of the Legendary Ice Axe,
+    // and it has to bite everywhere points are given or the item does nothing
+    // between Battle Days. Losing points still works: being frozen is not
+    // protection, and the teacher can always thaw a house in Admin.
+    if (delta > 0 && store.isFrozen(houseId)) return null;
     const tx = { id: `tx-${Date.now()}-${state.transactions.length}`, ts: Date.now(), houseId: Number(houseId), delta, reason, tag };
     state.transactions.push(tx);
     bumpLedger();
@@ -1397,9 +1409,15 @@ export const store = {
   // used. The weekly limit is therefore a cap on what may be HELD, not a
   // separate booking system — which is also how he describes it, and means the
   // Magic Shop needs no new concept to enforce it.
+  // ONE extra slot with the Bag of Holding, not one of each. His document says
+  // "2 attack OR 2 defense items at the same time" — the choice is the point of
+  // the item, and two of both would be a far stronger card at the same 500.
+  // So: a second slot they may fill either way, capped at 2 of a type.
+  // If he confirms he meant two of each, this is one line.
   duelSlotLimits(houseId) {
-    const hasBag = store.countOwned(houseId, 'bagofholding') > 0;
-    return hasBag ? { attack: 2, defense: 2 } : { attack: 1, defense: 1 };
+    const bag = store.countOwned(houseId, 'bagofholding') > 0;
+    if (!bag) return { attack: 1, defense: 1, total: 2 };
+    return { attack: 2, defense: 2, total: 3 };
   },
 
   duelHeld(houseId, slot) {
@@ -1415,12 +1433,18 @@ export const store = {
     if (!item) return { ok: false, reason: 'That item is not in the shop.' };
     const slot = item.slot || 'utility';
     if (slot === 'utility') return { ok: true, reason: '' };
-    const limit = store.duelSlotLimits(houseId)[slot];
+    const limits = store.duelSlotLimits(houseId);
     const held = store.duelHeld(houseId, slot);
-    if (held >= limit) {
-      return { ok: false, reason: limit === 1
-        ? `Only one ${slot} item a week — use or drop the one they already hold. The Bag of Holding raises this to two.`
-        : `That is both ${slot} slots used for the week.` };
+    const heldTotal = store.duelHeld(houseId, 'attack') + store.duelHeld(houseId, 'defense');
+    if (held >= limits[slot]) {
+      return { ok: false, reason: limits[slot] === 1
+        ? `Only one ${slot} item at a time — use or drop the one they already hold. The Bag of Holding adds a slot.`
+        : `That is both ${slot} slots full.` };
+    }
+    // The Bag gives ONE extra slot, not one of each — so a house already holding
+    // two attacks cannot also hold two defenses.
+    if (heldTotal >= limits.total) {
+      return { ok: false, reason: 'That is every slot full. Use something, or drop an item, before buying another.' };
     }
     return { ok: true, reason: '' };
   },
@@ -1505,15 +1529,71 @@ export const store = {
 
   // ----- freeze (Legendary Ice Axe) -------------------------------------------
   // Stored as an expiry DATE rather than a countdown, so it survives reloads and
-  // does not need anything ticking. Whole school days, per his rules.
+  // does not need anything ticking.
+  //
+  // Counted in SCHOOL days, skipping weekends. "Frozen for 3 days" rolled on a
+  // Thursday has to mean three days he actually teaches, or a weekend eats most
+  // of the punishment and the item feels broken to the class that spent 500 on
+  // it. If he says he meant plain calendar days, delete the weekend skip.
   freezeHouse(houseId, days) {
     if (!state.frozen || typeof state.frozen !== 'object') state.frozen = {};
     const until = new Date();
     until.setHours(0, 0, 0, 0);
-    until.setDate(until.getDate() + Math.max(1, Math.round(days)));
+    let left = Math.max(1, Math.round(days));
+    while (left > 0) {
+      until.setDate(until.getDate() + 1);
+      const d = until.getDay();
+      if (d !== 0 && d !== 6) left--;      // Sunday / Saturday do not count
+    }
     state.frozen[houseId] = until.getTime();
     emit();
   },
+  // ----- the three information items -------------------------------------------
+  // None of these had a mechanism, because the doc describes what they DO
+  // without saying when. In his sequence the only hidden thing is the defense a
+  // house is holding, so that is what they act on — it is the one reading where
+  // paying 1000 for the Stone makes sense.
+
+  // Stone of Seeing: look at what a house is holding. Spent on use.
+  peekHouse(viewerId, targetId) {
+    if (store.countOwned(viewerId, 'stone') < 1) {
+      return { ok: false, reason: 'That house does not have a Stone of Seeing.' };
+    }
+    if (store.isShrouded(targetId)) {
+      store.consumeFromInventory(viewerId, 'stone');
+      emit();
+      return { ok: true, shrouded: true, items: [],
+        reason: `${HOUSES[targetId]?.name || 'That house'} is under a Shroud of Secrecy — the Stone shows nothing. It is still used up.` };
+    }
+    store.consumeFromInventory(viewerId, 'stone');
+    const items = store.getInventory(targetId).map(({ item, count }) => ({ name: item.name, slot: item.slot, count }));
+    emit();
+    return { ok: true, shrouded: false, items, reason: '' };
+  },
+
+  // Shroud of Secrecy: one week of immunity from the Stone. Spent on use.
+  raiseShroud(houseId) {
+    if (store.countOwned(houseId, 'shroud') < 1) return { ok: false, reason: 'That house does not have a Shroud of Secrecy.' };
+    if (!state.shrouded || typeof state.shrouded !== 'object') state.shrouded = {};
+    state.shrouded[houseId] = Date.now() + 7 * 86400000;
+    store.consumeFromInventory(houseId, 'shroud');
+    emit();
+    return { ok: true, until: state.shrouded[houseId] };
+  },
+  isShrouded(houseId) { return (((state.shrouded || {})[houseId]) || 0) > Date.now(); },
+
+  // Time Turner: "change their items after they are attacked". With only one
+  // defense held there is nothing to swap TO, so in practice it is a second
+  // chance — spent to cancel an attack that has already got through. The
+  // teacher decides whether to use it when the attack lands.
+  canTimeTurn(houseId) { return store.countOwned(houseId, 'timeturner') > 0; },
+  useTimeTurner(houseId) {
+    if (!store.canTimeTurn(houseId)) return { ok: false, reason: 'That house does not have a Time Turner.' };
+    store.consumeFromInventory(houseId, 'timeturner');
+    emit();
+    return { ok: true };
+  },
+
   isFrozen(houseId) { return (((state.frozen || {})[houseId]) || 0) > Date.now(); },
   frozenUntil(houseId) { return ((state.frozen || {})[houseId]) || 0; },
   thawHouse(houseId) {
