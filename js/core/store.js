@@ -39,7 +39,11 @@ function defaultDiceProphecy() {
     { id: 'catastrophe', min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 10 points',                        points: -10, hasButton: true },
     { id: 'misfortune',  min: 2,  max: 5,  emoji: '🌧️', title: 'Misfortune',     desc: 'Teacher picks the next challenger',            points: 0,   hasButton: false },
     { id: 'neutral',     min: 6,  max: 9,  emoji: '😐', title: 'Fate is Neutral', desc: 'Nothing happens',                              points: 0,   hasButton: false },
-    { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: 'Move your token / +2 class points',            points: 2,   hasButton: true },
+    // "Move your token" was left over from a physical board version — there is
+    // no token in this app, and this string is what the outcome plaque shows a
+    // whole class during a live roll. "class points" was the odd one out too:
+    // every other row, and the rest of the app, says house points.
+    { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: '+2 house points',                              points: 2,   hasButton: true },
     { id: 'fortune',     min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
     { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a Mythic Relic to defend your house!', points: 20, hasButton: true, mythic: true },
   ];
@@ -110,6 +114,13 @@ const MAX_DELTA = 9999;
 // Bump when a shipped shop description needs to reach browsers that have
 // already saved their own copy of the catalog. See the migration in load().
 const SHOP_DESC_REV = 3;
+
+// Same idea for the dice prophecy table, which is saved state for the same
+// reason and went stale for the same reason.
+const DICE_DESC_REV = 1;
+const OLD_DICE_DESCS = {
+  smallfavor: ['Move your token / +2 class points'],
+};
 
 // Every description these items have EVER shipped with, recovered from git
 // history (two of them shipped under more than one wording). A saved
@@ -503,16 +514,25 @@ function load() {
       {
         const def = defaultDiceProphecy();
         const saved = Array.isArray(merged.settings.diceProphecy) ? merged.settings.diceProphecy : [];
+        // Same trap the shop descriptions hit: this table is SAVED state, so a
+        // wording fix here reaches nobody who has already run the app — their
+        // copy wins for ever. "Move your token" was left over from a physical
+        // board game and is what the outcome plaque shows a whole class during
+        // a live roll. Retire text the APP shipped, keyed off a revision marker
+        // so it happens once; anything the teacher wrote himself is untouched.
+        const retired = merged.settings.diceDescRev !== DICE_DESC_REV;
         merged.settings.diceProphecy = def.map((d) => {
           const s = saved.find((x) => x.id === d.id) || {};
+          const stale = retired && (OLD_DICE_DESCS[d.id] || []).includes(String(s.desc || '').trim());
           return {
             ...d,
             points: Number.isFinite(Number(s.points)) ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(s.points)))) : d.points,
             title: typeof s.title === 'string' && s.title.trim() ? s.title.trim().slice(0, 40) : d.title,
-            desc: typeof s.desc === 'string' && s.desc.trim() ? s.desc.trim().slice(0, 140) : d.desc,
+            desc: (!stale && typeof s.desc === 'string' && s.desc.trim()) ? s.desc.trim().slice(0, 140) : d.desc,
             emoji: typeof s.emoji === 'string' && s.emoji.trim() ? s.emoji.trim().slice(0, 4) : d.emoji,
           };
         });
+        merged.settings.diceDescRev = DICE_DESC_REV;
       }
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
