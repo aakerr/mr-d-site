@@ -179,21 +179,36 @@ function renderHero(state, store) {
            work here; the gaps are meant to be small and equal. -->
       <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full" style="--crest-h:clamp(7rem,21vh,10.5rem)">
         ${houseImg(h, 'w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]', 'style="height:var(--crest-h)"')}
-        <div class="flex-1 min-w-[240px] flex flex-col justify-center" style="height:var(--crest-h);gap:2px">
-          <div class="text-white/80 text-xs xl:text-sm font-bold uppercase tracking-[0.25em] leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">Welcome</div>
+        <!-- Spaced by INK, not by boxes. Box-to-box said 2px and 0px while the
+             eye saw 14px and 25px, because a line box reserves descender room
+             under the baseline that an all-caps house name never uses: 21.8px
+             of dead space under "CAMELOT!" against 10px above it. Margins here
+             cancel that reserved space, so the numbers below are what is
+             actually visible between letters.
+             The ratios (.0806 above, .1758 below) are Cinzel's ink inset per em,
+             measured with canvas TextMetrics; they scale with the name because
+             they are multiplied by its font size. Change the typeface and they
+             must be re-measured. --wel-ink/--motto-ink are those lines' visible
+             heights, likewise measured rather than assumed. -->
+        <div class="flex-1 min-w-[240px] flex flex-col justify-start" style="
+             height:var(--crest-h);
+             --gap-top:2px; --gap-bot:0px;
+             --wel-ink:10.8px; --motto-ink:18.4px;
+             --name-fs:calc((var(--crest-h) - var(--wel-ink) - var(--gap-top) - var(--motto-ink) - var(--gap-bot)) / 0.7436)">
+          <div class="text-white/80 font-bold uppercase tracking-[0.25em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:16px;line-height:1;margin-top:-2.9px;margin-bottom:calc(var(--gap-top) - 2.3px - 0.0806 * var(--name-fs))">Welcome</div>
           <!-- Sized OFF the crest, not off the viewport: the name is whatever is
                left of the shield's height once the other two lines and the two
                gaps are taken out. That is what makes top and bottom line up on
                their own at any screen size — a vh value only matches at the one
                height it was tuned at and drifts everywhere else.
-               The 52px is their BOX heights, not their font sizes: Tailwind's
-               text-sm and text-xl each carry their own line-height (20px and
-               28px) and beat leading-none here, so measuring the rendered boxes
-               is the only way this arithmetic comes out right. -->
-          <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:calc(var(--crest-h) - 52px)">
+               --name-fs above solves for the size whose INK fills what is left
+               of the shield once the other two lines and the gaps are removed,
+               which is why the letters meet the shield's edges rather than the
+               boxes doing so invisibly. -->
+          <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:var(--name-fs)">
             ${h.name.toUpperCase()}!
           </h1>
-          <p class="text-white/90 text-lg xl:text-xl italic leading-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
+          <p class="text-white/90 italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:26px;line-height:1;margin-top:calc(var(--gap-bot) - 0.1758 * var(--name-fs) - 3.4px)">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
         </div>
       </div>
     </div>`;
