@@ -219,8 +219,20 @@ function injectStyles() {
     100%{transform:translateY(-620px) translateX(var(--ember-drift,20px));opacity:0;}
   }
 
-  .duel-topbar{position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
-    gap:1rem;flex-wrap:wrap;max-width:1560px;margin:0 auto .85rem;}
+  /* Same grid as .duel-stage below, so the header sits on the SAME columns as
+     the cards: the title starts at the challenger card's left edge and the
+     buttons end at its right edge, instead of the header being shrink-to-fit
+     and centred (which floated it inwards from everything else). */
+  .duel-topbar{position:relative;z-index:2;flex:0 0 auto;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(190px,clamp(190px,19vw,300px)) minmax(0,1fr);
+    gap:clamp(.6rem,1.4vw,1.25rem);width:100%;max-width:1560px;margin:0 auto .85rem;}
+  /* Title and buttons STACK inside the challenger column rather than sharing a
+     line: at 1280 the column is ~473px and the title alone needs ~693px, so
+     side-by-side forced the title to wrap to three lines and the buttons to
+     stack anyway. One line each, both pinned to the column's edges. */
+  .duel-topbar-inner{grid-column:1;display:flex;flex-direction:column;align-items:stretch;
+    gap:.5rem;min-width:0;}
+  .duel-topbar-inner .duel-topbar-actions{align-self:flex-end;flex-wrap:nowrap;}
   .duel-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
     font-size:clamp(1.2rem,2.6vw,1.9rem);color:#fca5a5;letter-spacing:.05em;
     text-shadow:0 0 26px rgba(239,68,68,.55);line-height:1.1;}
@@ -788,13 +800,12 @@ function renderDuel() {
     <div class="duel-root">
       <div class="battle-embers">${emberField()}</div>
       <div class="duel-topbar">
-        <div>
-          <div class="duel-sub">Friday Combat Protocol</div>
+        <div class="duel-topbar-inner">
           <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR STRIKE</div>
-        </div>
         <div class="duel-topbar-actions">
           <button type="button" class="battle-shop-btn">🔮 Open Magic Shop</button>
           <button type="button" class="battle-end-btn">🏳️ End Battle</button>
+        </div>
         </div>
       </div>
       <div class="duel-stage">
