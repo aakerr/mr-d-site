@@ -743,7 +743,22 @@ function injectStyles() {
      40% leaves after the two labels. On a 1080p board that is roughly double
      what the old fixed clamp gave them. */
   .duel2-top{flex:0 0 60%;min-height:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:.2rem;width:100%;}
+    align-items:center;justify-content:flex-start;gap:.2rem;width:100%;}
+  /* The role reads as a HEADER for the card rather than a caption above it:
+     full width, ruled off, and set in the same face as the house name at a size
+     just below it (28px against the name's 37px on a 1080p board) so the two
+     sit in an obvious hierarchy instead of one whispering. */
+  .duel2-top .duel-role{width:100%;flex:0 0 auto;
+    font-family:'Cinzel',Georgia,serif;font-size:clamp(.95rem,2.6vh,2rem);
+    letter-spacing:.12em;opacity:1;text-align:center;
+    padding-bottom:clamp(3px,.7vh,10px);
+    border-bottom:1px solid rgba(255,255,255,.14);
+    margin-bottom:clamp(2px,.6vh,10px);}
+  /* Points, crest and name share whatever the header leaves, centred in it, so
+     the header sits at the top of the card and the identity stays optically
+     centred in the rest. */
+  .duel2-top .duel-points-lbl{margin-top:auto;}
+  .duel2-top .duel-name{margin-bottom:auto;}
   .duel2-bottom{flex:0 0 40%;min-height:0;width:100%;display:flex;
     flex-direction:column;gap:.15rem;}
   .duel2-bottom .duel-section-lbl{flex:0 0 auto;}
