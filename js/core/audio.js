@@ -100,7 +100,10 @@ export const audio = {
         el.addEventListener('error', () => { done(); (SFX[name] || (() => {}))(); });
         const p = el.play();
         if (p && p.catch) p.catch(() => { done(); (SFX[name] || (() => {}))(); });
-        return;
+        // Returned so a caller can time something to the END of a recording —
+        // the Battle Day cinematic waits for the war cry before it cuts away.
+        // Synth tones return nothing, so callers must handle undefined.
+        return el;
       } catch (e) { /* fall through to the synth below */ }
     }
     (SFX[name] || (() => {}))();

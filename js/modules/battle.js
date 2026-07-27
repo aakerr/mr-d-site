@@ -25,6 +25,9 @@ let overlayEl = null;         // cinematic overlay inside #overlay-root
 let unsub = null;             // store subscription
 let view = 'landing';         // 'landing' | 'duel'
 let targetId = null;          // chosen opponent (defender)
+const CINEMATIC_MIN_MS = 2500;   // letters finish stamping ~1.5s; never cut before this
+const CRY_TAIL_MS = 1000;        // beat of silence after the war cry ends
+const CINEMATIC_MAX_MS = 8000;   // backstop if the recording never fires 'ended'
 let chooserOpen = false;      // "change attacker" picker showing
 let resolving = false;        // suspends subscribe re-renders mid-strike
 const timers = new Set();
@@ -548,8 +551,9 @@ function triggerCinematic() {
   // A recorded war cry REPLACES the robot voice rather than joining it — two
   // voices over one another would be worse than either alone. Until the teacher
   // records one, speech synthesis carries the line as before.
+  let cryEl = null;
   if (ctxRef.store.getSfx && ctxRef.store.getSfx('battlecry')) {
-    ctxRef.audio.sfx('battlecry');
+    cryEl = ctxRef.audio.sfx('battlecry') || null;   // undefined when muted
   } else {
     ctxRef.audio.say("It's Battle Day! Attack!", { rate: 1.05, pitch: 0.8 });
   }
@@ -577,10 +581,30 @@ function triggerCinematic() {
     later(() => mainEl.classList.remove('battle-shake'), 550);
   }
 
-  later(() => {
+  // Hold the cinematic until the war cry has FINISHED, then a beat of silence
+  // before cutting to the duel. Timed off the recording rather than a fixed
+  // number, so re-recording a longer or shorter line needs no code change.
+  // Floor: the letters finish stamping around 1.5s, so never cut before 2.5s.
+  // Ceiling: if 'ended' never arrives (a stalled file), cut anyway at 8s.
+  const cutAt = Date.now();
+  let cut = false;
+  const cutToDuel = () => {
+    if (cut) return;
+    cut = true;
     if (overlayEl) { overlayEl.remove(); overlayEl = null; }
     renderDuel();
-  }, 2500);
+  };
+  const finishAfter = (ms) => later(cutToDuel, Math.max(0, ms));
+
+  if (cryEl) {
+    cryEl.addEventListener('ended', () => {
+      const elapsed = Date.now() - cutAt;
+      finishAfter(Math.max(CINEMATIC_MIN_MS - elapsed, CRY_TAIL_MS));
+    });
+    later(cutToDuel, CINEMATIC_MAX_MS);            // stalled-audio backstop
+  } else {
+    finishAfter(CINEMATIC_MIN_MS);
+  }
 }
 
 function emberField(count = 14) {
