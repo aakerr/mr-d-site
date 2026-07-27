@@ -29,7 +29,11 @@ const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
 // follow: thrown -> revealed -> countered-or-not -> dice -> points. Beats
 // stay short; the dice roll itself (createDiceSim) takes as long as the
 // physics needs, on top of these.
-const DUEL2_THROW_MS = 320;    // attack item flies across the arena
+const DUEL2_THROW_MS = 900;    // attack item flies across the arena — slow enough to follow
+const DUEL2_CHARGE_BTN_MS = 620;   // the chosen weapon pulses before anything moves
+const DUEL2_CHARGE_CREST_MS = 620; // then the attacker's own crest winds up
+const DUEL2_IMPACT_MS = 700;       // the defending card takes the hit
+const DUEL2_TOTAL_GROW_MS = 950;   // the damage total swells before it is applied
 // Beats between the steps of a strike. Slowed by roughly a third after watching
 // a real roll: the whole sequence went by faster than a class could follow, and
 // the point of doing it on screen is that thirty people get to see each step
@@ -525,6 +529,36 @@ function injectStyles() {
   @keyframes duel-fx-flash-kf{0%{opacity:0;}15%{opacity:1;}100%{opacity:0;}}
 
   .duel-crest-shake{animation:duel-crest-shake-kf .45s cubic-bezier(.36,.07,.19,.97) both;}
+  /* ---- the wind-up ----------------------------------------------------------
+     A strike used to be instant: tap, and it was already resolving. These give
+     it somewhere to build FROM. The chosen weapon pulses first, then the
+     attacker's own crest charges — the attack visibly comes off their shield —
+     and only then does anything fly. */
+  .duel2-slot-charging{animation:duel2-charge-kf .62s ease-in-out 2;
+    box-shadow:0 0 0 0 rgba(239,68,68,.6);}
+  @keyframes duel2-charge-kf{
+    0%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,.55);}
+    50%{transform:scale(1.045);box-shadow:0 0 0 12px rgba(239,68,68,0);}
+    100%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,0);}}
+  .duel-crest-charge{animation:duel-crest-charge-kf .78s ease-in-out both;}
+  @keyframes duel-crest-charge-kf{
+    0%{transform:scale(1);filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}
+    55%{transform:scale(1.13);filter:drop-shadow(0 0 34px var(--side-accent,#ef4444)) brightness(1.25);}
+    100%{transform:scale(1);filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}}
+  /* The whole defending card takes the hit, not just its crest. */
+  .duel-card-hit{animation:duel-card-hit-kf .72s cubic-bezier(.36,.07,.19,.97) both;}
+  @keyframes duel-card-hit-kf{
+    0%,100%{transform:translate3d(0,0,0);}
+    12%{transform:translate3d(-9px,3px,0);} 26%{transform:translate3d(8px,-3px,0);}
+    40%{transform:translate3d(-6px,2px,0);} 55%{transform:translate3d(5px,-2px,0);}
+    70%{transform:translate3d(-3px,1px,0);} 85%{transform:translate3d(2px,0,0);}}
+  /* The damage total swells before it is taken off the defender. */
+  .duel-dice-total.grow{animation:duel-total-grow-kf .85s cubic-bezier(.2,.9,.3,1.2) both;
+    display:inline-block;}
+  @keyframes duel-total-grow-kf{
+    0%{transform:scale(.72);opacity:.35;}
+    60%{transform:scale(1.22);opacity:1;}
+    100%{transform:scale(1.08);opacity:1;}}
   @keyframes duel-crest-shake-kf{
     0%,100%{transform:translate(0,0) rotate(0);}
     15%{transform:translate(-9px,-3px) rotate(-3deg);}
@@ -1834,6 +1868,12 @@ async function rollItemDice(item, house) {
   const total = rolls.reduce((a, b) => a + b, 0);
   if (diceOverlayEl) {
     totalEl.innerHTML = `<span class="duel-dice-parts">${esc(rolls.join(' + '))}${rolls.length > 1 ? ' =' : ''}</span><span class="duel-dice-num">${total}</span>`;
+    // The total swells as it lands, so the number the class has been waiting for
+    // arrives as an event rather than appearing quietly under the tray.
+    if (!prefersReducedMotion()) {
+      totalEl.classList.remove('grow'); void totalEl.offsetWidth; totalEl.classList.add('grow');
+    }
+    await delay(DUEL2_TOTAL_GROW_MS);
     ctxRef.audio.sfx('coin');
     await delay(DUEL2_ROLL_HOLD_MS);
   }
@@ -1853,13 +1893,48 @@ async function resolveDuelSequence(challenger, target, item, preview) {
   const reduced = prefersReducedMotion();
   const travel = reduced ? 0 : DUEL2_THROW_MS;
 
-  // Step 1 — the attack is thrown.
   const chalCrest = rootEl.querySelector('[data-crest="challenger"]');
   const defCrest = rootEl.querySelector('[data-crest="defender"]');
+
+  // Step 0 — THE WIND-UP. A strike used to begin resolving on the tap itself,
+  // which left a class no moment to lean in. The chosen weapon pulses, then the
+  // attacker's crest charges, so the attack visibly gathers on their shield
+  // before anything crosses the arena.
+  if (!reduced) {
+    const btn = [...rootEl.querySelectorAll('button.duel2-slot')]
+      .find((b) => b.getAttribute('data-strike-item') === item.id);
+    if (btn) {
+      btn.classList.add('duel2-slot-charging');
+      later(() => btn.classList.remove('duel2-slot-charging'), DUEL2_CHARGE_BTN_MS + 200);
+    }
+    await delay(DUEL2_CHARGE_BTN_MS);
+    if (!rootEl) { closeDiceOverlay(); return; }
+    if (chalCrest) {
+      chalCrest.classList.remove('duel-crest-charge'); void chalCrest.offsetWidth;
+      chalCrest.classList.add('duel-crest-charge');
+      later(() => chalCrest.classList.remove('duel-crest-charge'), DUEL2_CHARGE_CREST_MS + 200);
+    }
+    await delay(DUEL2_CHARGE_CREST_MS);
+    if (!rootEl) { closeDiceOverlay(); return; }
+  }
+
+  // Step 1 — the attack crosses, slowly enough to watch, and lands ON the
+  // defender's shield: their crest takes the hit and the whole card rocks.
   ctxRef.audio.sfx('sword');
   if (!reduced) spawnProjectile(chalCrest, defCrest, { emoji: item.emoji || '⚔️', travel });
   await delay(travel);
   if (!rootEl) { closeDiceOverlay(); return; }
+  if (!reduced) {
+    if (defCrest) {
+      defCrest.classList.remove('duel-crest-shake'); void defCrest.offsetWidth;
+      defCrest.classList.add('duel-crest-shake');
+      later(() => defCrest.classList.remove('duel-crest-shake'), 700);
+      spawnFx(defCrest, 'duel-fx-ring', IMPACT_MS);
+    }
+    ctxRef.audio.sfx('thud');
+    await delay(DUEL2_IMPACT_MS);
+    if (!rootEl) { closeDiceOverlay(); return; }
+  }
 
   // Step 2 — the defender's held defense is revealed. Hidden until now: this
   // shows whichever item actually decides the outcome (blockedBy when it
@@ -1947,6 +2022,16 @@ async function resolveDuelSequence(challenger, target, item, preview) {
   if (chalEl) chalEl.textContent = String(beforeChallenger);
   const defEl = rootEl.querySelector('[data-points="defender"]');
   if (defEl) defEl.textContent = String(beforeTarget);
+  // The defending card rocks WHILE its total is coming down, so the shake and
+  // the falling number read as the same event rather than two.
+  if (!reduced && afterTarget !== beforeTarget) {
+    const defCard = rootEl.querySelector('[data-crest="defender"]')?.closest('.duel-side');
+    if (defCard) {
+      defCard.classList.remove('duel-card-hit'); void defCard.offsetWidth;
+      defCard.classList.add('duel-card-hit');
+      later(() => defCard.classList.remove('duel-card-hit'), DUEL2_IMPACT_MS + 200);
+    }
+  }
   animatePoints('challenger', beforeChallenger, afterChallenger, COUNT_MS);
   animatePoints('defender', beforeTarget, afterTarget, COUNT_MS);
 }
