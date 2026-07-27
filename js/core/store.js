@@ -64,13 +64,16 @@ const MODULE_THEMES = {
 //
 // 'battlecry' has no synth fallback on purpose — it is a voice line, and a
 // beep would be worse than nothing. It simply stays quiet until recorded.
+// `file` is what ships in /sfx. A teacher can point any slot at their own
+// recording, or clear it back to the built-in synth tone. Only `roll` ships
+// without a file — the synthesised rattle covers it.
 const SFX_SLOTS = {
-  battlecry: { label: 'Battle Day war cry', hint: 'Plays as the Battle Day cinematic slams in — e.g. “It’s Battle Day. Attack!”' },
-  sword:     { label: 'Sword clash',        hint: 'A strike landing on another house.' },
-  thud:      { label: 'Blocked / heavy hit', hint: 'A shield holding, or points coming off.' },
-  coin:      { label: 'Points awarded',     hint: 'The reward chime when a house scores.' },
-  fanfare:   { label: 'Fanfare',            hint: 'Mythic relic claimed on a natural 20.' },
-  roll:      { label: 'Dice rattle',        hint: 'The Die of Destiny tumbling.' },
+  battlecry: { label: 'Battle Day war cry',  file: 'sfx/battle_day.mp3',        hint: 'Plays as the Battle Day cinematic slams in — e.g. “It’s Battle Day. Attack!”' },
+  sword:     { label: 'Sword clash',         file: 'sfx/swords_clashing.mp3',   hint: 'A strike landing on another house.' },
+  thud:      { label: 'Blocked / heavy hit', file: 'sfx/defensive_block-1.mp3', hint: 'A shield holding, or points coming off.' },
+  coin:      { label: 'Points awarded',      file: 'sfx/points_awarded.mp3',    hint: 'The reward chime when a house scores. This one fires often.' },
+  fanfare:   { label: 'Fanfare',             file: 'sfx/mythical_relic.mp3',    hint: 'Mythic relic claimed on a natural 20.' },
+  roll:      { label: 'Dice rattle',         file: '',                          hint: 'The Die of Destiny tumbling. Uses the built-in rattle.' },
 };
 
 // Offensive items are STOCKPILED: buying one puts it in the house's armoury
@@ -333,7 +336,9 @@ function load() {
         const saved = merged.settings.sfx && typeof merged.settings.sfx === 'object' ? merged.settings.sfx : {};
         const out = {};
         Object.keys(SFX_SLOTS).forEach((id) => {
-          out[id] = typeof saved[id] === 'string' ? saved[id].trim() : '';
+          // A slot the teacher has cleared stays cleared (''); one never seen
+          // picks up the file that ships in /sfx.
+          out[id] = typeof saved[id] === 'string' ? saved[id].trim() : (SFX_SLOTS[id].file || '');
         });
         merged.settings.sfx = out;
       }
@@ -508,7 +513,7 @@ export const store = {
   getSfx(name) {
     if (!SFX_SLOTS[name]) return '';
     const v = (store.getSettings().sfx || {})[name];
-    return typeof v === 'string' ? v.trim() : '';
+    return typeof v === 'string' ? v.trim() : (SFX_SLOTS[name].file || '');
   },
 
   setSfx(name, src) {
