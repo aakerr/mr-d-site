@@ -599,17 +599,67 @@ const TOPICS = [
   },
   {
     id: 'battle-day', cat: 'shop', title: 'Battle Day',
-    keywords: 'battle day combat strike victory defeat arena swords ignite',
+    keywords: 'battle day combat strike victory defeat arena swords ignite hit points hp',
     body: `
       <p>Battle Day is a full-screen contest mode. Tap the tile, tap <b>IGNITE BATTLE</b>, and it opens the arena with a card per house.</p>
-      <p>Each card has two strikes:</p>
-      <ul class="help-list">
-        <li><b>+10 Victory</b> — awards that house 10 points outright.</li>
-        <li><b>−10 Defeat</b> — a 10-point attack, which obeys the normal defence rules: a shield blocks it, a halving relic makes it 5. <a href="#" data-help-go="shop-matchups">The rules →</a></li>
-      </ul>
-      <p>There is a link straight into the Magic Shop so houses can buy shields or attacks mid-battle.</p>
+      <p>It runs on <b>hit points (HP)</b>, not points directly — points are the score and the currency; HP is only what a strike removes during the fight. Every house's HP refills to full the moment Battle Day starts, weapons are bought <i>in advance</i> from the Magic Shop and stockpiled for use here, strikes chip away at HP, and a house is beaten when its HP hits zero. The winner then takes a <b>prize in points</b> — and the loser never loses any points at all. <a href="#" data-help-go="battle-hp">The full rules and your current settings →</a></p>
       <p><b>Esc</b> closes the arena. Everything that happened is in the points log like any other award.</p>
     `,
+  },
+  {
+    id: 'battle-hp', cat: 'shop', title: 'Hit points, strikes and prizes — how Battle Day actually works',
+    keywords: 'battle day hit points hp combat prize attack punching down strike defeat victory arena refill gap percent flat hpbase hpper500',
+    body: () => {
+      const c = store.getCombat();
+      const rule = store.PRIZE_RULES[c.prizeRule] ? c.prizeRule : 'gap';
+      const houses = houseNames();
+      const hpRows = houses.map((h) => {
+        let pts = 0, hp = 0;
+        try { pts = Math.max(0, store.getTotal(h.id, 'term')); hp = store.getMaxHp(h.id); } catch (e) { /* leave at 0 */ }
+        return `<tr><td><span class="help-dot" style="background:${esc(h.accent)}"></span> <b>${esc(h.name)}</b></td><td>${pts.toLocaleString()} pts</td><td><b>${hp}</b> HP</td></tr>`;
+      }).join('');
+      const ruleRows = Object.entries(store.PRIZE_RULES).map(([id, def]) => {
+        const now = id === 'gap' ? `${c.gapShare}% of the gap`
+          : id === 'percent' ? `${c.prizePercent}% of their total`
+          : `${c.prizeFlat} pts flat`;
+        const marker = id === rule ? '👉 ' : '';
+        return `<tr><td>${marker}<b>${esc(def.label)}</b></td><td>${esc(def.blurb)}</td><td class="help-nowrap">${esc(now)}</td></tr>`;
+      }).join('');
+      return `
+        <p class="help-lede">Battle Day runs on <b>hit points (HP)</b>, which are completely separate from house points. Points are the score and the currency you already know; HP only exists during a fight, and is simply what a strike takes away.</p>
+
+        <h4>Before the battle: buying weapons</h4>
+        <p>Houses spend <b>points</b> in the <b>🔮 Magic Shop</b> to buy weapons ahead of time. Offensive items — attacks, steals, pierces — are <b>stockpiled</b>: buying one puts it in that house's armoury rather than firing it immediately, so a house can buy on Tuesday and save the weapon for Friday's battle. Shields and damage-halving items work differently and start protecting the moment they're bought.</p>
+
+        <h4>When Battle Day starts: HP refills</h4>
+        <p>Every house's HP jumps back up to its <b>maximum</b> — nobody ever arrives already half-beaten from last week's fight. Right now, on this computer:</p>
+        <table class="help-table">
+          <thead><tr><th>House</th><th>Points (term)</th><th>Max HP this battle</th></tr></thead>
+          <tbody>${hpRows}</tbody>
+        </table>
+        <p>Max HP is <code>${c.hpBase} + ${c.hpPer500} for every 500 points a house holds</code>. A house sitting on more points is a little tougher to knock out — a mild brake on everyone piling onto whoever is currently leading. Change either number in <b>🗝️ Admin → ⚙️ Settings → ⚔️ Battle rules</b>.</p>
+
+        <h4>During the battle: strikes remove HP</h4>
+        <p>Houses use the weapons already sitting in their armoury. Each strike removes <b>HP</b> — not points — and the usual defence rules still apply: a shield can block it outright, and a halving relic still cuts it in half. <a href="#" data-help-go="shop-matchups">How attacks and defences interact →</a> When a house's HP reaches <b>zero</b>, that fight is over.</p>
+
+        <h4>The prize</h4>
+        <p>The winner takes a <b>prize in points</b>, decided by whichever rule is set in Admin. <b>The loser never loses a single point</b> — a class is never punished for being ahead, or for losing a fight. Three rules are available:</p>
+        <table class="help-table">
+          <thead><tr><th>Rule</th><th>What it does</th><th>Set to, right now</th></tr></thead>
+          <tbody>${ruleRows}</tbody>
+        </table>
+        <p class="help-callout"><b>Half the gap</b> (the default) is self-limiting — the prize shrinks as the trailing house catches up. Simulated over a 9-week term with houses earning unevenly, the best-behaved class still won the term overall, and the point spread between houses <b>narrowed</b>.</p>
+        <p class="help-warn"><b>Share of their total compounds hard.</b> In that same simulation, prizes under this rule grew from <b>281 points to 1,671 points</b> as the weeks went on — battles alone created as many points as a whole term of good behavior — and the <b>worst-behaved class won the term</b>. This is simulated fact, not opinion. It's available because a teacher may want it, not because it's the advised choice.</p>
+        <p><b>Fixed amount</b> never compounds, but if it is set below what weapons cost in the Magic Shop, nobody will ever bother attacking — there's nothing left to gain.</p>
+
+        <h4>Punching down</h4>
+        <p>${c.punchingDown
+          ? 'Currently <b>allowed</b> on this computer — any house may attack any other house, regardless of who has more points.'
+          : 'Currently <b>off</b> on this computer (the default) — a house may only attack one with <b>more</b> points than itself. That stops the leading class from farming the last-placed class every single week.'}</p>
+
+        <p class="help-callout">Every number and rule above is teacher-editable in <a href="#" data-help-go="admin-settings">🗝️ Admin → ⚙️ Settings → ⚔️ Battle rules</a> — including a live preview of what any two houses would win right now.</p>
+      `;
+    },
   },
 
   // ======================= DICE =======================
@@ -740,10 +790,11 @@ const TOPICS = [
   },
   {
     id: 'admin-settings', cat: 'admin', title: 'Settings',
-    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets layout carousel grid',
+    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets layout carousel grid battle rules hit points hp combat prize punching down',
     body: () => `
       <ul class="help-list">
         <li><b>Term Timeline</b> — the Monday your term starts and how many weeks it runs. This drives "Week N of M" in the top bar and the term totals. ${termLine()}</li>
+        <li><b>⚔️ Battle rules</b> — how Battle Day's hit points and prizes work: the prize rule (half the gap, share of their total, or a fixed amount) and its number, whether houses may "punch down" on a house with fewer points, and the hit-point settings that decide how tough each house is to beat. Includes a live preview of what any two houses would win right now. <a href="#" data-help-go="battle-hp">More →</a></li>
         <li><b>Display &amp; Theme</b> — dark or light, and optional seasonal decoration. <a href="#" data-help-go="theme">More →</a></li>
         <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
         <li><b>⚡ Quick award buttons</b> — the one-tap awards that appear on the Records screen. Edit the labels and point values to match what you actually say in class.</li>

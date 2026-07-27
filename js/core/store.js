@@ -83,6 +83,42 @@ const SFX_SLOTS = {
 // on purchase because the gamble IS the purchase.
 const STOCKPILE_KINDS = new Set(['attack', 'steal', 'pierce']);
 
+// ---- Battle Day combat ------------------------------------------------------
+// Hit points are SEPARATE from house points. Points are the currency (and the
+// scoreboard); HP is what a strike removes. A house is beaten when its HP hits
+// zero, and the winner takes a prize in points. The LOSER NEVER LOSES POINTS —
+// a class should not be punished for being ahead.
+//
+// Three prize rules, teacher-chosen in Admin, because they play very
+// differently. Simulated over a 9-week term with houses earning unequally:
+//   gap     — half the points you are behind by. Self-limiting: the prize
+//             shrinks to nothing as you catch up. Best-behaved house still won
+//             the term and the spread narrowed. This is the default.
+//   percent — a share of the defender's total. Compounds hard: prizes grew
+//             281 -> 1671 across the term and the WORST-behaved house won.
+//             Available because it is what a teacher may expect; not advised.
+//   flat    — a fixed amount. Predictable, never compounds, but if it is set
+//             below the cost of the weapons nobody will ever attack.
+const PRIZE_RULES = {
+  gap:     { label: 'Half the gap', blurb: 'Win half the points you are behind by. Shrinks as you catch up.' },
+  percent: { label: 'Share of their total', blurb: 'Win a percentage of the defeated house\u2019s points.' },
+  flat:    { label: 'Fixed amount', blurb: 'Every win pays the same number of points.' },
+};
+
+function defaultCombat() {
+  return {
+    prizeRule: 'gap',
+    gapShare: 50,       // % of the gap, for 'gap'
+    prizePercent: 25,   // % of their total, for 'percent'
+    prizeFlat: 150,     // points, for 'flat'
+    punchingDown: false,// may a house attack one with FEWER points?
+    hpBase: 100,        // everyone starts here
+    hpPer500: 10,       // extra HP per 500 points held
+  };
+}
+
+
+
 const LAYOUT_SCREENS = {
   quests: { label: 'Quests board' },
   shop:   { label: 'Magic Shop' },
@@ -137,6 +173,7 @@ function defaultState() {
       moduleThemes: null,
       // 'grid' | 'carousel' per screen (see LAYOUT_SCREENS).
       layouts: null,
+      combat: null,      // see defaultCombat()
       // Teacher recordings per sound (see SFX_SLOTS). Empty = use the built-in.
       sfx: null,
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
@@ -149,6 +186,12 @@ function defaultState() {
     },
     // houseId -> { itemId: count }. What each house has bought and not yet used.
     inventory: {},
+    // houseId -> DAMAGE TAKEN, not current HP. Refilled (cleared) at the start
+    // of each Battle Day. Storing "current" looked right until a house won a
+    // battle: the prize pushed it over a 500-point boundary, its maximum rose,
+    // and its untouched current HP read 120/130 — it appeared wounded for
+    // getting richer. Damage taken is invariant to the maximum moving.
+    hp: {},
     quests: {
       // One quest active per core at a time; completion is teacher-confirmed.
       catalog: defaultQuestCatalog(),
@@ -323,6 +366,9 @@ function load() {
       merged.settings.ambient = { ...def.settings.ambient, ...(merged.settings.ambient || {}) };
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
       if (!merged.inventory || typeof merged.inventory !== 'object') merged.inventory = {};
+      merged.settings.combat = { ...defaultCombat(), ...(merged.settings.combat || {}) };
+      if (!PRIZE_RULES[merged.settings.combat.prizeRule]) merged.settings.combat.prizeRule = 'gap';
+      if (!merged.hp || typeof merged.hp !== 'object') merged.hp = {};
       {
         const saved = merged.settings.layouts && typeof merged.settings.layouts === 'object'
           ? merged.settings.layouts : {};
@@ -463,6 +509,83 @@ export const store = {
   MODULE_THEMES,
   LAYOUT_SCREENS,
   STOCKPILE_KINDS,
+  PRIZE_RULES,
+
+  getCombat() { return { ...defaultCombat(), ...(store.getSettings().combat || {}) }; },
+  updateCombat(patch) {
+    const next = { ...store.getCombat(), ...(patch || {}) };
+    if (!PRIZE_RULES[next.prizeRule]) next.prizeRule = 'gap';
+    store.updateSettings({ combat: next });
+  },
+
+  // Bigger totals mean a tougher house — a mild brake on everyone piling on
+  // the leader every week.
+  getMaxHp(houseId) {
+    const c = store.getCombat();
+    const pts = Math.max(0, store.getTotal(houseId, 'term'));
+    return Math.max(1, Math.round(c.hpBase + c.hpPer500 * Math.floor(pts / 500)));
+  },
+
+  // state.hp holds DAMAGE TAKEN, not current hit points. Storing "current"
+  // looked right until a house won a battle: the prize pushed it over a 500
+  // boundary, its maximum rose, and its untouched current HP was suddenly
+  // 120/130 — it appeared wounded for getting richer. Tracking damage means a
+  // change in points moves the maximum and the current value together.
+  getHp(houseId) {
+    const taken = Math.max(0, Math.round(Number((state.hp || {})[houseId]) || 0));
+    return Math.max(0, store.getMaxHp(houseId) - taken);
+  },
+
+  // Everyone back to full. Called when a Battle Day session begins, so nobody
+  // arrives already half-beaten from last week.
+  resetAllHp() {
+    state.hp = {};
+    emit();
+  },
+
+  damageHp(houseId, amount) {
+    const dmg = Math.max(0, Math.round(Number(amount) || 0));
+    if (!state.hp) state.hp = {};
+    const before = store.getHp(houseId);
+    const after = Math.max(0, before - dmg);
+    state.hp[houseId] = Math.max(0, store.getMaxHp(houseId) - after);
+    emit();
+    return { before, after, defeated: after === 0 && before > 0 };
+  },
+
+  // Punching down is off by default: without it, the leading house farms the
+  // last-placed house every Friday, which is the failure mode a classroom
+  // would regret most.
+  canAttack(attackerId, defenderId) {
+    if (attackerId === defenderId) return { ok: false, reason: 'A house cannot attack itself.' };
+    const c = store.getCombat();
+    if (!c.punchingDown && store.getTotal(defenderId, 'term') < store.getTotal(attackerId, 'term')) {
+      return { ok: false, reason: 'They have fewer points than you — punching down is switched off in Admin.' };
+    }
+    return { ok: true, reason: '' };
+  },
+
+  // What the winner would take. Never negative, and never touches the loser.
+  previewPrize(attackerId, defenderId) {
+    const c = store.getCombat();
+    const them = Math.max(0, store.getTotal(defenderId, 'term'));
+    const us = Math.max(0, store.getTotal(attackerId, 'term'));
+    if (c.prizeRule === 'flat') return Math.max(0, Math.round(c.prizeFlat));
+    if (c.prizeRule === 'percent') return Math.max(0, Math.round(them * (c.prizePercent / 100)));
+    return Math.max(0, Math.round((them - us) * (c.gapShare / 100)));   // 'gap'
+  },
+
+  // The loser keeps every point they earned; only the winner's total moves.
+  awardBattleWin(winnerId, loserId) {
+    const prize = store.previewPrize(winnerId, loserId);
+    if (prize > 0) {
+      store.addPoints(winnerId, prize, {
+        reason: `Battle won vs ${HOUSES[loserId] ? HOUSES[loserId].name : 'rival'}`,
+        tag: 'battle',
+      });
+    }
+    return prize;
+  },
 
   // Does buying this item stock it, or fire it immediately?
   isStockpiled(item) {

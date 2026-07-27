@@ -33,6 +33,7 @@ const HELP_TOPICS = {
   backups: 'data-backup',
   lock: 'admin-lock',
   sfx: 'admin-sfx',
+  battle: 'battle-hp',
 };
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ let lockUi = { mode: null, currentPin: '', newPin: DEFAULT_PIN, confirmPin: DEFA
 let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 let musicPreview = null;              // { el, screen } — the one background-music preview clip playing, if any
+let combatPreviewSel = { attacker: 1, defender: 2 };  // Battle rules card: which two houses the live prize preview compares
 
 const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
@@ -1811,6 +1813,140 @@ function moveAwardPreset(id, dir) {
 // ===========================================================================
 // TAB — SETTINGS
 // ===========================================================================
+
+// ---- Battle rules (hit points, prize rule, punching down) -----------------
+// HP is separate from points: points are the currency and the scoreboard; HP
+// is what a strike removes. A house is beaten at zero HP and the winner takes
+// a PRIZE in points, chosen by the rule below — the loser never loses points.
+function combatHpRowsHTML() {
+  const store = ctxRef.store;
+  return Object.values(store.HOUSES).map((h) => {
+    const pts = Math.max(0, store.getTotal(h.id, 'term'));
+    const hp = store.getMaxHp(h.id);
+    return `<div class="admin-mini" style="margin:2px 0">${esc(h.name)} has <b>${pts.toLocaleString()}</b> points, so <b>${hp}</b> HP.</div>`;
+  }).join('');
+}
+
+function combatPreviewData() {
+  const store = ctxRef.store;
+  const attackerId = combatPreviewSel.attacker;
+  const defenderId = combatPreviewSel.defender;
+  const attacker = store.HOUSES[attackerId];
+  const defender = store.HOUSES[defenderId];
+  if (!attacker || !defender || attackerId === defenderId) {
+    return { text: '—', note: 'Pick two different houses to preview a battle between them.' };
+  }
+  const prize = store.previewPrize(attackerId, defenderId);
+  const can = store.canAttack(attackerId, defenderId);
+  const text = `${attacker.name} defeats ${defender.name} → wins ${prize.toLocaleString()} pts. ${defender.name} keeps every point they have.`;
+  const note = can.ok
+    ? 'This matchup is allowed under the current Punching down setting.'
+    : `⚠️ Under the current Punching down setting, this exact matchup would actually be blocked: ${can.reason}`;
+  return { text, note };
+}
+
+// Re-paints just the two live bits of the card (the prize sentence and the HP
+// worked examples) rather than the whole card — a full renderBody() would be
+// skipped anyway by the mid-typing guard while a number field still has focus.
+function updateCombatPreview() {
+  const p = combatPreviewData();
+  const amt = el('admin-combat-preview-amount');
+  if (amt) amt.textContent = p.text;
+  const note = el('admin-combat-preview-note');
+  if (note) note.textContent = p.note;
+}
+
+function updateCombatHpList() {
+  const list = el('admin-combat-hp-list');
+  if (list) list.innerHTML = combatHpRowsHTML();
+}
+
+function renderBattleRulesCard() {
+  const store = ctxRef.store;
+  const c = store.getCombat();
+  const rule = store.PRIZE_RULES[c.prizeRule] ? c.prizeRule : 'gap';
+  const houses = Object.values(store.HOUSES);
+
+  const ruleButtons = Object.entries(store.PRIZE_RULES).map(([id, def]) =>
+    `<button class="admin-theme-opt${rule === id ? ' on' : ''}" data-action="combat-rule" data-rule="${esc(id)}">${esc(def.label)}</button>`
+  ).join('');
+
+  const ruleBlurb = store.PRIZE_RULES[rule] ? store.PRIZE_RULES[rule].blurb : '';
+
+  const ruleCaution = rule === 'gap'
+    ? `This is the <b>default</b>, and it is self-limiting by design: the prize shrinks as the trailing house catches up. Simulated over a 9-week term with houses earning unevenly, the best-behaved class still won the term overall, and the point spread between houses <b>narrowed</b> rather than widened.`
+    : rule === 'percent'
+    ? `⚠️ <b>Be careful with this one — it compounds.</b> In that same simulated 9-week term, prizes under this rule grew from <b>281 to 1,671 points</b> as the weeks went on — battles alone created as many points as a whole term of good behavior — and the <b>worst-behaved class ended up winning the term</b>. This is simulated fact, not opinion. It is offered because a teacher may want it, not because it is the advised choice.`
+    : `Never compounds — every win pays exactly the same, term after term. The one thing to watch: if this is set <b>below</b> what weapons cost in the Magic Shop, nobody will ever bother attacking, because there is nothing left to gain.`;
+
+  const numberField = rule === 'gap'
+    ? `<label class="admin-flabel" for="admin-combat-gapshare">Prize: % of the point gap between the two houses</label>
+       <input id="admin-combat-gapshare" class="admin-input" type="number" min="0" max="100" value="${esc(c.gapShare)}" />`
+    : rule === 'percent'
+    ? `<label class="admin-flabel" for="admin-combat-percent">Prize: % of the defeated house's total points</label>
+       <input id="admin-combat-percent" class="admin-input" type="number" min="0" max="100" value="${esc(c.prizePercent)}" />`
+    : `<label class="admin-flabel" for="admin-combat-flat">Prize: fixed points, every win</label>
+       <input id="admin-combat-flat" class="admin-input" type="number" min="0" value="${esc(c.prizeFlat)}" />`;
+
+  const houseOpts = (selectedId) => houses.map((h) =>
+    `<option value="${h.id}"${Number(selectedId) === h.id ? ' selected' : ''}>${esc(h.name)}</option>`).join('');
+
+  const preview = combatPreviewData();
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">⚔️ Battle rules</div>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.battle, 'How hit points, strikes and prizes work, start to finish')}</div>
+      <div class="admin-mini">
+        On Battle Day, every house's <b>hit points (HP)</b> refill all the way to full — HP has nothing to do with points, it is just what a strike removes during the fight. Before the battle, houses spend <b>points</b> in the 🔮 Magic Shop to buy weapons ahead of time; those purchases sit stored in each house's armoury until they're actually used in battle. During the fight, each strike removes <b>HP</b>, not points. When a house's HP reaches zero, that fight is over: the <b>winner takes a prize in points</b>, decided by the rule you choose below. <b>The loser never loses a single point</b> — a class is never punished for being ahead, or for losing a fight.
+      </div>
+
+      <label class="admin-flabel" style="margin-top:14px">Prize rule</label>
+      <div class="admin-seg admin-theme-seg">${ruleButtons}</div>
+      <div class="admin-mini">${esc(ruleBlurb)}</div>
+      <div class="admin-warn-line">${ruleCaution}</div>
+      <div style="margin-top:10px">${numberField}</div>
+
+      <label class="admin-flabel" style="margin-top:20px">Punching down</label>
+      <div class="admin-toggle-row">
+        <button class="admin-toggle${c.punchingDown ? ' on' : ''}" data-action="combat-punchdown" role="switch" aria-checked="${c.punchingDown}"><span class="admin-toggle-knob"></span></button>
+        <span class="admin-mini" style="margin:0">Allow attacking a house with FEWER points <span class="admin-faint">— off by default</span></span>
+      </div>
+      <div class="admin-mini">With this <b>off</b> (the default), a house may only attack a house that currently has <b>more</b> points than them. That default exists on purpose: without it, the leading class can farm the last-placed class every single week, which is exactly the outcome a classroom should avoid.</div>
+
+      <label class="admin-flabel" style="margin-top:20px">Hit points</label>
+      <div class="admin-two">
+        <div>
+          <label class="admin-flabel" for="admin-combat-hpbase">Starting HP (everyone begins here)</label>
+          <input id="admin-combat-hpbase" class="admin-input" type="number" min="1" value="${esc(c.hpBase)}" />
+        </div>
+        <div>
+          <label class="admin-flabel" for="admin-combat-hpper500">Bonus HP per 500 points held</label>
+          <input id="admin-combat-hpper500" class="admin-input" type="number" min="0" value="${esc(c.hpPer500)}" />
+        </div>
+      </div>
+      <div class="admin-mini">A house sitting on more points is a little tougher to knock out — a mild brake on everyone piling onto whoever is currently in the lead. HP refills to this maximum at the start of every Battle Day. Right now, on this computer:</div>
+      <div id="admin-combat-hp-list" style="margin:8px 0 4px">${combatHpRowsHTML()}</div>
+
+      <label class="admin-flabel" style="margin-top:20px">Live prize preview</label>
+      <div class="admin-two">
+        <div>
+          <label class="admin-flabel" for="admin-combat-attacker">Winner</label>
+          <select id="admin-combat-attacker" class="admin-input">${houseOpts(combatPreviewSel.attacker)}</select>
+        </div>
+        <div>
+          <label class="admin-flabel" for="admin-combat-defender">Defeated</label>
+          <select id="admin-combat-defender" class="admin-input">${houseOpts(combatPreviewSel.defender)}</select>
+        </div>
+      </div>
+      <div class="admin-preview">
+        <span class="admin-preview-eyebrow">Live preview</span>
+        <span class="admin-preview-label" id="admin-combat-preview-amount">${esc(preview.text)}</span>
+      </div>
+      <div class="admin-mini" id="admin-combat-preview-note">${esc(preview.note)}</div>
+    </div>`;
+}
+
 function renderSettings() {
   const store = ctxRef.store;
   const s = store.getSettings();
@@ -1844,6 +1980,8 @@ function renderSettings() {
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="settings-save">Save term settings</button>
         <div class="admin-hint" style="margin-top:.75rem">The top-bar term label and the Morning Dashboard update the moment you save.</div>
       </div>
+
+      ${renderBattleRulesCard()}
 
       ${renderHousesCard()}
 
@@ -4160,6 +4298,22 @@ function onClick(e) {
       break;
     }
 
+    // battle rules (prize rule + punching down)
+    case 'combat-rule': {
+      const ruleId = btn.dataset.rule;
+      store.updateCombat({ prizeRule: ruleId });
+      renderBody({ force: true });
+      toast(`Prize rule set to “${store.PRIZE_RULES[ruleId] ? store.PRIZE_RULES[ruleId].label : ruleId}”.`);
+      break;
+    }
+    case 'combat-punchdown': {
+      const cur = store.getCombat();
+      store.updateCombat({ punchingDown: !cur.punchingDown });
+      renderBody({ force: true });
+      toast(`Punching down ${!cur.punchingDown ? 'allowed' : 'blocked'}.`);
+      break;
+    }
+
     // quick award presets (Records one-tap buttons)
     case 'award-new': openAwardForm(null); break;
     case 'award-edit': openAwardForm(btn.dataset.id); break;
@@ -4836,6 +4990,16 @@ export default {
 
     // input change: effect radios, import-file picker, media/shop/asset file inputs
     changeHandler = (e) => {
+      if (e.target.id === 'admin-combat-attacker') {
+        combatPreviewSel.attacker = Number(e.target.value);
+        updateCombatPreview();
+        return;
+      }
+      if (e.target.id === 'admin-combat-defender') {
+        combatPreviewSel.defender = Number(e.target.value);
+        updateCombatPreview();
+        return;
+      }
       if (e.target.classList && e.target.classList.contains('admin-music-pick')) {
         const screen = e.target.dataset.screen;
         const val = e.target.value;
@@ -4883,7 +5047,27 @@ export default {
 
     // live plain-English preview in the shop editor as cost/amount are typed
     inputHandler = (e) => {
-      if (e.target.id === 'admin-ambient-volume') {
+      if (e.target.id === 'admin-combat-gapshare') {
+        ctxRef.store.updateCombat({ gapShare: Math.max(0, Math.min(100, Number(e.target.value) || 0)) });
+        updateCombatPreview();
+      }
+      else if (e.target.id === 'admin-combat-percent') {
+        ctxRef.store.updateCombat({ prizePercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) });
+        updateCombatPreview();
+      }
+      else if (e.target.id === 'admin-combat-flat') {
+        ctxRef.store.updateCombat({ prizeFlat: Math.max(0, Number(e.target.value) || 0) });
+        updateCombatPreview();
+      }
+      else if (e.target.id === 'admin-combat-hpbase') {
+        ctxRef.store.updateCombat({ hpBase: Math.max(1, Number(e.target.value) || 1) });
+        updateCombatHpList();
+      }
+      else if (e.target.id === 'admin-combat-hpper500') {
+        ctxRef.store.updateCombat({ hpPer500: Math.max(0, Number(e.target.value) || 0) });
+        updateCombatHpList();
+      }
+      else if (e.target.id === 'admin-ambient-volume') {
         const pct = Number(e.target.value);
         const label = el('admin-ambient-vol-label');
         if (label) label.textContent = `${pct}%`;

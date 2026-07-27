@@ -1,9 +1,14 @@
 // battle.js — "Battle Day!" duel screen.
 // Landing (armed ignition button) -> full-screen cinematic overlay (#overlay-root)
-// -> DUEL: challenger house (crest + points + its offensive magic items) on the
-// left, chosen opponent (crest + points + active defenses) on the right, and the
-// strike resolving centre screen between the two shields.
-// Every attack resolves through store.applyAttack — the one combat rule.
+// -> DUEL: challenger house (crest + points + HP + its offensive magic items) on
+// the left, chosen opponent (crest + points + HP + active defenses) on the
+// right, and the strike resolving centre screen between the two shields.
+// A house-vs-house strike resolves through resolveHpAttack (below), which
+// mirrors store.applyAttack's shield/reduction/pierce order but spends HIT
+// POINTS instead of house points — a house is beaten when its HP hits zero,
+// the winner takes a prize in points (store.awardBattleWin), and the loser
+// never loses points. Teacher scoring is the one path that still moves points
+// directly, via store.applyAttack itself, unchanged.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { lock } from '../core/lock.js';
 
@@ -265,6 +270,17 @@ function injectStyles() {
   .duel-points-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
     font-variant-numeric:tabular-nums;line-height:1;
     font-size:clamp(1.7rem,3.6vw,2.8rem);text-shadow:0 0 26px rgba(253,230,138,.35);}
+  /* Hit points sit BELOW points on the same card, same visual treatment, but
+     tinted to the house's own accent colour rather than the shared gold — HP
+     is what a strike removes, so it reads as "this house's own meter". */
+  .duel-hp-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:#9ca3af;text-align:center;margin-top:.1rem;}
+  .duel-hp-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-variant-numeric:tabular-nums;line-height:1;
+    font-size:clamp(1.1rem,2.2vw,1.6rem);text-shadow:0 0 18px currentColor;}
+  .duel-hp-bar{flex:0 0 auto;width:min(230px,92%);height:11px;border-radius:999px;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);overflow:hidden;margin:.05rem 0 .25rem;}
+  .duel-hp-fill{height:100%;border-radius:999px;transition:width .45s ease;}
   /* Sized off viewport HEIGHT and allowed to shrink — it is the element that
      gives way first so the strike list never falls below the fold. */
   .duel-crest{position:relative;flex:0 1 auto;height:clamp(90px,20vh,240px);min-height:88px;
@@ -321,6 +337,11 @@ function injectStyles() {
     transition:transform .2s ease;}
   .duel-empty-broke{border:1px dashed rgba(251,191,36,.45);color:#fde68a;
     background:rgba(180,83,9,.15);border-radius:.8rem;padding:.55rem .7rem;}
+  /* what the attacker stands to win once a defender is chosen — visible
+     before anyone strikes, so the class can see the stakes. */
+  .duel-prize{flex:0 0 auto;width:100%;text-align:center;font-size:.78rem;font-weight:700;color:#fde68a;
+    background:rgba(180,131,6,.14);border:1px dashed rgba(253,230,138,.45);border-radius:.7rem;
+    padding:.4rem .55rem;margin-top:.2rem;line-height:1.3;}
   .duel-items-more{grid-column:1/-1;text-align:center;color:var(--color-text-soft,#9ca3af);
     font-size:.8rem;padding:.35rem 0 .1rem;}
   .duel-def-none{background:rgba(127,29,29,.18);border:1px dashed rgba(239,68,68,.5);color:#fca5a5;
@@ -352,6 +373,11 @@ function injectStyles() {
   .duel-pick-pts{flex-shrink:0;text-align:right;}
   .duel-pick-pts .v{font-weight:800;font-size:1.3rem;color:#fde68a;font-variant-numeric:tabular-nums;}
   .duel-pick-pts .l{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:#9ca3af;}
+  /* punching-down lock — the house is still shown (never silently hidden),
+     just visibly unavailable, with the reason spelled out. */
+  .duel-pick-btn-locked{opacity:.5;cursor:not-allowed;filter:grayscale(.55);}
+  .duel-pick-btn-locked:hover{filter:grayscale(.55);box-shadow:none;}
+  .duel-pick-locked-reason{display:block;font-size:.68rem;font-weight:700;color:#f87171;margin-top:.15rem;line-height:1.25;}
 
   /* centre arena — where the strike resolves */
   .duel-arena{position:relative;height:100%;min-height:clamp(150px,22vh,260px);display:flex;
@@ -450,6 +476,10 @@ function injectStyles() {
   .duel-outcome-reduced .oc-head{color:#fde68a;text-shadow:0 0 22px rgba(245,158,11,.6);}
   .duel-outcome-pierced{border:2px solid #a78bfa;}
   .duel-outcome-pierced .oc-head{color:#ddd6fe;text-shadow:0 0 22px rgba(167,139,250,.6);}
+  /* victory — same outcome-card component as every other strike result,
+     just gold to match the prize/points colour already used across the card. */
+  .duel-outcome-victory{border:2px solid #fbbf24;}
+  .duel-outcome-victory .oc-head{color:#fde68a;text-shadow:0 0 28px rgba(251,191,36,.75);}
 
   .battle-fx-vignette{position:fixed;inset:0;z-index:65;pointer-events:none;
     animation:battle-fx-vignette-kf .7s ease both;}
@@ -547,6 +577,11 @@ function triggerCinematic() {
   const host = document.getElementById('overlay-root');
   if (!host || overlayEl) return;
 
+  // A Battle Day session begins here — everyone's HP refills to full before
+  // the duel ever renders, so no house arrives already half-beaten from last
+  // week's fight.
+  ctxRef.store.resetAllHp();
+
   ctxRef.audio.sfx('sword');
   // A recorded war cry REPLACES the robot voice rather than joining it — two
   // voices over one another would be worse than either alone. Until the teacher
@@ -632,6 +667,23 @@ function pointsBlockHtml(store, house, side) {
     <div class="duel-points-val" data-points="${side}">${store.getTotal(house.id, 'term')}</div>`;
 }
 
+// Hit points sit BELOW points on the same card — same layout, same labelling
+// convention, but tinted to the house's own accent colour rather than the
+// shared gold, and backed by a bar so the class can watch it drain without
+// reading the number. This is what a strike removes now; points never move
+// for the loser.
+function hpBlockHtml(store, house, side) {
+  const max = store.getMaxHp(house.id);
+  const cur = store.getHp(house.id);
+  const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((cur / max) * 100))) : 0;
+  return `
+    <div class="duel-hp-lbl">Hit Points</div>
+    <div class="duel-hp-val" data-hp="${side}" style="color:${esc(house.accent)}">${cur} / ${max}</div>
+    <div class="duel-hp-bar">
+      <div class="duel-hp-fill" data-hp-bar="${side}" style="width:${pct}%;background:${esc(house.accent)}"></div>
+    </div>`;
+}
+
 function crestHtml(house, side) {
   return `<div class="duel-crest" data-crest="${side}">${houseImg(house, '')}</div>`;
 }
@@ -648,7 +700,10 @@ function itemRowHtml(store, item, count, target) {
   const kind = item.effect.kind;
   const amount = item.effect.amount;
   const disabled = !target;
-  const dmgText = kind === 'steal' ? `Steal ${amount} pts` : `−${amount} pts`;
+  // The strike removes HIT POINTS now, not points. A 'steal' item still deals
+  // HP damage AND hands the attacker points equal to that damage — both are
+  // true, so both are said.
+  const dmgText = kind === 'steal' ? `−${amount} HP · steal ${amount} pts` : `−${amount} HP`;
 
   let reason = '';
   if (!target) reason = `<div class="duel-item-reason">🎯 Choose an opponent first</div>`;
@@ -660,7 +715,7 @@ function itemRowHtml(store, item, count, target) {
     } else if (store.isShielded(target.id)) {
       note = `<div class="duel-item-note duel-note-block">🛡️ Their shield will block this</div>`;
     } else if (store.hasReduction(target.id)) {
-      note = `<div class="duel-item-note duel-note-half">🕵️ Halved by their relic → ${Math.max(1, Math.round(amount / 2))} pts</div>`;
+      note = `<div class="duel-item-note duel-note-half">🕵️ Halved by their relic → ${Math.max(1, Math.round(amount / 2))} HP</div>`;
     }
   }
 
@@ -702,6 +757,7 @@ function challengerSideHtml(store, challenger, target) {
     <section class="duel-side" style="--side-accent:${esc(challenger.accent)}">
       <div class="duel-role">⚔️ Attacker</div>
       ${pointsBlockHtml(store, challenger, 'challenger')}
+      ${hpBlockHtml(store, challenger, 'challenger')}
       ${crestHtml(challenger, 'challenger')}
       <div class="duel-name">${esc(challenger.name)}</div>
       <div class="duel-section-lbl">Ready to strike</div>
@@ -721,31 +777,47 @@ function defenseListHtml(store, house) {
   return `<div class="duel-def">${rows.join('')}</div>`;
 }
 
-function defenderSideHtml(store, target) {
+// What the attacker stands to win if this house falls, shown as soon as a
+// defender is chosen so the class can see the stakes before a single item is
+// thrown.
+function prizePreviewHtml(store, challenger, target) {
+  const prize = store.previewPrize(challenger.id, target.id);
+  return `<div class="duel-prize">🏆 If ${esc(target.name)} falls: <b>${prize} pts</b> to ${esc(challenger.name)} — ${esc(target.name)} loses none.</div>`;
+}
+
+function defenderSideHtml(store, target, challenger) {
   return `
     <section class="duel-side" style="--side-accent:${esc(target.accent)}">
       <div class="duel-role">🛡️ Defender</div>
       ${pointsBlockHtml(store, target, 'defender')}
+      ${hpBlockHtml(store, target, 'defender')}
       ${crestHtml(target, 'defender')}
       <div class="duel-name">${esc(target.name)}</div>
       <div class="duel-section-lbl">Their active defenses</div>
       ${defenseListHtml(store, target)}
+      ${challenger ? prizePreviewHtml(store, challenger, target) : ''}
     </section>`;
 }
 
-// Big touch targets for choosing who to attack (or who attacks).
-function housePickHtml(store, houses, attr, { showDefenses = true } = {}) {
+// Big touch targets for choosing who to attack (or who attacks). When
+// `attackerId` is given, each house is checked against store.canAttack — a
+// house that can't legally be attacked (punching-down guard) still SHOWS but
+// is visibly locked, with the reason spelled out, rather than disappearing.
+function housePickHtml(store, houses, attr, { showDefenses = true, attackerId = null } = {}) {
   return `<div class="duel-pick">${houses.map((h) => {
     const shielded = store.isShielded(h.id);
     const reduced = store.hasReduction(h.id);
     const def = shielded ? '🛡️ Shielded' : reduced ? '🕵️ Damage halved' : 'Undefended';
+    const gate = attackerId != null ? store.canAttack(attackerId, h.id) : { ok: true, reason: '' };
     return `
-      <button type="button" class="duel-pick-btn" ${attr}="${h.id}"
+      <button type="button" class="duel-pick-btn${gate.ok ? '' : ' duel-pick-btn-locked'}" ${attr}="${h.id}"
+        ${gate.ok ? '' : 'disabled'}
         style="--pick-accent:${esc(h.accent)};--pick-soft:${esc(h.accentSoft || 'rgba(55,65,81,.5)')}">
         ${houseImg(h, 'duel-pick-crest')}
         <span class="duel-pick-info">
           <span class="duel-pick-name">${esc(h.name)}</span>
           ${showDefenses ? `<span class="duel-pick-def ${shielded || reduced ? '' : 'duel-pick-def-none'}">${def}</span>` : ''}
+          ${!gate.ok ? `<span class="duel-pick-locked-reason">🚫 ${esc(gate.reason)}</span>` : ''}
         </span>
         <span class="duel-pick-pts"><span class="v">${store.getTotal(h.id, 'term')}</span><br><span class="l">pts</span></span>
       </button>`;
@@ -759,7 +831,7 @@ function targetPickerHtml(store, challenger) {
       <div class="duel-role">🎯 Choose an opponent</div>
       <div class="duel-pick-prompt">Who does ${esc(challenger.name)} attack?</div>
       <div class="duel-pick-hint">Tap a house to see their points and defenses.</div>
-      ${housePickHtml(store, others, 'data-pick-target')}
+      ${housePickHtml(store, others, 'data-pick-target', { attackerId: challenger.id })}
     </section>`;
 }
 
@@ -829,7 +901,7 @@ function renderDuel() {
       <div class="duel-role">🛡️ Defender</div>
       <div class="duel-pick-hint">Waiting for an attacker&hellip;</div>
     </section>`
-    : (target ? defenderSideHtml(store, target) : targetPickerHtml(store, challenger));
+    : (target ? defenderSideHtml(store, target, challenger) : targetPickerHtml(store, challenger));
 
   rootEl.innerHTML = `
     <div class="duel-root">
@@ -912,6 +984,34 @@ function toast(text) {
   rootEl.appendChild(el);
   fxNodes.add(el);
   later(() => { el.remove(); fxNodes.delete(el); }, 2200);
+}
+
+// Same rolling readout as animatePoints, but for the HP number AND its bar —
+// the bar is "the thing a class will actually watch" per the brief, so it has
+// to drain in step with the number, not jump.
+function animateHp(side, from, to, max, durationMs) {
+  const valEl = () => (rootEl ? rootEl.querySelector(`[data-hp="${side}"]`) : null);
+  const barEl = () => (rootEl ? rootEl.querySelector(`[data-hp-bar="${side}"]`) : null);
+  const pctOf = (n) => (max > 0 ? Math.max(0, Math.min(100, Math.round((n / max) * 100))) : 0);
+  const paint = (n) => {
+    const v = valEl(); if (v) v.textContent = `${n} / ${max}`;
+    const b = barEl(); if (b) b.style.width = `${pctOf(n)}%`;
+  };
+  if (!valEl()) return;
+  if (from === to || prefersReducedMotion()) { paint(to); return; }
+  const steps = 14;
+  const stepMs = Math.max(16, Math.round(durationMs / steps));
+  let i = 0;
+  const tick = () => {
+    if (!valEl()) return;               // re-rendered or unmounted — final value already drawn
+    i += 1;
+    const t = Math.min(1, i / steps);
+    const eased = 1 - (1 - t) * (1 - t);
+    paint(Math.round(from + (to - from) * eased));
+    if (t < 1) later(tick, stepMs);
+  };
+  paint(from);
+  tick();
 }
 
 // Rolls a points readout from `from` to `to` so the class watches the score
@@ -1003,6 +1103,31 @@ function flareReduceBadge(houseId) {
 }
 
 // =============================================================================
+// HP COMBAT RESOLUTION — reproduces store.applyAttack's shield/reduction/
+// pierce order (a full shield blocks outright; otherwise a reduction halves
+// the hit; a `pierce` attack ignores both) but spends HIT POINTS instead of
+// house points. store.applyAttack itself is left untouched — it is still the
+// engine behind teacher scoring, which moves points directly on purpose.
+// =============================================================================
+function resolveHpAttack(store, { toId, amount, pierce = false }) {
+  const dmg = Math.max(0, Math.round(Number(amount) || 0));
+  const shielded = store.isShielded(toId);
+  const reduced = store.hasReduction(toId);
+  const beforeHp = store.getHp(toId);
+
+  if (shielded && !pierce) {
+    return { outcome: 'blocked', applied: 0, shielded, reduced, before: beforeHp, after: beforeHp, defeated: false };
+  }
+  const applied = (reduced && !pierce) ? Math.max(1, Math.round(dmg / 2)) : dmg;
+  const dmgResult = store.damageHp(toId, applied);
+  return {
+    outcome: pierce && (shielded || reduced) ? 'pierced' : (reduced ? 'reduced' : 'full'),
+    applied, shielded, reduced, blocked: dmg - applied,
+    before: dmgResult.before, after: dmgResult.after, defeated: dmgResult.defeated,
+  };
+}
+
+// =============================================================================
 // THE STRIKE
 // =============================================================================
 async function strike(itemId) {
@@ -1035,13 +1160,15 @@ async function strike(itemId) {
 
   const beforeChallenger = store.getTotal(challenger.id, 'term');
   const beforeTarget = store.getTotal(target.id, 'term');
+  const maxTargetHp = store.getMaxHp(target.id);
 
   // Suspend re-renders so the whole resolution lands in ONE redraw — otherwise
-  // consumeFromInventory(), applyAttack() and the steal payout each rebuild
+  // consumeFromInventory(), the HP hit and any steal/prize payout each rebuild
   // the DOM and every fx node we spawn is attached to a soon-to-be-detached
   // element. (resolving is already true from the gate above; kept true
   // straight through.)
   let result;
+  let battleWon = null;
   try {
     // Take it out of the stockpile first. This can only fail if someone
     // double-tapped past the `resolving` guard or the last copy was already
@@ -1053,10 +1180,20 @@ async function strike(itemId) {
       toast(`${item.name} is already gone — nothing struck`);
       return;
     }
-    result = store.applyAttack({ fromId: challenger.id, toId: target.id, amount, pierce, label: item.name });
-    // A steal loots exactly what was actually taken — 0 if blocked, half if reduced.
+    // HIT POINTS take the damage now, not points — shields/reductions/pierce
+    // resolve exactly as before, just against HP (see resolveHpAttack above).
+    result = resolveHpAttack(store, { toId: target.id, amount, pierce });
+    // A steal loots exactly what was actually taken — 0 if blocked, half if
+    // reduced. The attacker gains POINTS equal to the HP damage dealt; that
+    // is the whole point of the item. The target's points never move.
     if (kind === 'steal' && result.outcome !== 'blocked' && result.applied > 0) {
       store.addPoints(challenger.id, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+    }
+    // The house's HP hit zero: the battle is over. The winner takes the
+    // prize in points; the loser never loses any.
+    if (result.defeated) {
+      const prize = store.awardBattleWin(challenger.id, target.id);
+      battleWon = { prize };
     }
   } finally {
     resolving = false;
@@ -1065,20 +1202,23 @@ async function strike(itemId) {
   renderDuel(); // one redraw, final numbers in the DOM
 
   const afterChallenger = store.getTotal(challenger.id, 'term');
-  const afterTarget = store.getTotal(target.id, 'term');
+  const afterTarget = store.getTotal(target.id, 'term'); // combat never touches the loser's points
 
-  // Nothing is paid here any more — the attacker's total only ever moves if
-  // this turns out to be a steal that actually loots points, and that reveal
-  // waits for the hit to land (see landHit). Hold both totals at their
-  // pre-strike values until then instead of animating a deduction that never
-  // happened.
+  // Hold both points totals AND the defender's HP readout at their pre-strike
+  // values — the redraw above already painted the final numbers, but the
+  // reveal should wait for the hit to actually land (see landHit).
   const chalEl = rootEl.querySelector('[data-points="challenger"]');
   if (chalEl) chalEl.textContent = String(beforeChallenger);
   const defEl = rootEl.querySelector('[data-points="defender"]');
   if (defEl) defEl.textContent = String(beforeTarget);
+  const defHpEl = rootEl.querySelector('[data-hp="defender"]');
+  if (defHpEl) defHpEl.textContent = `${result.before} / ${maxTargetHp}`;
+  const defHpBar = rootEl.querySelector('[data-hp-bar="defender"]');
+  if (defHpBar) defHpBar.style.width = `${maxTargetHp > 0 ? Math.max(0, Math.min(100, Math.round((result.before / maxTargetHp) * 100))) : 0}%`;
 
   playStrike({ item, kind, amount, result, challenger, target,
-    beforeChallenger, afterChallenger, beforeTarget, afterTarget });
+    beforeChallenger, afterChallenger, beforeTarget, afterTarget,
+    beforeTargetHp: result.before, afterTargetHp: result.after, maxTargetHp, battleWon });
   if (audio) audio.sfx('coin');
 }
 
@@ -1112,10 +1252,10 @@ function playStrike(o) {
       }
       audio.sfx('sword');
       outcomeCard('blocked', '🛡️ BLOCKED',
-        `${esc(o.target.name)} loses <b>no points</b>.`,
+        `${esc(o.target.name)} takes <b>no damage</b>.`,
         `0 damage`);
       // Nothing changed hands — the item is spent from the stockpile either
-      // way, but no points moved, so there is nothing to animate.
+      // way, but no HP or points moved, so there is nothing to animate.
       return;
     }
 
@@ -1127,7 +1267,8 @@ function playStrike(o) {
         landHit(o, rootEl.querySelector('[data-crest="defender"]'), reduced);
         outcomeCard('pierced', '🫥 PIERCED!',
           `${esc(o.challenger.name)}'s strike phased straight through ${esc(o.target.name)}'s defense.`,
-          `−${o.result.applied} pts — full damage`);
+          `−${o.result.applied} HP — full damage`);
+        maybeAnnounceVictory(o);
       }, reduced ? 0 : 180);
       return;
     }
@@ -1137,19 +1278,22 @@ function playStrike(o) {
       landHit(o, crest, reduced, 'amber');
       outcomeCard('reduced', '🕵️ HALVED',
         `${esc(o.target.name)}'s relic weakened the blow.`,
-        `${o.amount} → ${o.result.applied}`);
+        `${o.amount} → ${o.result.applied} HP`);
+      maybeAnnounceVictory(o);
       return;
     }
 
     landHit(o, crest, reduced);
     outcomeCard('hit', '💥 DIRECT HIT!',
       `${esc(o.challenger.name)} struck ${esc(o.target.name)} with ${esc(o.item.name)}.${o.kind === 'steal' ? ` They looted <b>${o.result.applied} pts</b>.` : ''}`,
-      `−${o.result.applied} pts`);
+      `−${o.result.applied} HP`);
+    maybeAnnounceVictory(o);
   }, travel);
 }
 
 // Shared "the hit lands" beat: flash, shake, big rising damage number, vignette,
-// thud, and both totals rolling to their new values.
+// thud, and both totals — and now the defender's HP bar — rolling to their
+// new values.
 function landHit(o, crest, reduced, tint = 'red') {
   ctxRef.audio.sfx('thud');
   screenVignettePulse();
@@ -1159,11 +1303,35 @@ function landHit(o, crest, reduced, tint = 'red') {
   }
   // Damage number is text feedback — always shown (static under reduced motion).
   spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${o.result.applied}`);
+  // The strike removes HIT POINTS — this is the meter the class is watching.
+  animateHp('defender', o.beforeTargetHp, o.afterTargetHp, o.maxTargetHp, COUNT_MS);
+  // Points: the defender's total NEVER moves from combat any more (before ===
+  // after always) — this just redraws the same number. Only a steal, or a
+  // battle-winning prize, actually moves the attacker's total, and this is
+  // where that gain reveals itself.
   animatePoints('defender', o.beforeTarget, o.afterTarget, COUNT_MS);
-  // Honest animation: for attack/pierce, before === after and this just
-  // redraws the same number. Only a steal actually moves the attacker's
-  // total, and this is where that gain reveals itself.
   animatePoints('challenger', o.beforeChallenger, o.afterChallenger, COUNT_MS);
+}
+
+// If this strike finished the defender off, the duel is over: the prize has
+// already been awarded (see strike()) — this just SHOWS it, reusing the same
+// outcome-card component and FX vocabulary as every other strike result, then
+// clears the chosen opponent so the attacker can pick a new one.
+function maybeAnnounceVictory(o) {
+  if (!o.battleWon) return;
+  later(() => {
+    if (!rootEl) return;
+    ctxRef.audio.sfx('fanfare');
+    screenVignettePulse();
+    outcomeCard('victory', `🏆 ${esc(o.challenger.name).toUpperCase()} WINS THE DUEL!`,
+      `${esc(o.target.name)} is defeated — but keeps every point it earned. No points were lost.`,
+      `+${o.battleWon.prize} pts to ${esc(o.challenger.name)}`);
+    later(() => {
+      if (!rootEl) return;
+      targetId = null;   // battle over — back to picking a new opponent
+      renderDuel();
+    }, OUTCOME_MS);
+  }, OUTCOME_MS);
 }
 
 // =============================================================================
