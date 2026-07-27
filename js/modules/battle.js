@@ -743,9 +743,9 @@ function injectStyles() {
   .duel2-util-row{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;}
   .duel2-slot{position:relative;height:clamp(40px,5.9vh,84px);border-radius:.9rem;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:.15rem;text-align:center;padding:.4rem .35rem;overflow:hidden;box-sizing:border-box;
+    gap:.1rem;text-align:center;padding:.22rem .35rem;overflow:hidden;box-sizing:border-box;
     border:2px solid #4b5563;background:#111827;}
-  .duel2-slot-emoji{font-size:1.15rem;line-height:1;flex:0 0 auto;}
+  .duel2-slot-emoji{font-size:1.5rem;line-height:1;}
     /* flex:0 0 auto is load-bearing. The ATTACK slot carries a damage line the
      defense slot does not, so with everything shrinkable the name — the one
      thing you have to read to know which weapon it is — was the part that gave,
@@ -753,11 +753,13 @@ function injectStyles() {
      the defender's name rendered at 14px and the attacker's at 1px. */
   .duel2-slot-name{flex:0 0 auto;font-weight:800;font-size:.78rem;line-height:1.15;color:#f9fafb;
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
-  .duel2-slot-meta{display:flex;flex-direction:column;gap:.1rem;align-items:center;}
+    /* Row, not column. At the shorter slot height the badge and the damage
+     stacked needed 35px and the slot had 64 to hold everything — so the bottom
+     was clipped. Side by side they take 18px and nothing has to be removed to
+     fit: "Attack · 2d6 x 100" reads as one line. */
+  .duel2-slot-meta{display:flex;flex-direction:row;gap:.35rem;align-items:center;
+    justify-content:center;flex-wrap:wrap;}
   .duel2-slot-dmg{font-size:.7rem;font-weight:800;color:#fca5a5;}
-  /* Kept for the hp screen; the duel slots dropped it. "Attack" under a heading
-     that already says ATTACK SLOTS cost 18px and pushed the item's NAME out of
-     the slot entirely — the one thing on there you actually have to read. */
   .duel2-slot-kind{font-size:.6rem;font-weight:700;letter-spacing:.04em;color:#c4b5fd;
     background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.35);
     border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
@@ -1327,6 +1329,7 @@ function attackSlotHtml(item, unlocked, target, frozen) {
       <span class="duel2-slot-emoji">${esc(item.emoji || '⚔️')}</span>
       <span class="duel2-slot-name">${esc(item.name)}</span>
       <span class="duel2-slot-meta">
+        <span class="duel2-slot-kind">${esc(kindTagDuel(kind))}</span>
         <span class="duel2-slot-dmg">${esc(dmgText)}</span>
       </span>
       ${reason ? `<span class="duel2-slot-reason">${esc(reason)}</span>` : ''}
@@ -1353,6 +1356,7 @@ function defenseSlotHtml(item, unlocked, revealed) {
   return `<div class="duel2-slot duel2-slot-revealed">
     <span class="duel2-slot-emoji">${esc(item.emoji || '🛡️')}</span>
     <span class="duel2-slot-name">${esc(item.name)}</span>
+    <span class="duel2-slot-kind">Defense</span>
   </div>`;
 }
 
