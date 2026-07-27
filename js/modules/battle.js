@@ -153,7 +153,10 @@ function injectStyles() {
     100%{box-shadow:inset 0 0 60px 10px rgba(239,68,68,.25);}
   }
   /* Title reads FIRST, swords slam in beneath it. */
-  .battle-swords-wrap{position:absolute;top:62%;left:50%;transform:translate(-50%,-50%);
+  /* NB: this wrapper is 0x0 — the sword glyphs are absolutely positioned inside
+     it, so this % places their CENTRE. At 720p each glyph is ~226px tall, so
+     it reaches ~113px either side of this line. Keep it clear of the title. */
+  .battle-swords-wrap{position:absolute;top:68%;left:50%;transform:translate(-50%,-50%);
     display:flex;align-items:center;justify-content:center;pointer-events:none;}
   .battle-sword{font-size:clamp(4rem,10vw,8rem);position:absolute;
     filter:drop-shadow(0 0 24px rgba(255,180,120,.6));}
@@ -172,7 +175,7 @@ function injectStyles() {
   .battle-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
     animation:battle-flash-pop .35s ease .55s both;}
   @keyframes battle-flash-pop{0%{opacity:0;}30%{opacity:.85;}100%{opacity:0;}}
-  .battle-stamp{position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);
+  .battle-stamp{position:absolute;top:24%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(2rem,6vw,4.5rem);color:#fca5a5;
     text-shadow:0 0 30px rgba(239,68,68,.8),0 4px 10px rgba(0,0,0,.8);}
