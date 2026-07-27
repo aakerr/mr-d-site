@@ -83,6 +83,19 @@ html[data-mode="light"] .acc-text { color: var(--color-text, #111827); }
   font-size: 0.9rem; font-weight: 700; color: var(--color-text-soft, #9ca3af); }
 .hse-xlab[data-future="true"] { opacity: 0.4; }
 .hse-xlab[data-now="true"] { color: var(--color-text, #f9fafb); }
+/* Light mode only: the soft-grey token measures just under the 4.5:1 body-text
+   floor against the light card (dark mode is already fine and deliberately
+   muted, so it is left untouched). .hse-ahead-lab additionally carries its
+   own opacity: 0.8 (below), which dilutes whatever color it's given against
+   its actual background (the hatched "weeks to come" overlay) -- #4b5563
+   clears the floor for .hse-ylab (no such dilution there) but, once diluted,
+   still lands under 4.5:1, so this label gets a darker grey to compensate.
+   Future weeks' extra opacity dimming on the x-axis is separately deliberate
+   and stays in place -- it's just nudged up so the darker light-mode grey
+   still reads as legible while continuing to recede. */
+html[data-mode="light"] .hse-ylab { color: #4b5563; }
+html[data-mode="light"] .hse-ahead-lab { color: #374151; }
+html[data-mode="light"] .hse-xlab[data-future="true"] { opacity: 0.55; }
 .hse-dot { position: absolute; width: 11px; height: 11px; border-radius: 999px; transform: translate(-50%, -50%);
   border: 2px solid var(--color-card, #111827); box-shadow: 0 1px 3px rgba(0,0,0,0.45); }
 .hse-ahead { position: absolute; top: 0; bottom: 0; border-left: 2px dotted var(--color-line, #374151);

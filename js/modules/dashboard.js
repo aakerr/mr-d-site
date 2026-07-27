@@ -207,7 +207,7 @@ function renderStandings(state, store) {
               ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
-                  <span class="font-bold text-[clamp(1rem,2.5vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${t.house.name}</span>
+                  <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${t.house.name}</span>
                   <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
                 </div>
                 <div class="mt-[clamp(2px,0.6vh,7px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">

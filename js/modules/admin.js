@@ -4562,8 +4562,8 @@ function injectStyles() {
   .admin-testflight-row .admin-mini{margin:0;}
   .admin-btn-danger{color:#f87171;}
   .admin-btn-danger:hover:not(:disabled){background:rgba(239,68,68,.18);border-color:#ef4444;}
-  .admin-btn-nuke{background:#ef4444;border-color:#ef4444;color:#fff;font-weight:800;}
-  .admin-btn-nuke:hover:not(:disabled){background:#dc2626;}
+  .admin-btn-nuke{background:#b91c1c;border-color:#b91c1c;color:#fff;font-weight:800;}
+  .admin-btn-nuke:hover:not(:disabled){background:#991b1b;}
 
   /* inputs */
   .admin-input{width:100%;min-height:44px;padding:10px 12px;border-radius:.7rem;border:1px solid var(--color-line);
