@@ -177,6 +177,13 @@ function renderHero(state, store) {
            into the gaps instead: it aligned the edges but pushed the two gaps
            out to 12px each and left the name barely larger. The type does the
            work here; the gaps are meant to be small and equal. -->
+      <!-- Easter egg: a 20x20 hotspot in the hero's bottom-left corner opens the
+           banner tuner (tools/hero-tuner.js). No cursor change, no hover state,
+           no label — you have to know it is there, which is the point.
+           z-20 puts it over the gradient but it is the only thing in that corner,
+           so it cannot steal a click from anything real. Worst case if a student
+           finds it: a panel of sliders that saves nothing and closes on reload. -->
+      <div data-hero-tuner class="absolute left-0 bottom-0 z-20" style="width:20px;height:20px" aria-hidden="true"></div>
       <div class="relative z-10 flex items-center gap-5 p-4 xl:p-6 w-full" style="--crest-h:clamp(7rem,21vh,10.5rem)">
         ${houseImg(h, 'w-auto object-contain shrink-0 drop-shadow-[0_10px_26px_rgba(0,0,0,0.65)]', 'style="height:var(--crest-h)"')}
         <!-- Spaced by INK, not by boxes. Box-to-box said 2px and 0px while the
@@ -353,6 +360,15 @@ export default {
     render(el, ctx);
 
     this._clickHandler = (e) => {
+      // The hidden corner hotspot. Loaded on demand so the tuner costs nothing
+      // until someone who knows about it asks for it, and a missing or broken
+      // tool file can never take the dashboard down with it.
+      if (e.target.closest('[data-hero-tuner]')) {
+        import('../../tools/hero-tuner.js')
+          .then((m) => m.openHeroTuner())
+          .catch((err) => console.warn('hero tuner unavailable:', err?.message || err));
+        return;
+      }
       const btn = e.target.closest('[data-nav]');
       if (!btn) return;
       const id = btn.getAttribute('data-nav');

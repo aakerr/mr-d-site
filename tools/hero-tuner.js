@@ -1,8 +1,12 @@
-/* Hero tuner — paste into the browser console while the Dashboard is showing.
-   Adds sliders for the five numbers that drive the house banner. Changes apply
-   instantly. Nothing is saved: reload and it is gone, so nothing can be broken.
-   The line at the bottom is the one to send back to have it made permanent. */
-(() => {
+// Hero tuner — sliders over the five CSS variables that drive the house banner.
+// Changes apply instantly and NOTHING is saved: a reload removes every trace, so
+// there is no way to leave the app in a strange state by experimenting.
+//
+// Two ways in, both deliberate:
+//   the hidden hotspot in the hero's bottom-left corner (see dashboard.js), and
+//   import('/tools/hero-tuner.js').then(m => m.openHeroTuner())
+// from the console.
+export function openHeroTuner() {
   document.getElementById('hero-tuner')?.remove();
   const col = document.querySelector('.dash-hero .flex.flex-col');
   if (!col) return 'Open the Dashboard first (the screen with the big house banner), then run this again.';
@@ -69,4 +73,4 @@
   document.body.appendChild(box);
   refresh();
   return 'Tuner open. Drag the sliders; the banner updates as you go. Nothing is saved — reload to undo.';
-})()
+}
