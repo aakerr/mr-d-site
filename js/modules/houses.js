@@ -44,6 +44,19 @@ const STYLE = `
 .hse-pill-total { font-weight: 800; font-size: 1.25rem; line-height: 1; }
 .hse-pill[data-on="false"] .hse-pill-total { color: var(--color-text-soft, #9ca3af); }
 
+/* A house's accent is an IDENTITY colour (crest, swatch, dot, bar, border) —
+   not automatically a safe TEXT colour. Dark mode's cards are dark enough
+   that the accent reads fine as foreground text; in light mode the card
+   flips to near-white and Valhalla's amber / Rivendell's green drop well
+   under the 4.5:1 body-text floor against it. .acc-text keeps an element's
+   text in its house accent in dark mode (via the --acc custom property set
+   inline, right alongside the same accent still doing identity work on the
+   crest/bar/dot next to it) and swaps to the theme's body-text token in
+   light mode. Identical class/variable pair to dashboard.js, so the app
+   fixes this one way, not two. */
+.acc-text { color: var(--acc, var(--color-text, #f9fafb)); }
+html[data-mode="light"] .acc-text { color: var(--color-text, #111827); }
+
 /* ---- segmented toggles (chart mode) ---- */
 .hse-seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 0.8rem;
   background: var(--color-card2, #1f2937); border: 1px solid var(--color-line, #374151); }
@@ -404,7 +417,7 @@ function renderHeader(store, s) {
       aria-pressed="${on('all')}">
       <span class="text-xl leading-none">🏰</span>
       <span class="hse-pill-name">All Houses</span>
-      <span class="hse-pill-total ml-1" style="color:${on('all') ? '#f59e0b' : ''}">${classTotal}</span>
+      <span class="hse-pill-total ml-1 acc-text" style="${on('all') ? '--acc:#f59e0b' : ''}">${classTotal}</span>
     </button>`;
 
   const housePills = houses.map((h) => `
@@ -412,8 +425,8 @@ function renderHeader(store, s) {
       style="--hse-acc:${h.accent}; --hse-soft:${h.accentSoft}; ${on(h.id) ? `border-color:${h.accent};` : ''}"
       aria-pressed="${on(h.id)}">
       ${houseImg(h, 'h-9 w-auto object-contain shrink-0')}
-      <span class="hse-pill-name" style="color:${h.accent}">${escapeHtml(h.name)}</span>
-      <span class="hse-pill-total" style="color:${on(h.id) ? h.accent : ''}">${store.getTotal(h.id, 'term')}</span>
+      <span class="hse-pill-name acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
+      <span class="hse-pill-total acc-text" style="${on(h.id) ? `--acc:${h.accent}` : ''}">${store.getTotal(h.id, 'term')}</span>
     </button>`).join('');
 
   return `
@@ -559,7 +572,7 @@ function renderArc(store, s) {
         const dim = focus && focus !== h.id;
         return `<span class="hse-legend-item" style="opacity:${dim ? 0.45 : 1}">
           <span class="hse-swatch" style="background:${h.accent}"></span>
-          <span class="text-sm font-bold" style="color:${h.accent}">${escapeHtml(h.name)}</span>
+          <span class="text-sm font-bold acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
           <span class="text-sm font-extrabold" style="color:var(--color-text)">${cumulative ? last : signed(last)}</span>
         </span>`;
       }).join('')}
@@ -674,7 +687,7 @@ function renderBreakdown(store, s) {
           return `<div class="hse-srow">
             <span class="flex items-center gap-2 min-w-0">
               ${houseImg(h, 'h-7 w-auto object-contain shrink-0')}
-              <span class="font-bold text-sm truncate" style="color:${h.accent}">${escapeHtml(h.name)}</span>
+              <span class="font-bold text-sm truncate acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
             </span>
             ${stackBar(d.rows, d.earned)}
             <span class="text-right leading-tight">
@@ -742,10 +755,10 @@ function targetChip(store, s) {
   const accent = allMode ? '#f59e0b' : house.accent;
   const soft = allMode ? 'rgba(245,158,11,0.35)' : house.accentSoft;
   return allMode
-    ? `<div class="hse-target hse-allmode" style="border-color:${accent}; color:${accent};">
+    ? `<div class="hse-target hse-allmode acc-text" style="border-color:${accent}; --acc:${accent};">
          <span>🏰</span><span>Awarding ALL FOUR HOUSES</span>
        </div>`
-    : `<div class="hse-target" style="border-color:${accent}; background:${soft}; color:${accent};">
+    : `<div class="hse-target acc-text" style="border-color:${accent}; background:${soft}; --acc:${accent};">
          ${houseImg(house, 'h-6 w-auto object-contain')}<span>Awarding ${escapeHtml(house.name)}</span>
        </div>`;
 }
@@ -762,7 +775,7 @@ function renderAwardBar(store, s) {
         ${allMode ? '<span class="text-2xl leading-none">🏰</span>' : houseImg(house, 'h-8 w-auto object-contain shrink-0')}
         <div class="leading-tight min-w-0">
           <div class="hse-eyebrow">Award Routines</div>
-          <div class="hse-sub truncate hse-hide-short">Awarding <b style="color:${accent}">${escapeHtml(targetName)}</b> — presets or a custom amount</div>
+          <div class="hse-sub truncate hse-hide-short">Awarding <b class="acc-text" style="--acc:${accent}">${escapeHtml(targetName)}</b> — presets or a custom amount</div>
         </div>
       </div>
       <button type="button" class="hse-btn hse-award-launch ml-auto" data-award-open
@@ -798,7 +811,7 @@ function renderAwardModal(store, s) {
                 ? `background:${allMode ? 'transparent' : soft}; border-color:${accent}; color:var(--color-text);`
                 : 'background:rgba(239,68,68,0.14); border-color:rgba(239,68,68,0.5); color:var(--color-text);'}">
               <span class="truncate">${escapeHtml(p.label)}</span>
-              <span class="shrink-0 font-extrabold" style="color:${up ? accent : '#f87171'}">${signed(p.points)}${allMode ? ' ea' : ''}</span>
+              <span class="shrink-0 font-extrabold${up ? ' acc-text' : ''}" style="${up ? `--acc:${accent}` : 'color:#f87171'}">${signed(p.points)}${allMode ? ' ea' : ''}</span>
             </button>`;
           }).join('') : '<div class="hse-sub">No presets yet — add them in Admin → Settings.</div>'}
         </div>
@@ -863,7 +876,7 @@ function renderLedgerRows(store, s) {
         ${showHouse ? `
         <span class="flex items-center gap-1.5 w-28 shrink-0 min-w-0">
           <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${h ? h.accent : '#666'}"></span>
-          <span class="text-sm font-semibold truncate" style="color:${h ? h.accent : '#9ca3af'}">${h ? escapeHtml(h.name) : '—'}</span>
+          <span class="text-sm font-semibold truncate${h ? ' acc-text' : ''}" style="${h ? `--acc:${h.accent}` : 'color:#9ca3af'}">${h ? escapeHtml(h.name) : '—'}</span>
         </span>` : ''}
         <span class="hse-tx-delta font-extrabold w-16 text-base shrink-0 text-right ${up ? 'text-emerald-400' : 'text-red-400'}">${signed(t.delta)}</span>
         <span class="flex-1 min-w-0 flex items-center gap-2">
@@ -1003,7 +1016,7 @@ function renderConfirmModal(store, s) {
       </div>
       <div class="hse-modal-body">
         <p class="hse-modal-lead">Remove &ldquo;<b>${signed(t.delta)} ${escapeHtml(reasonLabel)}</b>&rdquo; from
-          <b style="color:${h.accent}">${escapeHtml(h.name)}</b>?
+          <b class="acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</b>?
           ${escapeHtml(h.name)}&rsquo;s total will go from <b>${before}</b> to <b>${after}</b>.</p>
         <div class="hse-modal-meta">Logged ${escapeHtml(new Date(t.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }))} at ${escapeHtml(fmtClock(t.ts))}</div>
         ${warn ? `<div class="hse-modal-warn">⚠️ ${warn}</div>` : ''}

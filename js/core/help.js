@@ -47,18 +47,11 @@ function shopItemsByKind(kind) {
 
 // ---------------------------------------------------------------------------
 // The d20 prophecy table.
-// SOURCE OF TRUTH: the PROPHECY constant in js/modules/dice.js (module-local,
-// not exported, so it is mirrored here verbatim). Values checked against that
-// file — do not "tidy" these numbers.
+// SOURCE OF TRUTH: store.getDiceProphecy() (js/core/store.js) — teacher-edited
+// via 🗝️ Admin → ⚙️ Settings → 🎲 Die of Destiny, defaulting to
+// defaultDiceProphecy() in store.js. The article below reads it live (same
+// pattern as battle-hp does for combat numbers) so it can never go stale.
 // ---------------------------------------------------------------------------
-const PROPHECY_ROWS = [
-  ['1',     '💀', 'CATASTROPHE',     'House loses 10 points',                                    '−10'],
-  ['2–5',   '🌧️', 'Misfortune',      'Teacher picks the next challenger',                        'no points'],
-  ['6–9',   '😐', 'Fate is Neutral', 'Nothing happens',                                          'no points'],
-  ['10–14', '✨', 'Small Favor',     'Move your token / +2 class points',                        '+2'],
-  ['15–19', '🔥', 'Fortune Smiles',  '+5 house points',                                          '+5'],
-  ['20',    '👑', 'MYTHIC TRIUMPH',  '+20 points AND a Mythic Relic to defend your house!',      '+20 + relic'],
-];
 
 // ---------------------------------------------------------------------------
 // Categories
@@ -113,9 +106,9 @@ const TOPICS = [
         <li><b>The round ± button</b> — quick points. This is the control you will use most.</li>
         <li><b>The date and "Week N of M"</b> — today's date and where you are in the term.</li>
         <li><b>🔊 speaker</b> — turns the app's sound effects and voice on or off.</li>
-        <li><b>❓</b> — this handbook.</li>
         <li><b>🗝️ key</b> — the Teacher's Admin panel. It is deliberately faint so students do not treat it as a button.</li>
       </ul>
+      <p>There is no separate <b>❓</b> button in the top bar any more — this handbook now lives one tap inside Admin: <b>🗝️ Admin → ❓ Help</b>.</p>
       <h4>The Morning Dashboard (the home screen)</h4>
       <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop and the Die of Destiny.</p>
     `,
@@ -133,7 +126,7 @@ const TOPICS = [
         <li>Pick the core you are teaching now.</li>
       </ol>
       <p>Switching changes the colour of the whole app, the itinerary and homework on the dashboard, which house the ± panel starts on, and which house the Quests board is about.</p>
-      <p><b>All Cores</b> opens the Council of Four — a neutral standings screen with no controls on it, safe to leave on the board between classes.</p>
+      <p><b>All Cores</b> opens the Council of Four — a neutral standings screen, safe to leave on the board between classes because nothing on it awards or removes a single point. The one control it does have is a small <b>Term / This Week</b> switch at the top right, which only changes which total is being displayed. <a href="#" data-help-go="week-vs-term">Why the totals differ →</a></p>
     `,
   },
   {
@@ -147,7 +140,7 @@ const TOPICS = [
       </ol>
       <p>On a Monday, two extra minutes are worth it:</p>
       <ol class="help-steps">
-        <li>Open <b>❓ Help → System check</b> and glance at the list. Green means nothing to do.</li>
+        <li>Open <b>🗝️ Admin → ❓ Help → System check</b> and glance at the list. Green means nothing to do.</li>
         <li>Make sure a <b>Place of the Week</b> is scheduled for this week — the System check tells you outright if one is not.</li>
       </ol>
     `,
@@ -222,7 +215,8 @@ const TOPICS = [
       <h4>1. Find what actually happened</h4>
       <ol class="help-steps">
         <li>Open the <b>Records</b> tile.</li>
-        <li>Look at the <b>Transaction Log</b> on the left. It lists the last 30 changes, newest first, with the time, the house colour, the amount and the reason.</li>
+        <li>Look at the <b>Transaction Log</b> on the left. It lists the most recent changes, newest first, with the time, the house colour, the amount and the reason.</li>
+        <li>The screen only ever <i>draws</i> up to 400 entries at once — that is a display limit, not a memory limit. Nothing older than that is deleted or lost; narrow the search/filter to find something further back, or use <b>⬇ Export CSV</b>, which always covers every single entry ever logged, not just the 400 shown on screen.</li>
       </ol>
       <h4>2. Reverse it</h4>
       <ol class="help-steps">
@@ -247,7 +241,7 @@ const TOPICS = [
         <li><b>Term total</b> — everything since the start of the term. This is the leaderboard number, and it is what the Magic Shop spends.</li>
         <li><b>This week</b> — only what has been earned since <b>Monday</b>. It resets itself every Monday morning; you never have to zero anything.</li>
       </ul>
-      <p>The Morning Dashboard shows both. The <b>Records</b> screen has a toggle at the top right to flip between <b>Current Class Standings</b> (this week) and the <b>School-Wide 9-Week House Cup</b> (the term).</p>
+      <p>The Morning Dashboard shows only the <b>term</b> total, under the heading <b>Current Term Standings</b>. To see "this week" on its own, open the <b>Council of Four</b> (tap the house name in the middle of the top bar and choose <b>All Cores</b>) — it has a small <b>Term</b> / <b>This Week</b> switch at the top right that flips the whole board between the two. <a href="#" data-help-go="switch-core">More about the Council of Four →</a></p>
       <p class="help-callout">Nothing is ever deleted at the end of a week. "This week" is just a filtered view of the same log.</p>
     `,
   },
@@ -258,10 +252,10 @@ const TOPICS = [
       let n = 0;
       try { n = (store.getState().transactions || []).length; } catch (e) { n = 0; }
       return `
-        <p>Open the <b>Records</b> tile. The <b>Transaction Log</b> down the left-hand side shows the last 30 point changes, newest first: the time, which house, how many points, and the reason.</p>
+        <p>Open the <b>Records</b> tile. The <b>Transaction Log</b> down the left-hand side shows point changes, newest first: the time, which house, how many points, and the reason.</p>
         <p>Every change is stored with all four of those, whether it came from you, the shop, a quest, the dice or Battle Day. Nothing is ever silently overwritten.</p>
         <p>This browser currently holds <b>${n}</b> logged point change${n === 1 ? '' : 's'}.</p>
-        <p>The <i>complete</i> history — not just the last 30 — is inside your backup file, <code>mrd-live-backup.json</code>, if you ever need to go digging for something from weeks ago.</p>
+        <p class="help-callout">The screen itself only ever draws the most recent <b>400</b> entries — that is purely a display limit, so the page does not have to draw an unbounded list. It does not mean anything past 400 is lost: use <b>⬇ Export CSV</b> on the Records screen for a file with the <i>complete</i> history, every entry ever logged, or dig through your backup file <code>mrd-live-backup.json</code>, which also keeps everything.</p>
       `;
     },
   },
@@ -387,7 +381,7 @@ const TOPICS = [
     body: `
       <p>Each destination can carry a few short questions. During the voyage they sit in the <b>Quiz</b> tab of the lesson card.</p>
       <p>When a house answers one, you award the bounty to that house. Each question pays <b>once per week per destination</b> — relaunching the same voyage later cannot pay the same bounty twice, so you can replay a place safely.</p>
-      <p>Edit the questions in <b>🗝️ Admin → Place of the Week → Edit → Quiz</b>.</p>
+      <p>Edit the questions in <b>🗝️ Admin → Place of the Week → Edit → Extras → Quiz</b>. Right in that same Extras section is <b>Bounty points per question</b> — set whatever number you like per destination, so a quick knowledge check can pay less than a big cultural landmark if you want it to. Leave the box blank and it defaults to <b>50 points</b> per question.</p>
     `,
   },
 
@@ -684,21 +678,29 @@ const TOPICS = [
   },
   {
     id: 'dice-prophecy', cat: 'dice', title: 'The d20 prophecy table',
-    keywords: 'prophecy table d20 outcomes catastrophe misfortune neutral small favor fortune mythic triumph 20 points',
-    body: `
-      <table class="help-table">
-        <thead><tr><th>Roll</th><th>Outcome</th><th>What it means</th><th>Points</th></tr></thead>
-        <tbody>
-          ${PROPHECY_ROWS.map(([roll, emoji, title, desc, pts]) =>
-            `<tr><td><b>${roll}</b></td><td>${emoji} <b>${esc(title)}</b></td><td>${esc(desc)}</td><td class="help-nowrap"><b>${pts}</b></td></tr>`).join('')}
-        </tbody>
-      </table>
-      <h4>How the points actually get applied</h4>
-      <p>Nothing happens automatically. The plaque shows a button for each house — tap the house you want it to land on and the points are awarded, logged with the reason "Die of Destiny: <i>outcome</i>".</p>
-      <p><b>One award per roll.</b> Once you have tapped, the buttons stop responding until the next roll, so a double-tap cannot pay twice.</p>
-      <p><b>2–5 and 6–9 award nothing</b> — they are story beats, not scoring. On a Misfortune you simply pick who goes next.</p>
-      <p>On a <b>natural 20</b> the house gets +20 and you also get to grant one <b>Mythic relic</b>, once per roll. <a href="#" data-help-go="shop-mythic">About relics →</a></p>
-    `,
+    keywords: 'prophecy table d20 outcomes catastrophe misfortune neutral small favor fortune mythic triumph 20 points edit editable customise custom',
+    body: () => {
+      let rows = [];
+      try { rows = store.getDiceProphecy() || []; } catch (e) { rows = []; }
+      const rangeLabel = (r) => (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`);
+      const ptsLabel = (r) => (r.points > 0 ? `+${r.points}${r.mythic ? ' + relic' : ''}` : r.points < 0 ? String(r.points) : 'no points');
+      return `
+        <p class="help-lede">This is exactly what is set up on this computer right now — it updates the moment you change anything in Admin.</p>
+        <table class="help-table">
+          <thead><tr><th>Roll</th><th>Outcome</th><th>What it means</th><th>Points</th></tr></thead>
+          <tbody>
+            ${rows.map((r) =>
+              `<tr><td><b>${esc(rangeLabel(r))}</b></td><td>${esc(r.emoji || '')} <b>${esc(r.title)}</b></td><td>${esc(r.desc)}</td><td class="help-nowrap"><b>${esc(ptsLabel(r))}</b></td></tr>`).join('') || '<tr><td colspan="4" class="help-muted">Not available right now.</td></tr>'}
+          </tbody>
+        </table>
+        <p>The <b>points, title, description and emoji</b> for every row above are teacher-editable in <b>🗝️ Admin → ⚙️ Settings → 🎲 Die of Destiny</b> — change any row to match how you want to run your own classroom. The roll <b>ranges</b> themselves (which numbers on the die trigger which outcome) are deliberately fixed, so every one of the 20 faces always maps to exactly one outcome with no gaps and no overlaps — a roll can never come up with nothing to show the class.</p>
+        <h4>How the points actually get applied</h4>
+        <p>Nothing happens automatically. The plaque shows a button for each house — tap the house you want it to land on and the points are awarded, logged with the reason "Die of Destiny: <i>outcome</i>".</p>
+        <p><b>One award per roll.</b> Once you have tapped, the buttons stop responding until the next roll, so a double-tap cannot pay twice.</p>
+        <p>Rows with <b>"no points"</b> are story beats, not scoring — on a Misfortune-type roll you simply pick who goes next.</p>
+        <p>On a <b>mythic</b> roll (the top of the die) the house gets its points and you also get to grant one <b>Mythic relic</b>, once per roll. <a href="#" data-help-go="shop-mythic">About relics →</a></p>
+      `;
+    },
   },
 
   // ======================= ADMIN =======================
@@ -712,6 +714,7 @@ const TOPICS = [
         <li><b>Quests</b> — confirm completions, edit the quest catalogue.</li>
         <li><b>Shop</b> — edit the Magic Shop items.</li>
         <li><b>Place of the Week</b> — destinations, weekly scheduling, presentations, test flights.</li>
+        <li><b>⚔️ Battle Day</b> — everything that only matters for a fight: the prize rule and its number, the hit-point settings that decide how tough each house is to beat, the punching-down toggle, and a live <b>🛡️ Active Defenses</b> board showing every house's shield and damage-halving status with a <b>Clear</b> button if one needs resetting early. <a href="#" data-help-go="battle-hp">More →</a></li>
         <li><b>❓ Help</b> — opens this handbook, straight to the section you need.</li>
         <li><b>⚙️ Settings</b> — term dates, theme, backups, your own Maps key, and the reset button. <a href="#" data-help-go="admin-settings">More →</a></li>
       </ul>
@@ -729,7 +732,7 @@ const TOPICS = [
         : '<p class="help-warn"><b>No PIN is set.</b> Anyone who walks up to the board can award points or open Admin.</p>';
       return `
         ${status}
-        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. Four to eight numbers, something you will still remember on a Monday morning. The boxes come pre-filled with <b>0314</b> to save you thinking of one — type over it if you would rather have your own.</p>
+        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. Four to twelve digits, something you will still remember on a Monday morning. The boxes come pre-filled with <b>0314</b> to save you thinking of one — type over it if you would rather have your own.</p>
         <p><b>The PIN ships switched off.</b> Nothing in the app asks for it until you turn it on, so you can try everything out first and add the lock when you are ready.</p>
 
         <h4>What it asks for a PIN</h4>
@@ -970,8 +973,16 @@ const TOPICS = [
       </ul>
       <p>The same two names exist for <code>atlantis</code>, <code>valhalla</code> and <code>rivendell</code>. Keep a copy of the originals first so you can always put them back.</p>
       <h4>Changing names, mottos and colours</h4>
-      <p>The app is built so all four can be renamed and recoloured without losing a single point — the change flows straight through to the top bar, the standings and the battle cards.</p>
-      <p class="help-callout">Whether there is a button for it in <b>🗝️ Admin</b> depends on the version you have. Have a look there first; if you cannot find it, it is a five-minute job for whoever set the app up, and nothing about your points or your calendar is at risk in doing it.</p>
+      <p>The app is built so all four can be renamed and recoloured without losing a single point — the change flows straight through to the top bar, the standings and the battle cards. There is a full editor for this already built into the app — you never need to ask anyone else to do it.</p>
+      <ol class="help-steps">
+        <li>Open <b>🗝️ Admin → ⚙️ Settings → 🏰 Houses</b>.</li>
+        <li>Tap <b>Edit</b> on the house you want to change.</li>
+        <li>Change any of: <b>Name</b>, <b>Motto</b>, <b>Accent colour</b> (pick with the swatch or type a hex code), the <b>Crest image</b> filename and the <b>Banner image</b> filename.</li>
+        <li>Watch the <b>live preview</b> at the top of the box update as you type, so you see exactly how the name, motto and colour will look before you commit to them.</li>
+        <li><b>Save.</b></li>
+      </ol>
+      <p>Changed your mind? Tap <b>Reset</b> next to that house back on the Houses list to put its name, motto, colour and artwork back to how it shipped — one house at a time, without touching the other three.</p>
+      <p class="help-callout">The crest and banner fields only hold a <i>filename</i>, e.g. <code>images/camelot-shield.png</code>. To use different artwork, put the new picture file in the app's <code>images/</code> folder first — either under the existing filename to swap it in place, or under a new filename you then type into the field.</p>
     `,
   },
   {

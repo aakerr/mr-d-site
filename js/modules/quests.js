@@ -254,10 +254,10 @@ function injectStyles() {
      lands on the grid's right edge instead of floating mid-row. */
   .quest-head-push{flex:1 1 auto;min-width:0;}
   .quest-board-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
-    font-size:clamp(1.1rem,2.6vh,1.8rem);color:#e5e7eb;}
+    font-size:clamp(1.1rem,2.6vh,1.8rem);color:var(--color-text,#e5e7eb);}
   .quest-board-count{color:var(--color-text-soft,#9ca3af);font-weight:700;font-size:clamp(1rem,1.8vh,1.2rem);}
   .quest-sort{min-height:44px;padding:.4em 1em;border-radius:.8rem;border:1px solid var(--color-line,#374151);
-    background:var(--color-card2,#1f2937);color:#e5e7eb;font-weight:700;font-family:inherit;cursor:pointer;
+    background:var(--color-card2,#1f2937);color:var(--color-text,#e5e7eb);font-weight:700;font-family:inherit;cursor:pointer;
     font-size:clamp(1rem,1.7vh,1.1rem);}
   .quest-sort:hover{background:var(--color-line,#374151);}
   .quest-lockbar{flex-shrink:0;display:flex;align-items:center;gap:.5em;flex-wrap:wrap;
@@ -393,11 +393,16 @@ function injectStyles() {
 
   .quest-deed-icon{flex-shrink:0;font-size:clamp(1rem,1.7vh,1.15rem);line-height:1;}
   .quest-deed-main{min-width:0;}
-  .quest-deed-title{font-weight:700;color:#f3f4f6;font-size:clamp(1rem,1.7vh,1.1rem);
+  .quest-deed-title{font-weight:700;color:var(--color-text,#f3f4f6);font-size:clamp(1rem,1.7vh,1.1rem);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .quest-deed-meta{color:var(--color-text-soft,#9ca3af);font-size:clamp(.95rem,1.5vh,1rem);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .quest-deed-pts{flex-shrink:0;font-weight:800;color:#4ade80;font-size:clamp(1.05rem,1.8vh,1.2rem);}
+  /* #4ade80 is a "success green" accent, not generic body text, so it earns a
+     dedicated light-mode shade (below) rather than the --color-text token —
+     a token would strip the colour that says "this is a completed deed". Same
+     reasoning for every other accent-hued rule with a light-mode override in
+     this stylesheet (tagline, lockbar, modal highlight/warn/info/title). */
   .quest-deeds-none{color:var(--color-text-soft,#9ca3af);font-style:italic;font-size:clamp(1rem,1.7vh,1.1rem);}
 
   /* ---- confirm modal ---- */
@@ -412,7 +417,7 @@ function injectStyles() {
   .quest-modal-icon{font-size:clamp(2.2rem,5vh,3.4rem);line-height:1;}
   .quest-modal-title{font-family:Cinzel,Georgia,serif;font-weight:800;color:var(--m,#f59e0b);
     font-size:clamp(1.3rem,3vh,2rem);margin:.3em 0 .35em;}
-  .quest-modal-body{color:#e5e7eb;font-size:clamp(1.05rem,2.1vh,1.4rem);line-height:1.5;margin-bottom:.8em;}
+  .quest-modal-body{color:var(--color-text,#e5e7eb);font-size:clamp(1.05rem,2.1vh,1.4rem);line-height:1.5;margin-bottom:.8em;}
   .quest-modal-body b{color:#fde68a;}
   .quest-modal-warn{margin:0 0 1em;padding:.7em 1em;border-radius:.8rem;font-weight:700;
     font-size:clamp(1rem,2vh,1.3rem);line-height:1.45;
@@ -426,7 +431,7 @@ function injectStyles() {
     transition:transform .12s ease,filter .16s ease;touch-action:manipulation;}
   .quest-modal-btn:hover{filter:brightness(1.1);}
   .quest-modal-btn:active{transform:scale(.96);}
-  .quest-modal-cancel{background:var(--color-card2,#1f2937);border:1px solid var(--color-line,#374151);color:#e5e7eb;}
+  .quest-modal-cancel{background:var(--color-card2,#1f2937);border:1px solid var(--color-line,#374151);color:var(--color-text,#e5e7eb);}
   .quest-modal-go{background:var(--m,#f59e0b);color:#0b0f19;}
   .quest-modal-go.danger{background:#ef4444;color:#fff;}
 
@@ -440,10 +445,36 @@ function injectStyles() {
     100%{opacity:0;transform:translate(calc(-50% + var(--dx,0px)),var(--dy,-220px)) scale(.9);}
   }
   .quest-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:78;
-    background:var(--color-card2,#1f2937);border:2px solid var(--accent,#f59e0b);color:#f9fafb;
+    background:var(--color-card2,#1f2937);border:2px solid var(--accent,#f59e0b);color:var(--color-text,#f9fafb);
     padding:.7em 1.4em;border-radius:.9rem;font-weight:700;font-size:clamp(1rem,2vh,1.25rem);
     box-shadow:0 14px 40px rgba(0,0,0,.6);animation:quest-toast-in .22s ease both;max-width:90vw;text-align:center;}
   @keyframes quest-toast-in{from{opacity:0;transform:translate(-50%,14px);}to{opacity:1;transform:translate(-50%,0);}}
+
+  /* ---- light-mode: accent-hued text -------------------------------------
+     Everything above that was plain grey/white "body text" got fixed by
+     swapping it to var(--color-text) — it flips for free with the theme.
+     The rules below are different: each is a colour standing in for a
+     MEANING (gold tagline, amber "locked" notice, blue "pick a core"
+     notice, green "+N awarded", red "you'll lose points" warning, a gold
+     highlight inside a sentence, the modal title's success/danger colour).
+     A token would erase that meaning, so these get the same treatment the
+     rest of the app already uses for exactly this case (see admin.js's own
+     html[data-mode="light"] overrides): the same hue, several shades
+     darker, so it still reads on a WHITE card instead of a near-black one.
+     Values chosen and contrast-checked against the actual light-mode
+     background each one sits on (>=4.5:1, most well clear of it). */
+  html[data-mode="light"] .quest-head-sub{color:#92400e;}
+  html[data-mode="light"] .quest-lockbar{color:#92400e;}
+  html[data-mode="light"] .quest-lockbar.quest-lockbar-info{color:#1e40af;}
+  html[data-mode="light"] .quest-deed-pts{color:#166534;}
+  html[data-mode="light"] .quest-modal-body b{color:#92400e;}
+  html[data-mode="light"] .quest-modal-warn{color:#b91c1c;}
+  html[data-mode="light"] .quest-modal-info{color:#334155;}
+  html[data-mode="light"] .quest-modal[data-kind="complete"] .quest-modal-title{color:#166534;}
+  html[data-mode="light"] .quest-modal[data-kind="fail"] .quest-modal-title{color:#b91c1c;}
+  /* data-kind="accept" is deliberately untouched: its title colour is the
+     HOUSE's own accent (from store.js), not a colour this file owns — that
+     one is shared with the rest of the app and outside this file's remit. */
 
   @media (prefers-reduced-motion:reduce){
     .quest-hero,.quest-hero.quest-pop,.quest-modal,.quest-modal-bg,.quest-toast,.quest-fly{animation:none;}
@@ -778,7 +809,7 @@ function modalHtml(store) {
 
   return `
     <div class="quest-modal-bg" data-q="modal-bg">
-      <div class="quest-modal" style="--m:${color};--ms:${colorSoft}">
+      <div class="quest-modal" data-kind="${m.kind}" style="--m:${color};--ms:${colorSoft}">
         <div class="quest-modal-icon">${icon}</div>
         <div class="quest-modal-title">${title}</div>
         <div class="quest-modal-body">${body}</div>

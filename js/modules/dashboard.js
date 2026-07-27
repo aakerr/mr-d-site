@@ -23,6 +23,31 @@ const STYLE = `
 .dash-accent-line { border-color: var(--accent, #f59e0b); }
 .dash-tile.dash-accent-line:hover { border-color: var(--accent, #f59e0b); }
 
+/* A house's accent is an IDENTITY colour (crest, bar fill, border, dot) —
+   it is not automatically a safe TEXT colour. In dark mode every card is
+   dark enough that the accent reads fine as foreground text. In light mode
+   the card flips to near-white and two of the four house colours (Valhalla
+   amber, Rivendell green) drop well under the 4.5:1 body-text contrast
+   floor against it. .acc-text lets an element keep using its house accent
+   as text in dark mode (via the --acc custom property set inline, right
+   alongside the same accent still doing its identity work on the crest/bar
+   next to it) while swapping to the theme's body-text token in light mode,
+   where it stays legible. This same class/variable pair is used identically
+   in houses.js so the whole app fixes this one way, not several. */
+.acc-text { color: var(--acc, var(--color-text, #f9fafb)); }
+html[data-mode="light"] .acc-text { color: var(--color-text, #111827); }
+
+/* These two spots use Tailwind's fixed "valhalla" (amber) utility colour as
+   plain decoration -- not tied to any selected house -- so in light mode
+   they just need to become legible; dark mode (where the glow/identity look
+   already works) is untouched. */
+html[data-mode="light"] .dash-welcome-h1 { color: var(--color-text) !important; }
+html[data-mode="light"] .dash-hw-badge {
+  color: var(--color-text) !important;
+  background: var(--color-card2) !important;
+  border-color: var(--color-line) !important;
+}
+
 /* THE MIDDLE ROW IS A FIXED BOX. It used to size to its own content, so the
    moment a class had five homework items instead of one, the right-hand column
    grew, the row grew with it, the standings card no longer matched its height
@@ -121,7 +146,7 @@ function renderHero(state, store) {
            style="--dash-glow: rgba(245,158,11,0.35);">
         <div class="flex-1 min-w-[260px]">
           <div class="text-gray-400 text-xs xl:text-sm font-bold uppercase tracking-[0.2em]">Welcome</div>
-          <h1 class="font-display font-extrabold text-4xl xl:text-5xl tracking-wide text-valhalla drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]">
+          <h1 class="font-display font-extrabold text-4xl xl:text-5xl tracking-wide text-valhalla dash-welcome-h1 drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]">
             SCHOLARS!
           </h1>
           <p class="mt-0.5 text-gray-300 text-sm xl:text-base">Choose your house core to begin the day's quest.</p>
@@ -130,7 +155,7 @@ function renderHero(state, store) {
           ${houses.map((h) => `
             <div class="flex flex-col items-center gap-1.5">
               ${houseImg(h, 'h-12 xl:h-16 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
-              <span class="text-xs xl:text-sm font-bold" style="color:${h.accent}">${h.name}</span>
+              <span class="text-xs xl:text-sm font-bold acc-text" style="--acc:${h.accent}">${h.name}</span>
             </div>
           `).join('')}
         </div>
@@ -182,7 +207,7 @@ function renderStandings(state, store) {
               ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
-                  <span class="font-bold text-[clamp(1rem,2.5vh,1.625rem)] truncate" style="color:${t.house.accent}">${t.house.name}</span>
+                  <span class="font-bold text-[clamp(1rem,2.5vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${t.house.name}</span>
                   <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
                 </div>
                 <div class="mt-[clamp(2px,0.6vh,7px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
@@ -229,7 +254,7 @@ function renderHomework(state, store) {
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
           (items.length ? items.map((hw) => `
           <div class="flex items-center gap-2.5 shrink-0">
-            <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
+            <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla dash-hw-badge" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
             <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(hw.text)}</span>
           </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>')}
       </div>
