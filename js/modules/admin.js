@@ -734,7 +734,7 @@ function questGuideHTML() {
           <p class="admin-guide-p"><b>Repeatable vs. one-time.</b> A <b>♻️ repeatable</b> quest returns to the board after it's completed, so every house can earn it. A <b>★ one-time</b> quest retires forever the moment any house finishes it.</p>
 
           <div class="admin-guide-callout">
-            🗝️ Tapped a button by mistake? <b>“Clear without penalty”</b> under each active quest quietly puts it back on the board — nobody gains or loses anything. To undo points that were already awarded, use the transaction list on the House Points screen.
+            🗝️ Tapped a button by mistake? <b>“Clear without penalty”</b> under each active quest quietly puts it back on the board — nobody gains or loses anything. To undo points that were already awarded, use the transaction list on the Records screen.
           </div>
 
           <div class="admin-guide-tablewrap">
@@ -946,7 +946,7 @@ function openQuestCompleteModal(core) {
         <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body">
-        <p class="admin-modal-lead">Mark <b>${esc(q.title)}</b> complete for <b style="color:${house.accent}">${esc(house.name)}</b> and award <b>+${q.points} points</b>?</p>
+        <p class="admin-modal-lead">Mark <b>${esc(q.title)}</b> complete for <b class="admin-house-name-accent" style="color:${house.accent}">${esc(house.name)}</b> and award <b>+${q.points} points</b>?</p>
         <div class="admin-mini">${q.repeatable
           ? 'This quest is <b>repeatable</b> — it goes back on the board so another house can earn it too.'
           : 'This quest is <b>one time only</b> — it leaves the board for good.'}</div>
@@ -982,7 +982,7 @@ function openQuestFailModal(core) {
         <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body">
-        <p class="admin-modal-lead"><b style="color:${house.accent}">${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.</p>
+        <p class="admin-modal-lead"><b class="admin-house-name-accent" style="color:${house.accent}">${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.</p>
         <div class="admin-warn-line">⚠️ ${esc(house.name)} loses <b>${penalty} point${penalty === 1 ? '' : 's'}</b>${penalty === 0 ? ' (no penalty set for this quest)' : ''}, and the quest goes back on the board for another house to steal.</div>
         <div class="admin-mini" style="margin-top:10px">Accepted by mistake instead? Close this and use <b>“Clear without penalty”</b>.</div>
       </div>
@@ -1181,7 +1181,7 @@ function shopGuideHTML() {
           <p class="admin-guide-p"><b>Mythic relics can't be bought.</b> The only way to earn one is a natural 20 on the Die of Destiny.</p>
 
           <div class="admin-guide-callout">
-            ⚠️ <b>Shields and half-damage relics only apply to Battle Day strikes.</b> Points you give or take yourself, from the House Points screen or the ± button, are <b>never</b> blocked or halved — and neither are Wildcard swings.
+            ⚠️ <b>Shields and half-damage relics only apply to Battle Day strikes.</b> Points you give or take yourself, from the Records screen or the ± button, are <b>never</b> blocked or halved — and neither are Wildcard swings.
           </div>
 
           <div class="admin-guide-tablewrap">
@@ -1669,7 +1669,6 @@ function renderScreenLayoutCard() {
 // ---- Quick award presets (one-tap buttons on the Records screen) ----------
 // Order here IS the button order on Records — the teacher builds muscle memory
 // around it, so reordering is a first-class action, not an afterthought.
-function awardPtsColor(points) { return Number(points) >= 0 ? '#22c55e' : '#ef4444'; }
 function awardPtsLabel(points) {
   const n = Math.round(Number(points) || 0);
   return n >= 0 ? `+${n}` : `−${Math.abs(n)}`;
@@ -1688,7 +1687,7 @@ function awardSentence(f) {
 function awardRowHTML(p, i, total) {
   return `
     <div class="admin-shop-row admin-award-row">
-      <div class="admin-shop-cost" style="color:${awardPtsColor(p.points)}">${awardPtsLabel(p.points)}<small>pts</small></div>
+      <div class="admin-shop-cost admin-award-pts ${Number(p.points) >= 0 ? 'pos' : 'neg'}">${awardPtsLabel(p.points)}<small>pts</small></div>
       <div class="admin-q-main">
         <div class="admin-q-title">${esc(p.label)}</div>
       </div>
@@ -1970,6 +1969,10 @@ function renderBattleRulesCard() {
       </div>
       <div class="admin-mini">A house sitting on more points is a little tougher to knock out — a mild brake on everyone piling onto whoever is currently in the lead. HP refills to this maximum at the start of every Battle Day. Right now, on this computer:</div>
       <div id="admin-combat-hp-list" style="margin:8px 0 4px">${combatHpRowsHTML()}</div>
+
+      <label class="admin-flabel" style="margin-top:20px" for="admin-combat-teacher">Your own scoring buttons on Battle Day</label>
+      <input id="admin-combat-teacher" class="admin-input" type="number" min="1" value="${esc(c.teacherScore)}" />
+      <div class="admin-mini">Along the bottom of the Battle Day screen there is a row with a <b>+</b> and a <b>−</b> button for each house, so you can award or deduct points yourself for how a class behaved during the fight — separate from anything the houses do to each other. This sets how many points those buttons are worth. It changes both buttons and both labels at once, so what you see is always what it gives. These are ordinary points: a deduction here still respects a house's shield or half-damage relic, exactly like the ± button in the top bar.</div>
 
       <label class="admin-flabel" style="margin-top:20px">Live prize preview</label>
       <div class="admin-two">
@@ -2456,7 +2459,7 @@ function shieldPanelHTML() {
     <div class="admin-def-line">
       <span class="admin-shield-emoji">${kind === 'shield' ? '🛡️' : '🕵️'}</span>
       <div class="admin-q-main">
-        <div class="admin-def-name">${kind === 'shield' ? 'Shield — blocks the next strike completely' : 'Damage halved — the next strike only does half'}</div>
+        <div class="admin-def-name">${kind === 'shield' ? 'Shield — blocks every strike while it lasts' : 'Damage halved — every strike does half while it lasts'}</div>
         <div class="admin-q-desc"><span class="admin-def-time" data-house="${house.id}" data-kind="${kind}">${esc(fmtRemaining(ms))}</span></div>
       </div>
       <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="${kind === 'shield' ? 'shield-clear' : 'reduction-clear'}" data-house="${house.id}">Clear</button>
@@ -2466,7 +2469,7 @@ function shieldPanelHTML() {
     <div class="admin-card">
       <div class="admin-card-title">🛡️ Active Defenses</div>
       <div class="admin-mini">
-        A house can be protected two ways going into a fight: a <b>Shield</b> (bought in the Magic Shop, or won) blocks the very next strike against that house completely — the house loses no HP at all, as if the attack never landed. <b>Damage halved</b> (usually a Mythic reward from a natural 20) cuts the HP lost on the next strike in half instead of blocking it outright. Neither one does anything to points directly, and neither stops a <b>Pierce</b> weapon, which always gets through in full no matter what a house has active. This board shows, house by house, exactly what is protecting them right now — live, updating on its own. If a class activated one by mistake, or a fight already happened and you want to reset before the next one, tap <b>Clear</b> to end it early. Nothing spent on it is refunded; it just stops working from that moment on.
+        A house can be protected two ways going into a fight: a <b>Shield</b> (bought in the Magic Shop, or won) blocks <b>every</b> strike against that house completely — the house loses no HP at all, as if the attacks never landed — and it keeps doing that until its time runs out. It is not used up by blocking; the countdown beside it is the only thing that ends it. <b>Damage halved</b> (usually a Mythic reward from a natural 20) cuts the HP lost in half on every strike for as long as it is active, instead of blocking outright. Neither one does anything to points directly, and neither stops a <b>Pierce</b> weapon, which always gets through in full no matter what a house has active. This board shows, house by house, exactly what is protecting them right now — live, updating on its own. If a class activated one by mistake, or a fight already happened and you want to reset before the next one, tap <b>Clear</b> to end it early. Nothing spent on it is refunded; it just stops working from that moment on.
       </div>
       <div class="admin-shield-list">${rows.map(({ house, shield, reduce }) => {
         const lines = [];
@@ -4774,7 +4777,7 @@ function injectStyles() {
   .admin-q-status.open{background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.45);color:#22c55e;}
   .admin-q-status.held{background:color-mix(in srgb,var(--house) 20%,transparent);border:1px solid var(--house);color:var(--house);}
   .admin-q-status.retired{background:var(--color-card2);border:1px solid var(--color-line);color:var(--color-text-soft);}
-  html[data-mode="light"] .admin-q-status.open{color:#15803d;}
+  html[data-mode="light"] .admin-q-status.open{color:#166534;}
   .admin-q-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
   .admin-q-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
   .admin-q-pts{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
@@ -4868,6 +4871,8 @@ function injectStyles() {
   .admin-shop-effect{font-size:.76rem;color:var(--color-text-soft);margin-top:4px;font-weight:600;}
   .admin-shop-cost{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
   .admin-shop-cost small{display:block;font-size:.6rem;font-weight:700;color:var(--color-text-soft);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
+  .admin-award-pts.pos{color:#22c55e;}
+  .admin-award-pts.neg{color:#ef4444;}
   .admin-eff-group{display:flex;flex-direction:column;gap:8px;margin-bottom:4px;}
   .admin-eff-opt{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;padding:12px 14px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-card2);cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease;}
   .admin-eff-opt.on{border-color:#f59e0b;box-shadow:0 0 0 1px #f59e0b;}
@@ -4960,7 +4965,7 @@ function injectStyles() {
   .admin-matchup td{color:var(--color-text);}
   .admin-mu-row{text-align:left !important;font-weight:600;color:var(--color-text-soft) !important;}
   .admin-mu-block{color:#22c55e !important;font-weight:700;}
-  html[data-mode="light"] .admin-mu-block{color:#15803d !important;}
+  html[data-mode="light"] .admin-mu-block{color:#166534 !important;}
 
   /* per-kind guidance + live preview in the editor */
   .admin-kind-guide{margin-top:10px;padding:12px 14px;border-radius:.7rem;background:var(--color-page);
@@ -5010,7 +5015,11 @@ function injectStyles() {
     font-weight:600;font-size:.9rem;box-shadow:0 12px 40px rgba(0,0,0,.5);animation:admin-toast-in .25s ease both;}
   @keyframes admin-toast-in{from{opacity:0;transform:translate(-50%,12px);}to{opacity:1;transform:translate(-50%,0);}}
 
-  /* light-mode contrast fixes: darken amber/cyan accents that read too light on white */
+  /* light-mode contrast fixes: darken amber/cyan/green accents that read too
+     light on white. Values are one shade darker than the raw palette hues
+     (which stay unchanged for identity work — borders, dots, tinted chips) so
+     plain body text clears 4.5:1 (or 3:1 for the large/bold headings) on the
+     white/near-white surfaces light mode uses. */
   html[data-mode="light"] .admin-title,
   html[data-mode="light"] .admin-q-pts,
   html[data-mode="light"] .admin-shop-cost,
@@ -5020,13 +5029,43 @@ function injectStyles() {
   html[data-mode="light"] .admin-potw-meta code,
   html[data-mode="light"] .admin-mini code,
   html[data-mode="light"] .admin-files code,
-  html[data-mode="light"] .admin-steps code{color:#b45309;}
+  html[data-mode="light"] .admin-steps code{color:#92400e;}
   html[data-mode="light"] .admin-date-badge,
   html[data-mode="light"] .admin-drop-name,
   html[data-mode="light"] .admin-pres-tag,
   html[data-mode="light"] .admin-feat-chip,
-  html[data-mode="light"] .admin-details summary{color:#0e7490;}
-  html[data-mode="light"] .admin-arrival-badge.ok{color:#15803d;border-color:#15803d;}
+  html[data-mode="light"] .admin-pres-num,
+  html[data-mode="light"] .admin-details summary{color:#155e75;}
+  html[data-mode="light"] .admin-arrival-badge.ok{color:#166534;border-color:#166534;}
+
+  /* light-mode: a house's accent colour is identity (border/dot/chip), never
+     body text — swap the text to the theme's normal text colour instead of
+     the raw palette hue, which reads at ~2:1 on white. Background/border tints
+     driven by the same --house/--c variables are untouched. */
+  html[data-mode="light"] .admin-q-active-head,
+  html[data-mode="light"] .admin-q-title,
+  html[data-mode="light"] .admin-def-house,
+  html[data-mode="light"] .admin-house-preview-name,
+  html[data-mode="light"] .admin-house-name-accent,
+  html[data-mode="light"] .admin-q-status.held{color:var(--color-text) !important;}
+  /* calendar/day-planner chips: same principle — the event-type colour tints
+     the chip's background and border (identity), the label itself reads in
+     the normal text colour. */
+  html[data-mode="light"] .admin-chip,
+  html[data-mode="light"] .admin-type-chip.on{color:var(--color-text) !important;}
+  html[data-mode="light"] .admin-cell.today .admin-cell-num{color:#92400e;}
+
+  /* light-mode: hardcoded semantic reds/blues/greens that were tuned for the
+     dark palette and read too pale on white. */
+  html[data-mode="light"] .admin-btn-danger,
+  html[data-mode="light"] .admin-danger-toggle,
+  html[data-mode="light"] .admin-nuke-word,
+  html[data-mode="light"] .admin-award-pts.neg{color:#b91c1c;}
+  html[data-mode="light"] .admin-btn-nuke{background:#b91c1c;border-color:#b91c1c;}
+  html[data-mode="light"] .admin-btn-nuke:hover:not(:disabled){background:#991b1b;}
+  html[data-mode="light"] .admin-btn-secondary{color:#1d4ed8;}
+  html[data-mode="light"] .admin-btn-accent{color:#92400e;}
+  html[data-mode="light"] .admin-award-pts.pos{color:#166534;}
 
   /* houses editor (Settings tab) */
   .admin-house-crest{flex-shrink:0;width:48px;height:48px;border-radius:.6rem;background:var(--color-card2);
@@ -5157,6 +5196,11 @@ export default {
       else if (e.target.id === 'admin-combat-hpper500') {
         ctxRef.store.updateCombat({ hpPer500: Math.max(0, Number(e.target.value) || 0) });
         updateCombatHpList();
+      }
+      // No clamping here on purpose — updateCombat() owns the range. Clamping in
+      // the form as well is how prizeFlat ended up with a floor and no ceiling.
+      else if (e.target.id === 'admin-combat-teacher') {
+        ctxRef.store.updateCombat({ teacherScore: e.target.value });
       }
       else if (e.target.id === 'admin-ambient-volume') {
         const pct = Number(e.target.value);
