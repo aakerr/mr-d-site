@@ -750,11 +750,52 @@ const TOPICS = [
         <li><b>🎨 Screen colours</b> — lock the Home screen, Quests or Records to one fixed colour instead of following whichever house is active. <a href="#" data-help-go="screen-colours">More →</a></li>
         <li><b>🗂️ Screen layout</b> — show Quests and the Magic Shop as a scrolling grid or a one-card-at-a-time carousel. Purely visual. <a href="#" data-help-go="screen-layout">More →</a></li>
         <li><b>Maps API key</b> — leave blank unless you have your own. <a href="#" data-help-go="maps-key">More →</a></li>
+        <li><b>🔊 Sound effects</b> — replace any built-in beep, or the spoken Battle Day line, with your own recording. <a href="#" data-help-go="admin-sfx">More →</a></li>
         <li><b>Backup &amp; Restore</b> — connect a folder, save now, restore the latest backup. <a href="#" data-help-go="data-backup">More →</a></li>
         <li><b>⚠️ Danger Zone</b> — wipes everything and starts over. You have to type <b>RESET</b> to confirm, and there is no undo.</li>
       </ul>
       <p class="help-warn">Before you ever touch the Danger Zone, make sure you have a backup folder connected and a dated snapshot in it.</p>
     `,
+  },
+  {
+    id: 'admin-sfx', cat: 'admin', title: 'Recording your own sound effects (and the Battle Day war cry)',
+    keywords: 'sound effects sfx audio record recording voice mp3 m4a custom sounds war cry battle cry replace beep microphone',
+    body: () => {
+      const rows = Object.entries(store.SFX_SLOTS).map(([name, meta]) => {
+        const cur = store.getSfx(name);
+        const status = cur
+          ? `<span class="help-ok" style="display:inline-block;padding:2px 8px;margin:0;border-radius:8px;">🎙️ your recording — <code>${esc(cur)}</code></span>`
+          : (name === 'battlecry'
+              ? `<span class="help-warn" style="display:inline-block;padding:2px 8px;margin:0;border-radius:8px;">🤖 not recorded — read aloud by the computer's speech voice</span>`
+              : `<span class="help-muted">🔊 built-in sound</span>`);
+        return `<tr><td><b>${esc(meta.label)}</b><br><span class="help-muted">${esc(meta.hint)}</span></td><td>${status}</td></tr>`;
+      }).join('');
+      return `
+        <p class="help-lede">Swap any of the app's six sound cues — five short beeps and one spoken line — for your own recording. Anything you leave alone keeps working exactly the way it does today, so there is zero risk in trying this.</p>
+        <h4>Right now, in this app</h4>
+        <table class="help-table">
+          <thead><tr><th>Sound</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <h4>Recording on your phone and getting it onto the computer</h4>
+        <ol class="help-steps">
+          <li>Open your phone's built-in recorder — <b>Voice Memos</b> on iPhone, <b>Recorder</b> or <b>Voice Recorder</b> on Android — and record the line or sound. For the war cry, something said with energy works best, e.g. "It's Battle Day. Attack!" Keep it to about 1–3 seconds; for the shorter cues (sword clash, blocked hit, points chime, dice rattle) aim for under a second.</li>
+          <li>Get the file onto the computer any way that is easy for you: <b>AirDrop</b> it straight across if it's a nearby Mac, email or message it to yourself and download the attachment, or drop it into a cloud-drive folder (Google Drive, iCloud Drive, Dropbox, OneDrive) that is synced on both devices.</li>
+          <li>On the computer, move the file into this app's <code>sfx</code> folder — it sits right next to the <code>images</code> and <code>music</code> folders in the app's files. Any filename works; something simple like <code>battle-cry.mp3</code> or <code>sword-clash.mp3</code> is easiest to find again later. There's also a short README inside the <code>sfx</code> folder itself with the same instructions, if you ever need a reminder without opening this handbook.</li>
+          <li>In the app, go to <b>🗝️ Admin → ⚙️ Settings → 🔊 Sound effects</b> and find the row for that sound.</li>
+          <li>Type the path into the box — for example <code>sfx/battle-cry.mp3</code> — and it saves automatically as soon as you click away or press Tab.</li>
+          <li>Tap <b>▶ Test</b> right there on that row to hear exactly what the class will hear. It plays through the app's real sound path, not a separate preview, so what you hear in Test is what plays during the lesson.</li>
+        </ol>
+        <h4>Formats and length</h4>
+        <p>Use <b>.mp3</b> or <b>.m4a</b> — a plain phone voice memo is fine as-is, with no editing software needed. Keep clips <b>short</b>: these fire in the middle of play, so a long clip for a quick cue like the sword clash or the points chime will still be finishing when the next thing happens on screen. The war cry and the fanfare can run a little longer, up to about three seconds, since nothing else needs to interrupt them right away.</p>
+        <h4>The Battle Day war cry is the special one</h4>
+        <p>Every other sound above has a built-in synthesized beep as a safety net, so an empty box is completely harmless there. The war cry is different: it has <b>no beep to fall back on</b>, because a beep standing in for spoken words would be worse than nothing. Until you record it, the app reads that line aloud itself, in the computer's own robotic speech voice. Recording it here replaces that robot voice with yours — it is genuinely the single sound in this list most worth doing first.</p>
+        <h4>If a file won't play</h4>
+        <p class="help-callout">A missing, misspelled or broken file never breaks the app. For every sound except the war cry, the built-in beep quietly takes over instead — the same way it does if you never assign a file at all. So it's always safe to experiment with a path here; the worst case is simply that nothing changes and you keep hearing the beep. If <b>▶ Test</b> stays completely silent for every sound (not just one), check the master sound switch — the speaker icon in the top bar, or press <b>M</b> — is turned on. <a href="#" data-help-go="sound">Turning sound on and off →</a></p>
+        <h4>Keep copies elsewhere</h4>
+        <p class="help-warn"><b>These recordings are not included in your backup .json.</b> Like your videos and images, they live as plain files in the <code>sfx</code> folder rather than inside the app's saved data, so exporting or restoring a backup never copies them. Keep your original recordings somewhere safe too — the same cloud folder or drive you used to get them onto the computer works well — in case you ever reinstall the app or move it to a new machine.</p>
+      `;
+    },
   },
 
   // ======================= DATA =======================
@@ -953,6 +994,7 @@ const TOPICS = [
         <p class="help-actions"><button type="button" class="help-btn" data-help-action="toggle-sound">Turn sound ${on ? 'off' : 'on'}</button></p>
         <p>The setting is remembered, so it stays how you leave it. Turning sound off does not change anything else — points, videos and animations all behave exactly the same.</p>
         <p class="help-callout">The intro video on Place of the Week has its own volume, controlled by the computer's volume keys.</p>
+        <p>Want the coin, thud, sword, fanfare, dice rattle or the Battle Day war cry to be <b>your own recording</b> instead of these built-in beeps? <a href="#" data-help-go="admin-sfx">Recording your own sound effects →</a></p>
       `;
     },
   },

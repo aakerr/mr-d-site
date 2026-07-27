@@ -32,6 +32,7 @@ const HELP_TOPICS = {
   potw: 'potw-schedule',
   backups: 'data-backup',
   lock: 'admin-lock',
+  sfx: 'admin-sfx',
 };
 
 // ---------------------------------------------------------------------------
@@ -1903,6 +1904,8 @@ function renderSettings() {
 
       ${renderMusicCard()}
 
+      ${renderSfxCard()}
+
       ${shieldPanelHTML()}
 
       <div class="admin-card">
@@ -2174,6 +2177,48 @@ function renderMusicCard() {
       <div class="admin-music-list">${rows}</div>
 
       <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week plays its own flight music and presentation audio, so it doesn't take background music.</div>
+    </div>`;
+}
+
+// ----- Sound effects (teacher recordings replacing the built-in synth cues) -
+// One row per entry in store.SFX_SLOTS — always iterate the map, never
+// hardcode the six, so a future slot the lead adds shows up here for free.
+function renderSfxCard() {
+  const store = ctxRef.store;
+  const s = store.getSettings();
+  const soundOn = s.soundEnabled !== false;
+
+  const rows = Object.entries(store.SFX_SLOTS).map(([name, meta]) => {
+    const cur = store.getSfx(name);
+    const statusText = cur
+      ? '🎙️ Using your recording'
+      : (name === 'battlecry'
+          ? '🤖 Not recorded yet — read aloud by the computer’s speech voice'
+          : '🔊 Using the built-in sound');
+    const caveat = name === 'battlecry'
+      ? `<div class="admin-mini admin-music-caveat">🗣️ This one has no built-in beep to fall back on — it's a spoken line, and a synthesized beep would be worse than nothing. Until you record it, the app reads it aloud in the computer's own speech voice; recording one here replaces that robot voice with yours.</div>`
+      : '';
+    return `
+      <div class="admin-music-row">
+        <div class="admin-music-name">${esc(meta.label)} <span class="admin-faint">— ${statusText}</span></div>
+        <div class="admin-mini" style="margin:0 0 8px">${esc(meta.hint)}</div>
+        <div class="admin-key-row">
+          <input class="admin-input admin-sfx-path" data-sfx="${esc(name)}" type="text" value="${esc(cur)}" placeholder="sfx/${esc(name)}.mp3" aria-label="File for ${esc(meta.label)}" spellcheck="false" autocomplete="off" />
+          <button class="admin-btn admin-btn-sm" data-action="sfx-test" data-sfx="${esc(name)}">▶ Test</button>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="sfx-reset" data-sfx="${esc(name)}"${cur ? '' : ' disabled'}>Reset</button>
+        </div>
+        ${caveat}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🔊 Sound effects</div>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.sfx, 'Recording your own sounds, step by step')}</div>
+      ${!soundOn ? `<div class="admin-warn-line">🔇 <b>The master sound switch is currently OFF</b> (the speaker icon in the top bar, or press <b>M</b>). <b>▶ Test</b> below will stay silent until you turn it back on — that's the app correctly honouring the switch, not a bug. Typing and saving a file path still works fine either way, and it will play normally once sound is back on.</div>` : ''}
+      <div class="admin-mini">Swap any of the app's built-in beeps — or the spoken Battle Day line — for your own recording. A phone voice memo is all you need; no editing software or special equipment required. Drop <b>.mp3</b> or <b>.m4a</b> files straight into the <code>sfx</code> folder that ships right next to <code>index.html</code>, then type the path into a row below (e.g. <code>sfx/battle-cry.mp3</code>) and tap <b>▶ Test</b> to hear it exactly as the class will hear it — this plays through the app's own sound, not a preview. Keep every clip <b>short</b>, since these fire in the middle of play: a second or two is plenty for the quick cues (sword clash, blocked hit, points chime, dice rattle), and up to about three seconds for the war cry or the fanfare. Anything you leave blank simply keeps working exactly as it does today — no sound goes missing just because a file hasn't been recorded yet.</div>
+      <div class="admin-music-list">${rows}</div>
+      <div class="admin-mini" style="margin-top:12px">📁 <b>These recordings are not included in your backup .json.</b> Just like your videos and images, they're plain files that live in the <code>sfx</code> folder rather than inside the app's saved data, so exporting or restoring a backup never touches them. Keep your own copies somewhere safe — the same place you keep copies of your videos — in case you ever reinstall the app or move it to a new computer.</div>
     </div>`;
 }
 
@@ -4050,6 +4095,23 @@ function onClick(e) {
       toast('Track cleared.');
       break;
     }
+    // sound effects (teacher recordings vs. built-in synth cues)
+    case 'sfx-test': {
+      const name = btn.dataset.sfx;
+      ctxRef.audio?.sfx?.(name);
+      if (name === 'battlecry' && !store.getSfx(name)) {
+        toast('Nothing to hear yet — the war cry has no built-in beep. Record one above, or it stays as the computer’s spoken voice on Battle Day.');
+      }
+      break;
+    }
+    case 'sfx-reset': {
+      const name = btn.dataset.sfx;
+      const meta = store.SFX_SLOTS[name];
+      store.setSfx(name, '');
+      renderBody({ force: true });
+      toast(`${meta ? meta.label : 'Sound'} reset to the built-in sound.`);
+      break;
+    }
     case 'music-suggested-open': {
       openConfirm(
         'Apply the suggested background music setup?',
@@ -4790,6 +4852,14 @@ export default {
         setScreenTrack(screen, val || null);
         showMusicError(screen, '');
         renderBody({ force: true });
+        return;
+      }
+      if (e.target.classList && e.target.classList.contains('admin-sfx-path')) {
+        const name = e.target.dataset.sfx;
+        const val = e.target.value.trim();
+        ctxRef.store.setSfx(name, val);
+        renderBody({ force: true });
+        toast(val ? 'Sound file assigned.' : 'Reset to the built-in sound.');
         return;
       }
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
