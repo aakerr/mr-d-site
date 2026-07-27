@@ -34,6 +34,7 @@ const DUEL2_PRE_ROLL_MS = 500;     // dice sit in the tray a beat before they ar
 const DUEL2_TALLY_HOLD_MS = 700;   // the ±N sits on the crest before the total moves
 const DUEL2_DRAIN_MS = 900;        // a total rolls down (or up) at watchable speed
 const DUEL2_RETURN_MS = 800;       // looted points fly back to the attacker's crest
+const DUEL2_MATH_STEP_MS = 620;    // one term of the damage sum at a time
 const DUEL2_CHARGE_BTN_MS = 620;   // the chosen weapon pulses before anything moves
 const DUEL2_CHARGE_CREST_MS = 620; // then the attacker's own crest winds up
 const DUEL2_IMPACT_MS = 700;       // the defending card takes the hit
@@ -748,6 +749,36 @@ function injectStyles() {
   .duel-dice-parts{color:#9ca3af;margin-right:.5rem;}
   .duel-dice-num{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
     font-size:clamp(2rem,5vw,3.2rem);text-shadow:0 0 24px rgba(253,230,138,.6);}
+
+  /* THE MATH. The multiplier used to appear only on the outcome card, after the
+     dice had already gone — so the class saw a roll of 12 and then, on a
+     different screen, a number 100x bigger with no shown connection. It is now
+     built up a term at a time on the tray itself: the faces, the sum, the
+     multiplier, and finally the damage. Each term is laid out in the flow from
+     the start (hidden, not absent) so nothing shifts sideways as it fills in. */
+  .duel-dice-math{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;
+    gap:.1em .38em;font-family:'Cinzel',Georgia,serif;font-weight:800;line-height:1.15;}
+  .duel-dice-math > *{opacity:0;transform:translateY(8px) scale(.9);
+    transition:opacity .3s ease,transform .3s cubic-bezier(.2,.9,.3,1.3);}
+  .duel-dice-math > .in{opacity:1;transform:none;}
+  .dm-faces{color:#9ca3af;font-size:clamp(1.2rem,2.6vw,2rem);font-weight:700;}
+  .dm-op{color:#6b7280;font-size:clamp(1.1rem,2.2vw,1.7rem);}
+  .dm-sum{color:#fde68a;font-size:clamp(1.9rem,4.4vw,3rem);text-shadow:0 0 22px rgba(253,230,138,.55);}
+  .dm-mult{color:#c4b5fd;font-size:clamp(1.4rem,3vw,2.2rem);text-shadow:0 0 20px rgba(167,139,250,.5);}
+  .dm-final{color:#fca5a5;font-size:clamp(2.6rem,6.4vw,4.6rem);
+    text-shadow:0 4px 18px rgba(0,0,0,.9),0 0 38px rgba(239,68,68,.7);}
+  .dm-final.gain{color:#86efac;text-shadow:0 4px 18px rgba(0,0,0,.9),0 0 38px rgba(34,197,94,.7);}
+  .dm-final.chill{color:#93c5fd;text-shadow:0 4px 18px rgba(0,0,0,.9),0 0 38px rgba(59,130,246,.7);}
+  .dm-final.punch{animation:dm-punch-kf .9s cubic-bezier(.2,.9,.3,1.25) both;}
+  @keyframes dm-punch-kf{
+    0%{transform:scale(.45);}55%{transform:scale(1.3);}75%{transform:scale(1.12);}100%{transform:scale(1.18);}
+  }
+  .duel-dice-caption{margin-top:.35rem;font-family:'Cinzel',Georgia,serif;font-weight:700;
+    letter-spacing:.16em;font-size:clamp(.7rem,1.4vw,1rem);color:#9ca3af;
+    opacity:0;transition:opacity .3s ease;}
+  .duel-dice-caption.in{opacity:1;}
+  .dm-capped{color:#fbbf24;font-weight:700;font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+    font-size:clamp(.72rem,1.4vw,1rem);letter-spacing:.02em;}
 
   /* mini shop — buy without leaving Battle Day */
   .duel-shop-overlay{position:fixed;inset:0;z-index:75;background:rgba(7,9,18,.72);
@@ -1834,7 +1865,7 @@ function plainRoll(n, sides) {
 // Rolls `item`'s dice for `house`, live on screen, and resolves with the
 // total the class watched land. Never rolled in software and animated as
 // something else — this total is what gets passed to applyDuelAttack.
-async function rollItemDice(item, house) {
+async function rollItemDice(item, house, cap = null) {
   const store = ctxRef.store;
   const { n, sides } = store.parseDice(item.effect.dice);
   const host = document.getElementById('overlay-root');
@@ -1898,19 +1929,63 @@ async function rollItemDice(item, house) {
   }
 
   const total = rolls.reduce((a, b) => a + b, 0);
+  const kind = item.effect?.kind;
+  const mult = Math.max(1, Number(item.effect?.mult) || 1);
+  const isFreeze = kind === 'freeze';
+  // The freeze rolls DAYS, so there is no multiplier and nothing to cap.
+  const raw = isFreeze ? total : total * mult;
+  const landed = isFreeze ? raw : (cap == null ? raw : Math.min(raw, Math.max(0, cap)));
+
   if (diceOverlayEl) {
-    totalEl.innerHTML = `<span class="duel-dice-parts">${esc(rolls.join(' + '))}${rolls.length > 1 ? ' =' : ''}</span><span class="duel-dice-num">${total}</span>`;
-    // The total swells as it lands, so the number the class has been waiting for
-    // arrives as an event rather than appearing quietly under the tray.
-    if (!prefersReducedMotion()) {
-      totalEl.classList.remove('grow'); void totalEl.offsetWidth; totalEl.classList.add('grow');
+    // Every term is in the DOM from the start, hidden — revealing them one at a
+    // time by adding a class means the row is already its final width, so the
+    // sum does not slide sideways as the multiplier arrives.
+    const finalClass = isFreeze ? 'chill' : (kind === 'steal' ? 'gain' : '');
+    const caption = isFreeze ? 'DAYS FROZEN' : (kind === 'steal' ? 'POINTS STOLEN' : 'DAMAGE');
+    const terms = [`<span class="dm-faces">${esc(rolls.join('  +  '))}</span>`];
+    if (rolls.length > 1) terms.push('<span class="dm-op">=</span>', `<span class="dm-sum">${total}</span>`);
+    if (!isFreeze && mult > 1) terms.push('<span class="dm-op">×</span>', `<span class="dm-mult">${mult}</span>`);
+    const needsFinal = terms.length > 1;
+    if (needsFinal) terms.push('<span class="dm-op">=</span>');
+    terms.push(`<span class="dm-final ${finalClass}">${landed}</span>`);
+    const cappedNote = (!isFreeze && landed < raw)
+      ? `<div class="dm-capped">${raw} rolled — but that is all they have left</div>` : '';
+
+    totalEl.innerHTML = `<div class="duel-dice-math">${terms.join('')}</div>
+      <div class="duel-dice-caption">${caption}</div>${cappedNote}`;
+
+    const steps = [...totalEl.querySelectorAll('.duel-dice-math > *')];
+    const finalEl = totalEl.querySelector('.dm-final');
+    const capEl = totalEl.querySelector('.dm-capped');
+    if (capEl) capEl.style.opacity = '0';
+
+    if (prefersReducedMotion()) {
+      steps.forEach((el) => el.classList.add('in'));
+      totalEl.querySelector('.duel-dice-caption')?.classList.add('in');
+      if (capEl) capEl.style.opacity = '1';
+    } else {
+      // Faces first, then each operator with the term it introduces, so the row
+      // reads as a sentence being spoken rather than a formula appearing.
+      for (let i = 0; i < steps.length; i += 1) {
+        const el = steps[i];
+        const isFinalTerm = el === finalEl;
+        el.classList.add('in');
+        if (isFinalTerm) {
+          el.classList.add('punch');
+          ctxRef.audio.sfx('coin');
+          totalEl.querySelector('.duel-dice-caption')?.classList.add('in');
+          if (capEl) capEl.style.transition = 'opacity .4s ease', capEl.style.opacity = '1';
+        }
+        // Operators are punctuation — they land with the term after them.
+        const pause = el.classList.contains('dm-op') ? 140 : DUEL2_MATH_STEP_MS;
+        await delay(isFinalTerm ? DUEL2_TOTAL_GROW_MS : pause);
+        if (!diceOverlayEl) break;
+      }
     }
-    await delay(DUEL2_TOTAL_GROW_MS);
-    ctxRef.audio.sfx('coin');
-    await delay(DUEL2_ROLL_HOLD_MS);
+    if (diceOverlayEl) await delay(DUEL2_ROLL_HOLD_MS);
   }
   closeDiceOverlay();
-  return { total, rolls, label };
+  return { total, rolls, label, landed, raw };
 }
 
 // =============================================================================
@@ -2014,7 +2089,9 @@ async function resolveDuelSequence(challenger, target, item, preview) {
     await delay(DUEL2_COUNTER_MS);
   } else {
     // Step 4 — not countered: the damage dice roll live, on screen.
-    const roll = await rollItemDice(item, challenger);
+    // Pass the defender's purse so the tray can show what will actually be taken
+    // rather than a number the zero floor is about to trim behind the scenes.
+    const roll = await rollItemDice(item, challenger, store.getTotal(target.id, 'term'));
     if (!rootEl) return;
 
     // Step 5 — the points are applied, using the exact total the class watched land.
@@ -2031,14 +2108,13 @@ async function resolveDuelSequence(challenger, target, item, preview) {
     if (isFreeze) {
       spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `❄️ ${out.frozenDays}d`);
       outcomeCard('reduced', '❄️ FROZEN!',
-        `${esc(target.name)} cannot earn points for ${out.frozenDays} day${out.frozenDays === 1 ? '' : 's'}.`,
-        `${roll.label}: ${roll.total}`);
+        `${esc(target.name)} cannot earn points for ${out.frozenDays} school day${out.frozenDays === 1 ? '' : 's'} — weekends do not count.`, '');
     } else {
-      const mult = Math.max(1, Number(item.effect.mult) || 1);
       const stealNote = item.effect.kind === 'steal' ? ` ${esc(challenger.name)} looted <b>${out.stolen} pts</b>.` : '';
+      // No math line any more — the tray built the sum up a term at a time and
+      // the class watched it. Restating it here just competed with the tally.
       outcomeCard('hit', '💥 DIRECT HIT!',
-        `${esc(challenger.name)} struck ${esc(target.name)} with ${esc(item.name)}.${stealNote}`,
-        `${roll.label}: ${roll.total}${mult > 1 ? ` × ${mult}` : ''} = ${out.damage} pts`);
+        `${esc(challenger.name)} struck ${esc(target.name)} with ${esc(item.name)}.${stealNote}`, '');
 
       // THE TALLY. The damage lands on the crest as a big red −N, holds long
       // enough to actually be read, and only then does the defender's total
