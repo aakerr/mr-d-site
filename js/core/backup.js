@@ -23,6 +23,7 @@ const DEBOUNCE_MS = 2000;
 let dirHandle = null;     // FileSystemDirectoryHandle | null
 let connected = false;    // handle present AND read-write permission granted
 let lastSaveTs = 0;
+let lastDownloadTs = 0;   // last daily safety-net download (see maybeDailyDownload)
 let lastError = null;
 let lastDailyDate = null; // 'YYYY-MM-DD' of the most recent daily snapshot
 let debounceTimer = null;
@@ -138,10 +139,65 @@ function scheduleWrite() {
   debounceTimer = setTimeout(() => { debounceTimer = null; doWrite(); }, DEBOUNCE_MS);
 }
 
+// ---- daily safety-net download ---------------------------------------------
+// The folder backup above is better in every way EXCEPT the one that matters
+// most here: it has to be set up, it needs a permission the browser drops
+// between sessions, and it only exists in Chrome and Edge. A teacher who taps
+// "Skip for now" once ends up with no backup at all and nothing telling him so.
+//
+// This is the floor under that. Once per school day, the first time he actually
+// changes something, the state is downloaded as an ordinary file. No folder, no
+// permission, no setup, and it works in every browser. Recovering means finding
+// the newest mrd-backup-*.json in Downloads, which is a thing he can do without
+// help — unlike anything involving a permission prompt.
+//
+// Deliberately fired from a store change rather than on load: a store change
+// follows a tap, so there is fresh user activation and the browser treats it as
+// a download the user asked for. A download on a cold page load is the kind
+// browsers block, and it would also fire on days he only glances at the board.
+const DL_KEY = 'mrd-last-download';
+let lastDownloadDate = null;
+try { lastDownloadDate = localStorage.getItem(DL_KEY); } catch (e) { lastDownloadDate = null; }
+
+function downloadEnabled() {
+  try { return store.getSettings().backupDownload !== false; } catch (e) { return true; }
+}
+
+function maybeDailyDownload() {
+  if (!downloadEnabled()) return;
+  const today = dateStr();
+  if (lastDownloadDate === today) return;
+  // Nothing worth saving yet — don't hand him an empty file on a fresh install.
+  let hasData = false;
+  try { hasData = (store.getState().transactions || []).length > 0; } catch (e) { hasData = false; }
+  if (!hasData) return;
+  // Claim the day BEFORE writing. If the download throws, we still don't retry
+  // on every subsequent keystroke — one attempt per day, win or lose.
+  lastDownloadDate = today;
+  try { localStorage.setItem(DL_KEY, today); } catch (e) { /* storage full — the banner covers it */ }
+  try {
+    const blob = new Blob([stateText()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mrd-backup-${today}.json`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    // Revoke late: revoking synchronously can cancel the download in some builds.
+    setTimeout(() => { try { URL.revokeObjectURL(url); a.remove(); } catch (e) {} }, 30000);
+    lastDownloadTs = Date.now();
+  } catch (e) {
+    console.warn('backup: daily download failed', e);
+  }
+}
+
 function ensureSubscribed() {
   if (subscribed) return;
   subscribed = true;
-  try { store.subscribe(() => scheduleWrite()); } catch (e) { console.warn('backup: subscribe failed', e); }
+  try {
+    store.subscribe(() => { scheduleWrite(); maybeDailyDownload(); });
+  } catch (e) { console.warn('backup: subscribe failed', e); }
 }
 
 // ---- boot (self-init on first import) --------------------------------------
@@ -214,7 +270,43 @@ export const backup = {
       folderName: dirHandle ? dirHandle.name : '',
       lastSaveTs,
       lastError,
+      downloadEnabled: downloadEnabled(),
+      lastDownloadDate,
+      lastDownloadTs,
     };
+  },
+
+  // ONE answer to "is his work safe?", for anything that has to show a light
+  // rather than explain a subsystem. Levels, worst first:
+  //   'none'   — nothing is protecting this data. Say so loudly.
+  //   'daily'  — the safety-net download only: a day's work is the most at risk.
+  //   'folder' — folder autosave running; seconds of exposure at worst.
+  // 'attention' means it USED to work and has stopped, which is the state most
+  // worth interrupting him for — he has every reason to think he is covered.
+  health() {
+    const s = backup.status();
+    if (s.needsPermission || (s.lastError && s.lastError !== 'unsupported')) {
+      return { level: 'attention', folder: s.connected,
+        message: s.needsPermission
+          ? `Reconnect the backup folder “${s.folderName}” to start saving again.`
+          : 'Automatic backup has stopped. Open Admin → Settings to check it.' };
+    }
+    if (s.connected) return { level: 'folder', folder: true, message: `Saving to “${s.folderName}” after every change.` };
+    if (s.downloadEnabled) {
+      return { level: 'daily', folder: false,
+        message: 'A backup file is saved to your Downloads once a day. Connect a folder for continuous backup.' };
+    }
+    return { level: 'none', folder: false,
+      message: 'Nothing is backing up this computer. A term of house points could be lost.' };
+  },
+
+  // Manual trigger for the same safety-net file, so a teacher can take one on
+  // demand — before a holiday, or to hand a copy to someone.
+  downloadNow() {
+    lastDownloadDate = null;
+    try { localStorage.removeItem(DL_KEY); } catch (e) {}
+    maybeDailyDownload();
+    return lastDownloadTs;
   },
 
   async writeNow() { return writeNow(); },
