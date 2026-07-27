@@ -219,20 +219,14 @@ function injectStyles() {
     100%{transform:translateY(-620px) translateX(var(--ember-drift,20px));opacity:0;}
   }
 
-  /* Same grid as .duel-stage below, so the header sits on the SAME columns as
-     the cards: the title starts at the challenger card's left edge and the
-     buttons end at its right edge, instead of the header being shrink-to-fit
-     and centred (which floated it inwards from everything else). */
-  .duel-topbar{position:relative;z-index:2;flex:0 0 auto;display:grid;
-    grid-template-columns:minmax(0,1fr) minmax(190px,clamp(190px,19vw,300px)) minmax(0,1fr);
-    gap:clamp(.6rem,1.4vw,1.25rem);width:100%;max-width:1560px;margin:0 auto .85rem;}
-  /* Title and buttons STACK inside the challenger column rather than sharing a
-     line: at 1280 the column is ~473px and the title alone needs ~693px, so
-     side-by-side forced the title to wrap to three lines and the buttons to
-     stack anyway. One line each, both pinned to the column's edges. */
-  .duel-topbar-inner{grid-column:1;display:flex;flex-direction:column;align-items:stretch;
-    gap:.5rem;min-width:0;}
-  .duel-topbar-inner .duel-topbar-actions{align-self:flex-end;flex-wrap:nowrap;}
+  /* width:100% is the point: this was shrink-to-fit and centred, so it floated
+     ~89px inward from the cards it belongs to. Spanning the same 1560px as
+     .duel-stage puts the title on the ATTACKER card's left edge and the
+     buttons on the DEFENDER card's right edge, with room for one clean line. */
+  .duel-topbar{position:relative;z-index:2;flex:0 0 auto;display:flex;align-items:center;
+    justify-content:space-between;gap:1rem;flex-wrap:wrap;
+    width:100%;max-width:1560px;margin:0 auto .85rem;}
+  .duel-topbar-inner{display:contents;}
   .duel-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
     font-size:clamp(1.2rem,2.6vw,1.9rem);color:#fca5a5;letter-spacing:.05em;
     text-shadow:0 0 26px rgba(239,68,68,.55);line-height:1.1;}
@@ -668,7 +662,7 @@ function challengerSideHtml(store, challenger, target) {
 
   return `
     <section class="duel-side" style="--side-accent:${esc(challenger.accent)}">
-      <div class="duel-role">⚔️ Challenger — attacking</div>
+      <div class="duel-role">⚔️ Attacker</div>
       ${pointsBlockHtml(store, challenger, 'challenger')}
       ${crestHtml(challenger, 'challenger')}
       <div class="duel-name">${esc(challenger.name)}</div>
@@ -693,7 +687,7 @@ function defenseListHtml(store, house) {
 function defenderSideHtml(store, target) {
   return `
     <section class="duel-side" style="--side-accent:${esc(target.accent)}">
-      <div class="duel-role">🛡️ Defender — under attack</div>
+      <div class="duel-role">🛡️ Defender</div>
       ${pointsBlockHtml(store, target, 'defender')}
       ${crestHtml(target, 'defender')}
       <div class="duel-name">${esc(target.name)}</div>
@@ -792,7 +786,7 @@ function renderDuel() {
   const leftHtml = showChooser ? chooserHtml(store) : challengerSideHtml(store, challenger, target);
   const rightHtml = showChooser ? `<section class="duel-side" style="--side-accent:#374151">
       <div class="duel-role">🛡️ Defender</div>
-      <div class="duel-pick-hint">Waiting for a challenger&hellip;</div>
+      <div class="duel-pick-hint">Waiting for an attacker&hellip;</div>
     </section>`
     : (target ? defenderSideHtml(store, target) : targetPickerHtml(store, challenger));
 
