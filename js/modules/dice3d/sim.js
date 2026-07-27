@@ -42,11 +42,11 @@ const ROLL = {
   launchSpeedVar: 3.0,       // random extra lateral speed
   launchSpeed2: 3.6,         // per-die outward speed for multi-dice
   spin: 24,                  // angular-velocity magnitude (was 14) → more tumble
-  minRollMs: 2300,           // never read the face before this (keeps rolls lively)
+  minRollMs: 3100,           // never read the face before this (keeps rolls lively)
   hardCapMs: 6000,           // a roll can NEVER run longer than this
   dampRampStartMs: 4000,     // after this, bleed off velocity so it must settle
   dampRampPerFrame: 0.93,    // fraction of velocity retained each frame while ramping
-  settleAnticipationMs: 250, // beat between physics rest and the result pop
+  settleAnticipationMs: 420, // beat between physics rest and the result pop
   impactMinSpeed: 2.0,       // ignore impacts gentler than this (no sfx/shake)
   impactSfxThrottleMs: 90,   // at most ~11 bounce thuds per second
   shakeSpeed: 6.0,           // impact speed above which the stage shakes
@@ -71,10 +71,17 @@ const ROLL = {
 const FATE_DEFAULT = true;
 const FATE_HIGH_CHANCE = 0.60;
 
-const MODE_DICE = { '1d6': ['d6'], '2d6': ['d6', 'd6'], d20: ['d20'] };
+// 3d6 is a real mode, not two throws stitched together. Several of Mr. D's
+// weapons roll 3d6 x100, and faking it as 2d6 followed by a single d6 split the
+// most dramatic moment of his game into two beats — the class watched, waited,
+// then watched again. All three dice now leave the hand together.
+const MODE_DICE = { '1d6': ['d6'], '2d6': ['d6', 'd6'], '3d6': ['d6', 'd6', 'd6'], d20: ['d20'] };
 
 // ~300% larger dice on the smartboard (tray/camera framing unchanged).
-const DIE_SCALE = 3;
+// Default die size, tuned for the full-screen Die of Destiny tray. The Battle
+// Day overlay passes its own smaller value: its panel is wider, so dice at this
+// scale filled it completely.
+const DIE_SCALE_DEFAULT = 3;
 
 // Camera fit target: the fraction of the frame the tray's extreme corners are
 // allowed to reach. < 1 guarantees the WHOLE tray rim stays on-screen with a
@@ -112,7 +119,8 @@ function traySize(aspect) {
 // between instances, so several sims can run concurrently in different hosts.
 // (The only cross-instance state is the immutable die-geometry cache in
 // geometry.js, which is read-only and deliberately never disposed per-instance.)
-export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs } = {}) {
+export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs, dieScale } = {}) {
+  const DIE_SCALE = Number.isFinite(dieScale) && dieScale > 0 ? dieScale : DIE_SCALE_DEFAULT;
   const fateEnabled = !!fate;
   // Nudges would desync the visible roll from the fate pre-sim, so they are
   // only enabled when fate is off.

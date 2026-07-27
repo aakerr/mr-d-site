@@ -30,10 +30,14 @@ const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
 // stay short; the dice roll itself (createDiceSim) takes as long as the
 // physics needs, on top of these.
 const DUEL2_THROW_MS = 320;    // attack item flies across the arena
-const DUEL2_REVEAL_MS = 950;   // defender's held defense flips face-up
-const DUEL2_COUNTER_MS = 1700; // hold on a successful counter — the best moment in his game
-const DUEL2_ROLL_HOLD_MS = 1400; // hold on the settled dice total before it's applied
-const DUEL2_OUTCOME_HOLD_MS = 1600; // hold on the hit/freeze outcome card before the final tally
+// Beats between the steps of a strike. Slowed by roughly a third after watching
+// a real roll: the whole sequence went by faster than a class could follow, and
+// the point of doing it on screen is that thirty people get to see each step
+// land. The tray's own tumble was lengthened to match (see ROLL.minRollMs).
+const DUEL2_REVEAL_MS = 1250;  // defender's held defense flips face-up
+const DUEL2_COUNTER_MS = 2200; // hold on a successful counter — the best moment in his game
+const DUEL2_ROLL_HOLD_MS = 1900; // hold on the settled dice total before it's applied
+const DUEL2_OUTCOME_HOLD_MS = 2100; // hold on the hit/freeze outcome card before the final tally
 
 // ---- module-scoped lifecycle state -----------------------------------------
 let ctxRef = null;
@@ -668,16 +672,18 @@ function injectStyles() {
     background:rgba(7,9,18,.6);-webkit-backdrop-filter:blur(10px) saturate(115%);
     backdrop-filter:blur(10px) saturate(115%);display:flex;align-items:center;
     justify-content:center;animation:battle-curtain .18s ease-out both;}
-  .duel-dice-stage{display:flex;flex-direction:column;align-items:center;gap:.9rem;
-    width:min(720px,92vw);max-height:92vh;padding:0 1rem;}
+  /* Bigger. This is the moment the whole room is watching — at 720px it read
+     like a tooltip over the board rather than an event on it. */
+  .duel-dice-stage{display:flex;flex-direction:column;align-items:center;gap:1.1rem;
+    width:min(1180px,94vw);max-height:94vh;padding:0 1rem;}
   .duel-dice-title{font-weight:800;color:#fca5a5;text-align:center;line-height:1.2;
-    font-size:clamp(1rem,2.4vw,1.5rem);text-shadow:0 0 22px rgba(239,68,68,.5);}
+    font-size:clamp(1.3rem,3vw,2.3rem);text-shadow:0 0 22px rgba(239,68,68,.5);}
   .duel-dice-frame{position:relative;width:100%;aspect-ratio:16/9;border-radius:1.25rem;
     overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.65);background:rgba(0,0,0,.35);
     border:1px solid rgba(239,68,68,.35);}
   .duel-dice-host{position:absolute;inset:0;}
   .duel-dice-total{min-height:2.6em;text-align:center;color:#e5e7eb;font-weight:700;
-    line-height:1.3;font-size:clamp(.85rem,1.8vw,1.05rem);opacity:0;transition:opacity .2s ease;}
+    line-height:1.3;font-size:clamp(1.05rem,2.2vw,1.6rem);opacity:0;transition:opacity .3s ease;}
   .duel-dice-total.show{opacity:1;}
   .duel-dice-parts{color:#9ca3af;margin-right:.5rem;}
   .duel-dice-num{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
@@ -1749,10 +1755,8 @@ async function buyMiniShopItem(itemId) {
 
 // =============================================================================
 // DICE OVERLAY — a real roll, on screen, before any points move.
-// createDiceSim's roll() only knows '1d6' | '2d6' | 'd20'. Every duel item
-// ships as 1d6, 2d6 or 3d6; a 3d6 item rolls as 2d6 THEN 1d6 (two visible
-// rolls, summed) rather than inventing a mode the sim doesn't support — the
-// running total stays on screen throughout so the class can add along.
+// The tray handles 1d6, 2d6, 3d6 and d20 natively, so every duel item rolls in
+// a single throw with all of its dice in the air at once.
 // Anything else a teacher might type (parseDice falls back gracefully) still
 // gets an honest uniform roll, just without a 3D die to show for it.
 // =============================================================================
@@ -1794,7 +1798,10 @@ async function rollItemDice(item, house) {
   totalEl.classList.add('show');
 
   try {
-    diceSim = createDiceSim({ container: diceHost, audio: ctxRef.audio, fate: false });
+        // Half the default die size. The Die of Destiny's tray is the whole screen;
+    // this overlay is a panel, and dice tuned for the former filled the latter.
+    // fate:false because this is real damage, not the weighted classroom roll.
+    diceSim = createDiceSim({ container: diceHost, audio: ctxRef.audio, fate: false, dieScale: 1.5 });
     diceSim.setHouse(house);
   } catch (e) {
     console.warn('battle: could not start the 3D dice, using a plain roll instead', e);
@@ -1805,19 +1812,12 @@ async function rollItemDice(item, house) {
   let rolls = [];
   let label = `${n}d${sides}`;
   try {
-    if (sides === 6 && n <= 2) {
-      const results = await diceSim.roll(n === 2 ? '2d6' : '1d6');
+    if (sides === 6 && n >= 1 && n <= 3) {
+      // 1d6, 2d6 and 3d6 are all real tray modes now — every die leaves the
+      // hand together. 3d6 used to roll as 2d6 then a lone d6, which split the
+      // loudest moment of his game into two beats.
+      const results = await diceSim.roll(`${n}d6`);
       rolls = (results || []).map((r) => r.value);
-    } else if (sides === 6 && n === 3) {
-      label = '2d6 + 1d6';
-      const first = await diceSim.roll('2d6');
-      rolls.push(...(first || []).map((r) => r.value));
-      if (!diceOverlayEl) return { total: rolls.reduce((a, b) => a + b, 0), rolls, label };
-      totalEl.innerHTML = `<span class="duel-dice-parts">${esc(rolls.join(' + '))} + one more d6&hellip;</span>`;
-      await delay(450);
-      if (!diceOverlayEl || !diceSim) return { total: rolls.reduce((a, b) => a + b, 0), rolls, label };
-      const second = await diceSim.roll('1d6');
-      rolls.push(...(second || []).map((r) => r.value));
     } else if (sides === 20 && n === 1) {
       const results = await diceSim.roll('d20');
       rolls = (results || []).map((r) => r.value);
