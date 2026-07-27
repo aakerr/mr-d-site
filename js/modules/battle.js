@@ -233,10 +233,16 @@ function injectStyles() {
   .duel-sub{color:#f87171;letter-spacing:.2em;text-transform:uppercase;
     font-size:clamp(.65rem,1.1vw,.8rem);font-weight:700;}
   .duel-topbar-actions{display:flex;gap:.6rem;flex-wrap:wrap;}
-  .battle-shop-btn,.battle-end-btn{min-height:52px;padding:0 1.2rem;border-radius:.9rem;
+  /* Height tracks the title's cap-height so the row reads as one line of text
+     rather than two chunky slabs; min-width matches the pair to each other so
+     "Magic Shop" and "End Battle" are the same size whatever their labels. */
+  .battle-shop-btn,.battle-end-btn{min-height:clamp(30px,3.6vh,36px);min-width:clamp(120px,11vw,150px);
+    display:inline-flex;align-items:center;justify-content:center;gap:.45em;
+    padding:0 .9rem;border-radius:.7rem;
     font-weight:800;font-size:1rem;cursor:pointer;border:2px solid transparent;
     transition:transform .15s ease,filter .15s ease;touch-action:manipulation;}
   .battle-shop-btn:active,.battle-end-btn:active{transform:scale(.96);}
+  .battle-btn-mark{height:1.25em;width:auto;object-fit:contain;flex-shrink:0;}
   .battle-shop-btn{background:linear-gradient(135deg,#a855f7,#7e22ce);color:#faf5ff;
     box-shadow:0 8px 26px rgba(168,85,247,.4);}
   .battle-end-btn{background:transparent;border-color:#4b5563;color:#e5e7eb;}
@@ -797,7 +803,7 @@ function renderDuel() {
         <div class="duel-topbar-inner">
           <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR STRIKE</div>
         <div class="duel-topbar-actions">
-          <button type="button" class="battle-shop-btn">🔮 Open Magic Shop</button>
+          <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
           <button type="button" class="battle-end-btn">🏳️ End Battle</button>
         </div>
         </div>
