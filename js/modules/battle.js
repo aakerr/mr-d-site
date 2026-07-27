@@ -159,8 +159,12 @@ function injectStyles() {
   /* Title reads FIRST, swords slam in beneath it. */
   /* NB: this wrapper is 0x0 — the sword glyphs are absolutely positioned inside
      it, so this % places their CENTRE. At 720p each glyph is ~226px tall, so
-     it reaches ~113px either side of this line. Keep it clear of the title. */
-  .battle-swords-wrap{position:absolute;top:72%;left:50%;transform:translate(-50%,-50%);
+     it reaches ~113px either side of this line. Keep it clear of the title.
+     Pulled up from 72% to 66% — measured gap between the title's rendered
+     bottom edge and the glyphs' rendered top edge went from ~109px to ~54px
+     at a 928px-tall viewport, closing the gap by about half while still
+     leaving clear daylight between the two (no overlap). */
+  .battle-swords-wrap{position:absolute;top:66%;left:50%;transform:translate(-50%,-50%);
     display:flex;align-items:center;justify-content:center;pointer-events:none;}
   .battle-sword{font-size:clamp(5rem,12vw,10rem);position:absolute;
     filter:drop-shadow(0 0 24px rgba(255,180,120,.6));}
@@ -258,13 +262,32 @@ function injectStyles() {
     gap:clamp(.6rem,1.4vw,1.25rem);max-width:1560px;width:100%;margin:0 auto;align-items:stretch;
     flex:1 1 auto;min-height:0;}
 
-  .duel-side{position:relative;height:100%;min-height:0;overflow-y:auto;
+  /* No scrollbar on the card itself — only .duel-items (the attack list) is
+     ever allowed to scroll, and only if it genuinely can't all fit. The card
+     is sized (see .duel-crest and .duel-items below) so everything ELSE
+     always fits without needing to scroll or clip. */
+  .duel-side{position:relative;height:100%;min-height:0;overflow:visible;
     border-radius:1.25rem;border:2px solid var(--side-accent,#374151);
     background:linear-gradient(160deg,rgba(17,24,39,.94),rgba(11,15,25,.97));
     padding:clamp(.5rem,1vw,.9rem);display:flex;flex-direction:column;align-items:center;
-    gap:.38rem;box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 30px -12px var(--side-accent,#374151);}
+    gap:.3rem;box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 30px -12px var(--side-accent,#374151);}
   .duel-role{flex:0 0 auto;font-size:.68rem;font-weight:800;letter-spacing:.22em;text-transform:uppercase;
     color:var(--side-accent,#9ca3af);opacity:.9;}
+  /* The head is TWO columns — numbers beside the crest, not stacked under it —
+     and the defender's are mirrored so the two shields face each other across
+     the VS. Mirroring is why this is symmetrical by construction rather than by
+     luck: both cards render the same DOM in the same order, and only the
+     direction flips, so a row can never sit at a different height on one side
+     than the other. The columns are flex:1 1 0 (equal halves, not content-
+     sized) so the crest stays centred in its half whatever the house is called
+     and however many digits its score has. */
+  .duel-head{flex:0 0 auto;width:100%;display:flex;align-items:center;
+    justify-content:center;gap:clamp(.3rem,1vw,.9rem);}
+  .duel-side-defender .duel-head{flex-direction:row-reverse;}
+  .duel-stats{flex:1 1 0;min-width:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:.1rem;}
+  .duel-identity{flex:1 1 0;min-width:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:.2rem;}
   .duel-points-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
     color:#9ca3af;text-align:center;}
   .duel-points-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
@@ -275,15 +298,29 @@ function injectStyles() {
      is what a strike removes, so it reads as "this house's own meter". */
   .duel-hp-lbl{flex:0 0 auto;font-size:.65rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
     color:#9ca3af;text-align:center;margin-top:.1rem;}
+  /* Wrapper exists so the bar below can be exactly as wide as the number
+     above it: the wrapper has no width of its own, so it shrinks to the
+     widest child with real content — the "140 / 140" text — and the bar's
+     width:100% then resolves against THAT, not an arbitrary fixed value.
+     This is what keeps the two edges lined up as the numbers change. */
+  .duel-hp-wrap{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;}
   .duel-hp-val{flex:0 0 auto;font-family:'Cinzel',Georgia,serif;font-weight:800;
-    font-variant-numeric:tabular-nums;line-height:1;
+    font-variant-numeric:tabular-nums;line-height:1;text-align:center;white-space:nowrap;
     font-size:clamp(1.1rem,2.2vw,1.6rem);text-shadow:0 0 18px currentColor;}
-  .duel-hp-bar{flex:0 0 auto;width:min(230px,92%);height:11px;border-radius:999px;
-    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);overflow:hidden;margin:.05rem 0 .25rem;}
+  .duel-hp-bar{flex:0 0 auto;width:100%;height:7px;border-radius:999px;
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);overflow:hidden;margin:.25rem 0 .1rem;}
   .duel-hp-fill{height:100%;border-radius:999px;transition:width .45s ease;}
-  /* Sized off viewport HEIGHT and allowed to shrink — it is the element that
-     gives way first so the strike list never falls below the fold. */
-  .duel-crest{position:relative;flex:0 1 auto;height:clamp(90px,20vh,240px);min-height:88px;
+  /* NEVER shrinks. This used to be flex:0 1 auto so the crest would give way
+     first and keep the strike list above the fold. That is fine on one card and
+     wrong across two: each card shrinks its OWN crest by its OWN content, and
+     the attacker carries a strike list the defender doesn't. The result was an
+     attacker crest of 73px against a defender crest of 92px, and because every
+     row sits below the crest in the same column, points, HP and the bar were
+     all 18.6px out of line between the cards. Measured, not guessed.
+     A fixed height makes both crests identical, so every row lines up across
+     the two cards by construction. The give is now in .duel-items, which is
+     the one element allowed its own scrollbar. */
+  .duel-crest{position:relative;flex:0 0 auto;height:clamp(64px,11vh,150px);
     aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
     filter:drop-shadow(0 8px 22px rgba(0,0,0,.65));}
@@ -297,7 +334,7 @@ function injectStyles() {
   .duel-swap-btn:hover{border-color:var(--side-accent,#9ca3af);color:#e5e7eb;}
 
   /* offensive item list */
-  .duel-items{width:100%;flex:1 1 auto;min-height:92px;display:grid;align-content:start;
+  .duel-items{width:100%;flex:1 1 auto;min-height:64px;display:grid;align-content:start;
     grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;
     overflow-y:auto;padding-right:.15rem;}
   .duel-item-cell{display:flex;flex-direction:column;min-width:0;}
@@ -319,8 +356,10 @@ function injectStyles() {
     border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
   .duel-item-cost,.duel-item-count{flex-shrink:0;font-weight:800;font-size:.8rem;color:#1e1b3a;background:#fde68a;
     border-radius:999px;padding:.2rem .5rem;white-space:nowrap;}
-  .duel-item-reason{font-size:.7rem;font-weight:700;color:#9ca3af;margin:-.25rem 0 .15rem .1rem;}
-  .duel-item-note{font-size:.7rem;font-weight:700;margin:-.25rem 0 .15rem .1rem;}
+  /* A hair of breathing room above this line — it used to sit on a negative
+     top margin that crowded the pill's bottom border above it. */
+  .duel-item-reason{font-size:.7rem;font-weight:700;color:#9ca3af;margin:.3rem 0 .15rem .1rem;}
+  .duel-item-note{font-size:.7rem;font-weight:700;margin:.3rem 0 .15rem .1rem;}
   .duel-note-block{color:#93c5fd;}
   .duel-note-half{color:#fde68a;}
   .duel-note-pierce{color:#c4b5fd;}
@@ -660,7 +699,8 @@ function emberField(count = 14) {
 // DUEL VIEW — markup
 // =============================================================================
 
-// Points block that sits ABOVE each crest (the teacher's layout).
+// Points block that sits BELOW each crest (the teacher's layout: shield on
+// top, then points, then hit points).
 function pointsBlockHtml(store, house, side) {
   return `
     <div class="duel-points-lbl">Points</div>
@@ -678,9 +718,11 @@ function hpBlockHtml(store, house, side) {
   const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((cur / max) * 100))) : 0;
   return `
     <div class="duel-hp-lbl">Hit Points</div>
-    <div class="duel-hp-val" data-hp="${side}" style="color:${esc(house.accent)}">${cur} / ${max}</div>
-    <div class="duel-hp-bar">
-      <div class="duel-hp-fill" data-hp-bar="${side}" style="width:${pct}%;background:${esc(house.accent)}"></div>
+    <div class="duel-hp-wrap">
+      <div class="duel-hp-val" data-hp="${side}" style="color:${esc(house.accent)}">${cur} / ${max}</div>
+      <div class="duel-hp-bar">
+        <div class="duel-hp-fill" data-hp-bar="${side}" style="width:${pct}%;background:${esc(house.accent)}"></div>
+      </div>
     </div>`;
 }
 
@@ -748,18 +790,24 @@ function challengerSideHtml(store, challenger, target) {
 
   let list;
   if (!inventory.length) {
-    list = `<div class="duel-empty">No attack items yet. Buy some in the Magic Shop and they'll wait here until Battle Day.</div>`;
+    list = `<div class="duel-empty">No attack items yet. Purchase them in the Magic Shop</div>`;
   } else {
     list = inventory.map(({ item, count }) => itemRowHtml(store, item, count, target)).join('');
   }
 
   return `
-    <section class="duel-side" style="--side-accent:${esc(challenger.accent)}">
+    <section class="duel-side duel-side-attacker" style="--side-accent:${esc(challenger.accent)}">
       <div class="duel-role">⚔️ Attacker</div>
-      ${pointsBlockHtml(store, challenger, 'challenger')}
-      ${hpBlockHtml(store, challenger, 'challenger')}
-      ${crestHtml(challenger, 'challenger')}
-      <div class="duel-name">${esc(challenger.name)}</div>
+      <div class="duel-head">
+        <div class="duel-stats">
+          ${pointsBlockHtml(store, challenger, 'challenger')}
+          ${hpBlockHtml(store, challenger, 'challenger')}
+        </div>
+        <div class="duel-identity">
+          ${crestHtml(challenger, 'challenger')}
+          <div class="duel-name">${esc(challenger.name)}</div>
+        </div>
+      </div>
       <div class="duel-section-lbl">Ready to strike</div>
       <div class="duel-items">${list}</div>
     </section>`;
@@ -787,12 +835,18 @@ function prizePreviewHtml(store, challenger, target) {
 
 function defenderSideHtml(store, target, challenger) {
   return `
-    <section class="duel-side" style="--side-accent:${esc(target.accent)}">
+    <section class="duel-side duel-side-defender" style="--side-accent:${esc(target.accent)}">
       <div class="duel-role">🛡️ Defender</div>
-      ${pointsBlockHtml(store, target, 'defender')}
-      ${hpBlockHtml(store, target, 'defender')}
-      ${crestHtml(target, 'defender')}
-      <div class="duel-name">${esc(target.name)}</div>
+      <div class="duel-head">
+        <div class="duel-stats">
+          ${pointsBlockHtml(store, target, 'defender')}
+          ${hpBlockHtml(store, target, 'defender')}
+        </div>
+        <div class="duel-identity">
+          ${crestHtml(target, 'defender')}
+          <div class="duel-name">${esc(target.name)}</div>
+        </div>
+      </div>
       <div class="duel-section-lbl">Their active defenses</div>
       ${defenseListHtml(store, target)}
       ${challenger ? prizePreviewHtml(store, challenger, target) : ''}
@@ -1133,7 +1187,6 @@ function resolveHpAttack(store, { toId, amount, pierce = false }) {
 async function strike(itemId) {
   if (!rootEl || resolving) return;
   const store = ctxRef.store;
-  const audio = ctxRef.audio;
   const challenger = challengerHouse();
   const target = targetId != null ? store.HOUSES[targetId] : null;
   // The item was bought (and its cost paid) in the Magic Shop, possibly days
@@ -1219,7 +1272,6 @@ async function strike(itemId) {
   playStrike({ item, kind, amount, result, challenger, target,
     beforeChallenger, afterChallenger, beforeTarget, afterTarget,
     beforeTargetHp: result.before, afterTargetHp: result.after, maxTargetHp, battleWon });
-  if (audio) audio.sfx('coin');
 }
 
 function playStrike(o) {
@@ -1296,6 +1348,11 @@ function playStrike(o) {
 // new values.
 function landHit(o, crest, reduced, tint = 'red') {
   ctxRef.audio.sfx('thud');
+  // The points-taking-away cue lands HERE, at the same instant the HP number/
+  // bar actually starts to drop below — not back when the strike was thrown.
+  // Previously this fired synchronously in strike() before the projectile had
+  // even travelled, which read as the deduction happening mid-attack.
+  ctxRef.audio.sfx('coin');
   screenVignettePulse();
   if (crest && !reduced) {
     spawnFx(crest, `duel-fx-flash duel-fx-flash-${tint}`, 500);
