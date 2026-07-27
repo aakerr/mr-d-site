@@ -321,13 +321,33 @@ const TOPICS = [
     `,
   },
   {
+    id: 'potw-gslides', cat: 'potw', title: 'Linking a Google Slides presentation',
+    keywords: 'google slides presentation link embed publish to web editor toolbar auto advance auto-advance start slideshow player loads',
+    body: `
+      <ol class="help-steps">
+        <li><b>🗝️ Admin → Place of the Week → Edit</b> the destination.</li>
+        <li>Scroll to <b>Lesson Presentation</b> and choose <b>🔗 Google Slides</b>.</li>
+        <li>Over in Google Slides itself: <b>File → Share → Publish to web</b>, then click <b>Publish</b>.</li>
+        <li>On the <b>Link</b> or <b>Embed</b> tab (either is fine), <b>untick “Start slideshow as soon as the player loads.”</b> Leave <b>“Restart the slideshow after the last slide”</b> unticked too.</li>
+        <li>Copy the link the dialog gives you and paste it into <b>Your Google Slides link</b> — there's a <b>❓ How do I get this link?</b> button right beside that field with these same steps.</li>
+        <li><b>Save.</b></li>
+      </ol>
+      <h4>Why it has to be that link, and not the one from the address bar</h4>
+      <p>While you're editing, the browser's address bar shows a link ending in <code>/edit</code> — that's the <b>editor</b>. It loads without complaint, which is exactly what makes it sneaky: instead of the presentation, the class sees your toolbar, the slide filmstrip and the speaker-notes box. It does not look broken, so nothing tips you off. <b>Save</b> now catches this and refuses the link with a message rather than letting it through silently.</p>
+      <p>The <b>Publish to web</b> dialog has its own trap: it defaults to starting the slideshow the instant it loads, and its auto-advance timer has no "never" option — the slowest setting is still a timer. Left alone, the deck moves on its own while you're still talking to the class. Unticking <b>"Start slideshow as soon as the player loads"</b> fixes that at the source.</p>
+      <p class="help-callout">Belt and braces: this app also forces safe playback (no auto-start, no auto-advance) whenever it shows the deck, so the class is protected even if a box gets left ticked by accident. Still worth unticking them yourself in Slides — good habit, and the same published link might get reused somewhere else later.</p>
+      <p>Transitions, animations and embedded video all play, and your presenter remote works.</p>
+      <p>Want a file you control completely, or need it to work with no internet at all? See <a href="#" data-help-go="potw-pdf">Adding a PDF presentation</a> instead — the offline-safe fallback, though it flattens animations and video.</p>
+    `,
+  },
+  {
     id: 'potw-pdf', cat: 'potw', title: 'Adding a PDF presentation',
     keywords: 'pdf presentation slides deck upload attach google slides powerpoint keynote',
     body: `
       <ol class="help-steps">
         <li><b>🗝️ Admin → Place of the Week → Edit</b> the destination.</li>
         <li>Scroll to <b>Your lesson presentation</b>.</li>
-        <li>Drop a <b>PDF</b> in, or choose a file. (Google Slides: <b>File → Download → PDF</b>, or use the publish-to-web embed option if it is offered.)</li>
+        <li>Drop a <b>PDF</b> in, or choose a file. (Google Slides: <b>File → Download → PDF</b>, or for the full experience — transitions, animations, embedded video — see <a href="#" data-help-go="potw-gslides">Linking a Google Slides presentation</a> instead.)</li>
         <li><b>Save.</b></li>
       </ol>
       <p>The deck opens full screen automatically once the flight lands. While it is open: <b>arrow buttons</b> or arrow keys to move, <b>G</b> for a grid of all the slides, <b>Esc</b> to close.</p>

@@ -3333,8 +3333,20 @@ function presSectionHTML() {
   if (pres.type === 'gslides') {
     body = `
       <label class="admin-flabel" for="admin-pres-url">Your Google Slides link</label>
-      <input id="admin-pres-url" class="admin-input" type="text" value="${esc(pres.url)}" placeholder="https://docs.google.com/presentation/d/…/edit or /embed" />
-      <div class="admin-mini admin-pres-hint">✅ <b>Recommended.</b> Paste your Google Slides link (<b>File → Share → Publish to web → Embed</b>). Your transitions, animations and embedded videos all play, and your presenter remote works.</div>
+      <input id="admin-pres-url" class="admin-input" type="text" value="${esc(pres.url)}" placeholder="https://docs.google.com/presentation/d/e/2PACX-…/pub" />
+      <div class="admin-mini admin-pres-hint">✅ <b>Recommended.</b> Use <b>File → Share → Publish to web</b>, click <b>Publish</b>, then paste that link — with the <b>“Start slideshow as soon as the player loads”</b> box unticked. Your transitions, animations and embedded videos all play, and your presenter remote works.</div>
+      <details class="admin-details">
+        <summary>❓ How do I get this link?</summary>
+        <ol class="admin-steps">
+          <li>Open the presentation in Google Slides.</li>
+          <li><b>File → Share → Publish to web.</b></li>
+          <li>On the <b>Link</b> or <b>Embed</b> tab (either is fine), <b>untick “Start slideshow as soon as the player loads.”</b></li>
+          <li>Leave <b>“Restart the slideshow after the last slide”</b> unticked too.</li>
+          <li>Click <b>Publish</b>, confirm, then copy the link it gives you.</li>
+          <li>Paste that link above — <b>not</b> the address-bar link ending in <code>/edit</code>. That one loads fine but shows the class the Slides toolbar, filmstrip and speaker notes.</li>
+        </ol>
+        <p class="admin-mini" style="margin-top:8px">This app also forces safe playback (no auto-start, no auto-advance) whenever it shows the deck, so the class stays safe even if a box gets left ticked by accident. Still worth unticking it yourself in Slides — a good habit for anywhere else you might share the link.</p>
+      </details>
       <div class="admin-mini admin-pres-hint" style="opacity:.75">🔈 Note: audio files inserted directly into Slides may not play in a published embed — embedded YouTube video does.</div>`;
   } else if (pres.type === 'pdf') {
     const p = pres.pdf;
