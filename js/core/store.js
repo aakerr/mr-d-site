@@ -1230,6 +1230,17 @@ export const store = {
     // between Battle Days. Losing points still works: being frozen is not
     // protection, and the teacher can always thaw a house in Admin.
     if (delta > 0 && store.isFrozen(houseId)) return null;
+    // ZERO IS THE FLOOR. A 3d6 x100 hit rolls up to 1800, which can be more than
+    // a house owns — the first live test put Atlantis on -245. "You lost
+    // everything" is a story a class can take; "you are in debt" is a week of
+    // being told you are worth less than nothing. A deduction is trimmed to
+    // whatever is actually there, and the ledger records the TRIMMED amount so
+    // the totals and the history can never disagree.
+    if (delta < 0) {
+      const held = store.getTotal(houseId, 'term');
+      if (held + delta < 0) delta = -held;
+      if (delta === 0) return null;
+    }
     const tx = { id: `tx-${Date.now()}-${state.transactions.length}`, ts: Date.now(), houseId: Number(houseId), delta, reason, tag };
     state.transactions.push(tx);
     bumpLedger();
