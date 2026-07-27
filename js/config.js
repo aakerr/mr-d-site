@@ -11,17 +11,25 @@ export const CONFIG = {
 
   // Place of the Week — active profile key into state.potw.profiles
   POTW_ACTIVE: 'mesopotamia',
-  POTW_VIDEO: 'potw-intro.mp4',
+  // Last-resort fallback only (used when a profile names no video at all).
+  POTW_VIDEO: 'videos/potw-intro-01.mp4',
   POTW_SONG: 'potw-songs/place-of-the-week-rock-01.mp3',
   POTW_SONG_DURATION_S: 37,
 
   // Intro videos the teacher picks from (dropdown in Admin → Place of the Week).
   // Add more here and they appear in the dropdown automatically.
+  //
+  // The LOCAL files are listed first and one of them is the default, on
+  // purpose. A school computer may have no internet, and a YouTube embed also
+  // flashes its own pause glyph on launch — a plain <video> does neither.
+  // The YouTube entries stay as a fallback for a machine without the files.
   POTW_INTRO_VIDEOS: [
-    { id: 'rock',    label: 'Rock',    url: 'https://www.youtube.com/embed/hdM9z3pdJBQ' },
-    { id: 'classic', label: 'Classic', url: 'https://www.youtube.com/embed/3LU6vgJJNZE' },
+    { id: 'intro-01', label: 'Intro 1 (on this computer)', url: 'videos/potw-intro-01.mp4' },
+    { id: 'intro-02', label: 'Intro 2 (on this computer)', url: 'videos/potw-intro-02.mp4' },
+    { id: 'rock',     label: 'Rock (YouTube)',             url: 'https://www.youtube.com/embed/hdM9z3pdJBQ' },
+    { id: 'classic',  label: 'Classic (YouTube)',          url: 'https://www.youtube.com/embed/3LU6vgJJNZE' },
   ],
-  POTW_DEFAULT_VIDEO_ID: 'rock',
+  POTW_DEFAULT_VIDEO_ID: 'intro-01',
 
   // Music under the Google Earth flight. Any destination without its own
   // track falls back to this, so a newly added place has music immediately.

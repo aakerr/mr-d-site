@@ -417,6 +417,14 @@ function load() {
       for (const p of Object.values(merged.potw.profiles)) {
         const match = p.videoUrl && presets.find((v) => v.url === p.videoUrl);
         if (match) { p.introVideoId = match.id; delete p.videoUrl; }
+        // The intros used to be YouTube embeds. They now ship as real files in
+        // /videos, because the classroom computer may have no internet — and a
+        // YouTube embed also flashes its own pause glyph on launch, which was a
+        // long-standing complaint. Move a profile still pointing at a preset
+        // over to the equivalent local file. Only these two ids are remapped,
+        // so a video the teacher chose themselves is left alone.
+        if (p.introVideoId === 'rock') p.introVideoId = 'intro-01';
+        else if (p.introVideoId === 'classic') p.introVideoId = 'intro-02';
       }
       // Same for settings (new keys like theme/mapsApiKeyOverride).
       merged.settings = { ...def.settings, ...(merged.settings || {}) };

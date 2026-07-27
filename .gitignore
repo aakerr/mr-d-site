@@ -1,6 +1,8 @@
 .DS_Store
-videos/
 gemini-site/
+# NOTE: videos/ ships on purpose. The POTW intros must play on a school
+# computer with no internet, so they cannot live on YouTube. ~66MB total —
+# large for a repo, but a clone has to just work with nothing left to install.
 # retired original house art only — new shields/icons/class assets MUST ship
 images/camelot.png
 images/atlantis.png
