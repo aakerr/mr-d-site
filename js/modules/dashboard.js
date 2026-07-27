@@ -22,6 +22,30 @@ const STYLE = `
 .dash-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 8px; }
 .dash-accent-line { border-color: var(--accent, #f59e0b); }
 .dash-tile.dash-accent-line:hover { border-color: var(--accent, #f59e0b); }
+
+/* THE MIDDLE ROW IS A FIXED BOX. It used to size to its own content, so the
+   moment a class had five homework items instead of one, the right-hand column
+   grew, the row grew with it, the standings card no longer matched its height
+   and the whole screen slid down. A dashboard cannot change shape because
+   somebody added an assignment.
+   Height is locked here; the three panels inside already carry overflow-y-auto,
+   so extra items become a scrollbar inside a panel rather than a taller page.
+   Only from the md breakpoint up, where the two columns sit side by side —
+   stacked on a narrow screen a fixed height would crush them.
+   The height is set by the LEFT panel's needs, not the right's: there are
+   always exactly four houses, so the standings should never scroll, while the
+   itinerary and homework hold however many items the day happens to have.
+   That is the whole trade — a fixed thing sets the box, a variable thing
+   scrolls inside it. */
+@media (min-width: 768px) {
+  /* flex:0 0 auto matters as much as the height. The page column is a flex
+     container, so without it the row is just a shrinkable child and gets
+     squeezed back to whatever is left over — which is how a 238px row measured
+     212px and put the standings back into a scrollbar. */
+  .dash-row { flex: 0 0 auto; height: clamp(238px, 34vh, 380px); min-height: 0; }
+  .dash-row > * { min-height: 0; height: 100%; }
+  .dash-col-card { height: 100%; min-height: 0; }
+}
 `;
 
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
@@ -141,17 +165,21 @@ function renderStandings(state, store) {
   const max = Math.max(1, ...totals.map((t) => Math.max(0, t.total)));
   const activeCore = state.activeCore;
   return `
-    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-1 min-h-0">
       ${sectionHeader('trophy', 'Current Term Standings')}
-      <div class="flex flex-col gap-[clamp(6px,1.6vh,24px)] overflow-y-auto dash-scroll pr-1">
+      <!-- There are ALWAYS exactly four houses, so these rows share the space
+           instead of scrolling: each is flex-1 inside a fixed-height box, which
+           means four always fit at any viewport without tuning row heights
+           against a scrollbar. overflow-hidden is a backstop, not the plan. -->
+      <div class="flex flex-col gap-[clamp(4px,1vh,16px)] flex-1 min-h-0 overflow-hidden pr-1">
         ${totals.map((t, i) => {
           const isActive = activeCore !== 'all' && t.house.core === activeCore;
           const pct = Math.max(4, Math.round((Math.max(0, t.total) / max) * 100));
           return `
-          <div class="rounded-xl border px-3 py-[clamp(3px,1vh,13px)] ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
+          <div class="rounded-xl border px-3 py-[clamp(2px,0.6vh,10px)] flex-1 min-h-0 flex flex-col justify-center ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
             <div class="flex items-center gap-3">
               <div class="w-7 text-center font-bold text-gray-400 text-[clamp(0.8rem,1.6vh,1rem)] shrink-0">#${i + 1}</div>
-              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem);"')}
+              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
                   <span class="font-bold text-[clamp(1rem,2.5vh,1.625rem)] truncate" style="color:${t.house.accent}">${t.house.name}</span>
@@ -171,7 +199,7 @@ function renderStandings(state, store) {
 function renderItinerary(state, store) {
   if (state.activeCore === 'all') {
     return `
-      <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3]">
+      <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
         ${sectionHeader('calendar', 'Daily Itinerary')}
         <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
           Pick a house core to see today's schedule.
@@ -180,7 +208,7 @@ function renderItinerary(state, store) {
   }
   const items = store.getItinerary();
   return `
-    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3]">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
       ${sectionHeader('calendar', 'Daily Itinerary')}
       <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${items.length ? items.map((it, i) => `
@@ -195,7 +223,7 @@ function renderItinerary(state, store) {
 function renderHomework(state, store) {
   const items = state.activeCore === 'all' ? [] : store.getHomework();
   return `
-    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2]">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
       <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
@@ -240,7 +268,7 @@ function render(root, ctx) {
   root.innerHTML = `
     <div class="h-full w-full px-3 xl:px-5 pt-1.5 xl:pt-2 pb-3 xl:pb-5 flex flex-col gap-3 xl:gap-5 overflow-y-auto dash-scroll">
       ${renderHero(state, store)}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4">
+      <div class="dash-row grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4">
         <div class="flex flex-col min-h-0">${renderStandings(state, store)}</div>
         <div class="flex flex-col gap-3 xl:gap-4 min-h-0">
           ${renderItinerary(state, store)}
