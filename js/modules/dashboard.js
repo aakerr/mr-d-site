@@ -195,8 +195,8 @@ function renderHero(state, store) {
              edited: two font sizes, the name size, and the two gaps. -->
         <div class="flex-1 min-w-[240px] flex flex-col justify-center" style="
              height:var(--crest-h);
-             --gap-top:6px; --gap-bot:6px;
-             --wel-fs:16px; --motto-fs:24px; --name-fs:135px">
+             --gap-top:10px; --gap-bot:10px;
+             --wel-fs:16px; --motto-fs:36px; --name-fs:125px">
           <div class="text-white/80 font-bold uppercase tracking-[0.25em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:var(--wel-fs);line-height:1;margin-bottom:calc(var(--gap-top) - 0.1438 * var(--wel-fs) - 0.0806 * var(--name-fs))">Welcome</div>
           <!-- Sized OFF the crest, not off the viewport: the name is whatever is
                left of the shield's height once the other two lines and the two
