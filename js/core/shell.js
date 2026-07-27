@@ -455,6 +455,24 @@ export function initShell(ctx) {
   let fabClosing = false;
   let selectedHouseId = (store.getActiveHouse() || store.HOUSES[1]).id;
 
+  // In-flight guard for applyPoints() — module-scoped (not a DOM attribute)
+  // because the panel can outlive any given render pass. Set synchronously
+  // before the `lock.requireUnlock()` await so a double-tap in the same tick
+  // can never queue a second store.addPoints() call, and cleared in a
+  // `finally` so a refused PIN (or a thrown error) never wedges the panel —
+  // the teacher must be able to retry immediately. See applyPoints() below.
+  let pointsInFlight = false;
+
+  // Disables/re-enables the actual buttons the teacher taps, for visible
+  // feedback during the await. Safe to call even if the panel has since
+  // closed (renderFab() tears down #fab-panel-host's innerHTML, so a stale
+  // query here just finds nothing).
+  function setFabButtonsDisabled(disabled) {
+    fabRoot.querySelectorAll('[data-fab-quick], [data-fab-apply]').forEach((btn) => {
+      btn.disabled = disabled;
+    });
+  }
+
   // The panel gets its own host element inside #fab-root, separate from any
   // point toast currently animating there — so closing the panel mid-toast
   // can't yank the toast out of the DOM before its own timeout fires.
@@ -535,25 +553,41 @@ export function initShell(ctx) {
   // this awaits requireUnlock() before touching store/reason/sound/toast.
   // On refusal it returns false having done nothing, so callers can leave the
   // panel exactly as the teacher left it (typed amount and reason intact).
+  //
+  // In-flight guard: pointsInFlight is set synchronously, before the
+  // requireUnlock() await, so a double-tap dispatched in the same tick sees
+  // it already true and bails out having done nothing — the second tap never
+  // reaches the await, let alone store.addPoints(). Cleared in a `finally`
+  // so a refused PIN or a thrown error can't wedge the control; the teacher
+  // can retry the instant the pad closes. See battle.js `resolving` / dice.js
+  // `awardInFlight` for the same pattern elsewhere in this codebase.
   async function applyPoints(delta) {
     delta = Math.max(-9999, Math.min(9999, Math.round(delta) || 0));
     if (!delta || !store.HOUSES[selectedHouseId]) return false;
-    if (!(await lock.requireUnlock('award points'))) return false;
-    const reasonEl = fabRoot.querySelector('[data-fab-reason]');
-    const reason = ((reasonEl && reasonEl.value) || '').trim();
-    const house = currentHouse();
-    store.addPoints(selectedHouseId, delta, { reason: reason || 'Quick adjust', tag: 'quick' });
-    // Clear the reason so the NEXT award doesn't silently inherit this one's
-    // label — the panel is deliberately not re-rendered, so do it by hand.
-    if (reasonEl) {
-      reasonEl.value = '';
-      // Keep typing possible immediately, but only if the teacher was already
-      // in the field — never steal focus from wherever he actually is.
-      if (document.activeElement === reasonEl) reasonEl.focus();
+    if (pointsInFlight) return false; // second tap while the first is still resolving — ignore
+    pointsInFlight = true;
+    setFabButtonsDisabled(true);
+    try {
+      if (!(await lock.requireUnlock('award points'))) return false;
+      const reasonEl = fabRoot.querySelector('[data-fab-reason]');
+      const reason = ((reasonEl && reasonEl.value) || '').trim();
+      const house = currentHouse();
+      store.addPoints(selectedHouseId, delta, { reason: reason || 'Quick adjust', tag: 'quick' });
+      // Clear the reason so the NEXT award doesn't silently inherit this one's
+      // label — the panel is deliberately not re-rendered, so do it by hand.
+      if (reasonEl) {
+        reasonEl.value = '';
+        // Keep typing possible immediately, but only if the teacher was already
+        // in the field — never steal focus from wherever he actually is.
+        if (document.activeElement === reasonEl) reasonEl.focus();
+      }
+      if (audio && typeof audio.sfx === 'function') audio.sfx(delta > 0 ? 'coin' : 'thud');
+      spawnToast(delta, house);
+      return true;
+    } finally {
+      pointsInFlight = false;
+      setFabButtonsDisabled(false);
     }
-    if (audio && typeof audio.sfx === 'function') audio.sfx(delta > 0 ? 'coin' : 'thud');
-    spawnToast(delta, house);
-    return true;
   }
 
   // These also re-render the top bar so the trigger button's data-open

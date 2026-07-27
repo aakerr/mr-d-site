@@ -23,6 +23,16 @@ let clickHandler = null;
 let currentRenderFn = null; // set while mounted; lets async media loads trigger a re-render
 let activeWildRollDispose = null; // dispose fn for an in-flight dice3d roll, cleared on settle/unmount
 let wildRollActive = false; // true from purchase-confirm through overlay teardown — blocks a second concurrent roll
+// In-flight guard for resolvePurchase() — module-scoped (not a DOM attribute
+// or state on `s`) because a store mutation mid-purchase (store.purchase(),
+// addPoints(), activateShield(), etc.) triggers store.subscribe(doRender),
+// which rebuilds the whole screen via innerHTML and would otherwise wipe out
+// a disabled attribute set on the old button node. Set synchronously before
+// the `lock.requireUnlock()` await (see resolvePurchase), so a double-tap on
+// Confirm in the same tick is blocked before it ever reaches store.purchase()
+// — the same pattern battle.js's `resolving` and dice.js's `awardInFlight`
+// use. Cleared in a `finally` so a refused PIN can't wedge the modal.
+let purchaseInFlight = false;
 let carouselTeardown = null; // teardown fn from wireCarousel — torn down before every re-render and on unmount
 const timers = new Set();
 const fxNodes = new Set();  // transient combat-effect DOM nodes, force-cleaned on unmount
@@ -788,7 +798,7 @@ function confirmModalHtml(store, s) {
         <div class="shop-modal-body">${bodyHtml}</div>
         <div class="shop-modal-actions">
           <button type="button" class="shop-modal-btn shop-modal-cancel" data-modal-cancel>Cancel</button>
-          <button type="button" class="shop-modal-btn shop-modal-confirm" data-modal-confirm>${confirmLabel}</button>
+          <button type="button" class="shop-modal-btn shop-modal-confirm" data-modal-confirm ${purchaseInFlight ? 'disabled' : ''}>${confirmLabel}</button>
         </div>
       </div>
     </div>`;
@@ -1257,6 +1267,16 @@ function resolveWildPurchase(s, item, buyerId) {
   playWildReveal(s, item, buyer, buyerId, mountedRootAtStart);
 }
 
+// Disables/re-enables the Confirm button for visible feedback during the
+// await. purchaseInFlight suspending store.subscribe (see mount(), above)
+// means no re-render can happen out from under this while it's set, so the
+// attribute sticks until we explicitly clear it or replace the modal.
+function setConfirmButtonDisabled(disabled) {
+  if (!rootEl) return;
+  const btn = rootEl.querySelector('[data-modal-confirm]');
+  if (btn) btn.disabled = disabled;
+}
+
 async function resolvePurchase(s) {
   const store = ctxRef.store;
   const audio = ctxRef.audio;
@@ -1265,106 +1285,124 @@ async function resolvePurchase(s) {
   const { buyerId, targetId } = s.confirm;
   const kind = item.effect.kind;
 
-  // Gate the spend itself — one PIN entry per shop session (lock.js keeps a
-  // 15-minute unlock window), not one per purchase. Everything above this
-  // line only reads the pending confirm state; nothing has been charged yet,
-  // and this single gate sits before BOTH the wild dispatch below and the
-  // normal store.purchase() further down, so it covers both paths.
-  const mountedRootAtStart = rootEl;
-  const allowed = await lock.requireUnlock('buy this item');
-  if (rootEl !== mountedRootAtStart) return; // shop was unmounted while the PIN pad was open
-  if (!allowed) return; // PIN refused — no charge, no sound, no FX, no banner; confirm modal stays open as-is
+  // In-flight guard: a double-tap on Confirm in the same tick must not spend
+  // the cost twice, add the item to the armoury twice, loot twice, or double
+  // a shield/reduction duration. Set synchronously — BEFORE the
+  // requireUnlock() await — so the second tap sees purchaseInFlight already
+  // true and bails out having done nothing. Cleared in the `finally` below
+  // so a refused PIN (or a thrown error) can't wedge the Confirm button; the
+  // teacher can retry the instant the pad closes. Same pattern as battle.js
+  // `resolving` / dice.js `awardInFlight`.
+  if (purchaseInFlight) return;
+  purchaseInFlight = true;
+  setConfirmButtonDisabled(true);
+  try {
+    // Gate the spend itself — one PIN entry per shop session (lock.js keeps a
+    // 15-minute unlock window), not one per purchase. Everything above this
+    // line only reads the pending confirm state; nothing has been charged yet,
+    // and this single gate sits before BOTH the wild dispatch below and the
+    // normal store.purchase() further down, so it covers both paths.
+    const mountedRootAtStart = rootEl;
+    const allowed = await lock.requireUnlock('buy this item');
+    if (rootEl !== mountedRootAtStart) return; // shop was unmounted while the PIN pad was open
+    if (!allowed) return; // PIN refused — no charge, no sound, no FX, no banner; confirm modal stays open as-is
 
-  if (kind === 'wild') { resolveWildPurchase(s, item, buyerId); return; }
+    if (kind === 'wild') { resolveWildPurchase(s, item, buyerId); return; }
 
-  const buyer = store.HOUSES[buyerId];
-  const target = targetId != null ? store.HOUSES[targetId] : null;
-  const amount = item.effect.amount;
-  const emoji = item.emoji || '✨';
+    const buyer = store.HOUSES[buyerId];
+    const target = targetId != null ? store.HOUSES[targetId] : null;
+    const amount = item.effect.amount;
+    const emoji = item.emoji || '✨';
 
-  const ok = store.purchase(buyerId, item.cost, item.name);
-  if (!ok) {
-    s.confirm = null;
-    render(s);
-    showToast('Not enough points');
-    return;
-  }
-  audio.sfx('coin');
-
-  let result = null;
-  if (kind === 'shield') {
-    store.activateShield(buyerId, amount);
-  } else if (kind === 'reduce') {
-    store.activateReduction(buyerId, amount);
-  } else if (store.isStockpiled(item)) {
-    // Buying an offensive item (attack/steal/pierce) no longer fires it — it
-    // goes into the buyer's armoury and is spent later, on Battle Day. No
-    // target, no store.applyAttack call, no loot.
-    store.addToInventory(buyerId, item.id);
-  } else if (kind === 'attack' || kind === 'pierce') {
-    // Unreachable while store.STOCKPILE_KINDS includes these kinds (it
-    // always does today) — kept only so a future non-stockpiled item still
-    // resolves as a live attack instead of silently doing nothing.
-    result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: kind === 'pierce', label: item.name });
-  } else if (kind === 'steal') {
-    // The ONE combat rule resolves shield/reduction on the deduction; the
-    // buyer then loots exactly what was actually taken (0 if blocked, half
-    // if reduced) — never more than the target really lost.
-    result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: false, label: item.name });
-    if (result.outcome !== 'blocked' && result.applied > 0) {
-      store.addPoints(buyerId, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+    const ok = store.purchase(buyerId, item.cost, item.name);
+    if (!ok) {
+      s.confirm = null;
+      render(s);
+      showToast('Not enough points');
+      return;
     }
-  }
+    audio.sfx('coin');
 
-  // Every store mutation above already fired its own synchronous re-render
-  // via store.subscribe (innerHTML rebuild) — close the modal and let that
-  // settle FIRST. Only after this render are buyer/target chip elements
-  // guaranteed to be the ones actually attached to the page; querying them
-  // any earlier risks grabbing nodes that are about to be replaced, and
-  // spawning banner/fx nodes before this render would just get wiped by it.
-  s.confirm = null;
-  s.targetPicker = null;
-  render(s);
+    let result = null;
+    if (kind === 'shield') {
+      store.activateShield(buyerId, amount);
+    } else if (kind === 'reduce') {
+      store.activateReduction(buyerId, amount);
+    } else if (store.isStockpiled(item)) {
+      // Buying an offensive item (attack/steal/pierce) no longer fires it — it
+      // goes into the buyer's armoury and is spent later, on Battle Day. No
+      // target, no store.applyAttack call, no loot.
+      store.addToInventory(buyerId, item.id);
+    } else if (kind === 'attack' || kind === 'pierce') {
+      // Unreachable while store.STOCKPILE_KINDS includes these kinds (it
+      // always does today) — kept only so a future non-stockpiled item still
+      // resolves as a live attack instead of silently doing nothing.
+      result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: kind === 'pierce', label: item.name });
+    } else if (kind === 'steal') {
+      // The ONE combat rule resolves shield/reduction on the deduction; the
+      // buyer then loots exactly what was actually taken (0 if blocked, half
+      // if reduced) — never more than the target really lost.
+      result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: false, label: item.name });
+      if (result.outcome !== 'blocked' && result.applied > 0) {
+        store.addPoints(buyerId, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+      }
+    }
 
-  const buyerChip = rootEl.querySelector(`[data-buyer="${buyerId}"]`);
-  const targetChip = target ? rootEl.querySelector(`[data-buyer="${target.id}"]`) : null;
+    // Every store mutation above would normally fire its own synchronous
+    // re-render via store.subscribe, but that's suspended while
+    // purchaseInFlight is true (see mount()) — close the modal and render
+    // explicitly instead. Only after this render are buyer/target chip
+    // elements guaranteed to be the ones actually attached to the page;
+    // querying them any earlier risks grabbing nodes that are about to be
+    // replaced, and spawning banner/fx nodes before this render would just
+    // get wiped by it.
+    s.confirm = null;
+    s.targetPicker = null;
+    render(s);
 
-  if (kind === 'shield') {
-    showBanner(`${buyer.name} raised the ${item.name}! ${emoji}`);
-    return;
-  }
-  if (kind === 'reduce') {
-    showBanner(`${buyer.name} activated ${item.name}! ${emoji}`);
-    return;
-  }
-  if (store.isStockpiled(item)) {
-    const owned = store.countOwned(buyerId, item.id);
-    showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${owned}) — ready for Battle Day! ${emoji}`);
-    return;
-  }
+    const buyerChip = rootEl.querySelector(`[data-buyer="${buyerId}"]`);
+    const targetChip = target ? rootEl.querySelector(`[data-buyer="${target.id}"]`) : null;
 
-  // attack / steal / pierce share the same outcome-driven fx. Unreachable
-  // while store.STOCKPILE_KINDS covers these kinds (it always does today) —
-  // kept only so a future non-stockpiled item still gets combat fx/banner.
-  if (result.outcome === 'blocked') {
-    audio.sfx('sword');
-    blockFx(targetChip);
-    showBanner(`🛡️ ${target.name} blocked the ${item.name} from ${buyer.name}!`);
-    return;
-  }
+    if (kind === 'shield') {
+      showBanner(`${buyer.name} raised the ${item.name}! ${emoji}`);
+      return;
+    }
+    if (kind === 'reduce') {
+      showBanner(`${buyer.name} activated ${item.name}! ${emoji}`);
+      return;
+    }
+    if (store.isStockpiled(item)) {
+      const owned = store.countOwned(buyerId, item.id);
+      showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${owned}) — ready for Battle Day! ${emoji}`);
+      return;
+    }
 
-  audio.sfx('thud');
-  if (result.outcome === 'pierced') pierceFx(targetChip, result.applied);
-  else if (result.outcome === 'reduced') reducedFx(targetChip, amount, result.applied);
-  else attackLandingFx(targetChip, result.applied);
+    // attack / steal / pierce share the same outcome-driven fx. Unreachable
+    // while store.STOCKPILE_KINDS covers these kinds (it always does today) —
+    // kept only so a future non-stockpiled item still gets combat fx/banner.
+    if (result.outcome === 'blocked') {
+      audio.sfx('sword');
+      blockFx(targetChip);
+      showBanner(`🛡️ ${target.name} blocked the ${item.name} from ${buyer.name}!`);
+      return;
+    }
 
-  if (kind === 'steal') {
-    const note = result.outcome === 'reduced' ? ` (defenses halved it: ${amount} → ${result.applied})`
-      : result.outcome === 'pierced' ? ' (slipped past defenses!)' : '';
-    showBanner(`${buyer.name} stole ${result.applied} pts from ${target.name}!${note} ${emoji}`);
-  } else {
-    const verb = result.outcome === 'pierced' ? 'pierced' : result.outcome === 'reduced' ? 'struck (halved)' : 'struck';
-    showBanner(`${buyer.name} ${verb} ${target.name} for ${result.applied} pts! ${emoji}`);
+    audio.sfx('thud');
+    if (result.outcome === 'pierced') pierceFx(targetChip, result.applied);
+    else if (result.outcome === 'reduced') reducedFx(targetChip, amount, result.applied);
+    else attackLandingFx(targetChip, result.applied);
+
+    if (kind === 'steal') {
+      const note = result.outcome === 'reduced' ? ` (defenses halved it: ${amount} → ${result.applied})`
+        : result.outcome === 'pierced' ? ' (slipped past defenses!)' : '';
+      showBanner(`${buyer.name} stole ${result.applied} pts from ${target.name}!${note} ${emoji}`);
+    } else {
+      const verb = result.outcome === 'pierced' ? 'pierced' : result.outcome === 'reduced' ? 'struck (halved)' : 'struck';
+      showBanner(`${buyer.name} ${verb} ${target.name} for ${result.applied} pts! ${emoji}`);
+    }
+  } finally {
+    purchaseInFlight = false;
+    setConfirmButtonDisabled(false); // no-op if the modal is already gone
   }
 }
 
@@ -1459,7 +1497,13 @@ export default {
     };
     rootEl.addEventListener('click', clickHandler);
 
-    unsub = store.subscribe(doRender);
+    // Suspend store-triggered re-renders while a purchase is resolving (see
+    // purchaseInFlight above) — store.purchase()/addPoints()/activateShield()
+    // etc. all fire this subscribe callback, and rebuilding the DOM mid-flight
+    // would blow away the disabled attribute on the Confirm button. The
+    // explicit render(s) calls inside resolvePurchase() still run regardless,
+    // so the final state always paints once the guard clears.
+    unsub = store.subscribe(() => { if (!purchaseInFlight) doRender(); });
   },
 
   unmount() {
@@ -1470,6 +1514,7 @@ export default {
     // rather than waiting on that ~500ms poll — no leaked canvas/RAF.
     if (activeWildRollDispose) { try { activeWildRollDispose(); } catch (e) {} activeWildRollDispose = null; }
     wildRollActive = false;
+    purchaseInFlight = false; // don't leave the guard set if the teacher navigates away mid-PIN
     if (unsub) { unsub(); unsub = null; }
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     clickHandler = null;
