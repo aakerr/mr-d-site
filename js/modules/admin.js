@@ -9,6 +9,7 @@ import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
 import { lock, DEFAULT_PIN } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
+import { buildSampleState } from '../core/sampledata.js';  // ⚙️ Settings → "Load sample data"
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
@@ -1071,6 +1072,133 @@ const EFFECTS = {
 };
 const EFFECT_ORDER = ['attack', 'steal', 'pierce', 'shield', 'reduce', 'wild'];
 
+// ---------------------------------------------------------------------------
+// Duel-mode item kinds (Mr. D's own rules — see store.DUEL_KINDS). Shaped very
+// differently from the hit-points kinds above: damage is rolled on real dice
+// instead of a flat amount, attack items name the defenses that cancel them
+// and vice versa, and items belong to a slot (attack / defense / utility)
+// rather than a group. Kept as an entirely separate table rather than
+// shoehorned into EFFECTS above, because almost nothing else is shared.
+// ---------------------------------------------------------------------------
+const DUEL_EFFECT_ORDER = ['damage', 'steal', 'freeze', 'block', 'reveal', 'hide', 'timeturn', 'extraslot'];
+// Which slot a kind belongs to. Mr. D's rules never mix these — every damage,
+// steal or freeze item is something you attack WITH; every block item is
+// something you defend WITH — so the slot is derived from the kind rather
+// than asked as a separate question the teacher could get out of sync.
+const DUEL_SLOT_OF_KIND = {
+  damage: 'attack', steal: 'attack', freeze: 'attack',
+  block: 'defense',
+  reveal: 'utility', hide: 'utility', timeturn: 'utility', extraslot: 'utility',
+};
+const DUEL_EFFECTS = {
+  damage: {
+    label: '🗡️ Damage attack',
+    explain: 'A weapon. Chosen in secret for the week, then revealed and resolved together with every House’s defense on Battle Day.',
+    does: 'Rolled on real dice, live on the board. The roll × the multiplier below comes straight off the target House’s points.',
+    defense: 'Cancelled completely if the target is holding one of the defenses you pick below — the attack does nothing at all, though both items are still spent for the week.',
+    example: 'The Sword of Destiny: 450 pts to buy, strikes for 2d6 × 100 points. The Shield of Protection cancels it outright.',
+    range: 'Most damage weapons roll 2d6 or 3d6, worth 100 points a pip.',
+  },
+  steal: {
+    label: '\u{1F578}️ Steal attack',
+    explain: 'Like a damage attack, but the points move to the attacker instead of vanishing.',
+    does: 'Rolled on real dice, live on the board. The roll × the multiplier comes off the target and is added to the attacker’s own total.',
+    defense: 'Cancelled completely if the target is holding one of the defenses you pick below — nothing is taken and nothing is gained.',
+    example: 'Net of Entrapment: 600 pts to buy, steals 2d6 × 100 points. The Gauntlet of Defense cancels it.',
+    range: 'Usually priced a little above an equivalent damage weapon, since it pays for itself.',
+  },
+  freeze: {
+    label: '🪓 Freeze attack',
+    explain: 'Stops the target earning points for a few days, instead of taking any.',
+    does: 'Rolled on dice for how many days the target is frozen. A frozen House cannot be awarded points until the freeze ends.',
+    defense: 'Cancelled completely if the target is holding one of the defenses you pick below.',
+    example: 'The Legendary Ice Axe: 500 pts to buy, freezes for 1d6 days. The Shield of Protection cancels it.',
+    range: 'Usually 1d6 days.',
+  },
+  block: {
+    label: '🛡️ Defense',
+    explain: 'Held in secret for the week as this House’s defense, and revealed only if it is attacked.',
+    does: 'If the House holding it is struck by one of the attacks you pick below, that attack does nothing at all — no points move, nobody is frozen. Both items are still spent for the week either way.',
+    defense: 'This item IS the defense — nothing else in Mr. D’s rules stops an attack.',
+    example: 'The Shield of Protection stops the Sword of Destiny or the Legendary Ice Axe outright.',
+    range: 'Price a general-purpose defense close to what the attacks it stops cost.',
+  },
+  reveal: {
+    label: '🔮 Reveal (utility)',
+    explain: 'Shows you what another House has chosen to hold this week.',
+    does: 'Used any time. Reveals another House’s hidden attack or defense choice before anything is resolved.',
+    defense: 'Not an attack — nothing stops it.',
+    example: 'The Stone of Seeing: 1000 pts.',
+    range: 'Priced high — knowing the board ahead of time is powerful.',
+  },
+  hide: {
+    label: '🌫️ Hide (utility)',
+    explain: 'Keeps this House’s own choices secret from everyone else for a week.',
+    does: 'Stops other Houses’ Reveal items from working against this House for a week.',
+    defense: 'Not an attack — nothing stops it.',
+    example: 'The Shroud of Secrecy: 500 pts.',
+    range: 'Usually priced under Reveal, since it only protects — it doesn’t inform.',
+  },
+  timeturn: {
+    label: '⏳ Time Turner (utility)',
+    explain: 'Lets a House change its choices again after already being attacked that week.',
+    does: 'A one-time do-over: swap items after an attack has already landed.',
+    defense: 'Not an attack — nothing stops it.',
+    example: 'The Time Turner: 1000 pts.',
+    range: 'Priced high — it can undo an entire bad week.',
+  },
+  extraslot: {
+    label: '🎒 Extra Slot (utility)',
+    explain: 'Raises how much this House can hold at once.',
+    does: 'Normally a House may hold one attack item and one defense item at a time. This raises that to two of each.',
+    defense: 'Not an attack — nothing stops it.',
+    example: 'The Bag of Holding: 500 pts.',
+    range: 'One per House is usually plenty.',
+  },
+};
+
+// The single plain-English sentence for a duel item, built from whatever is
+// currently in the form (or already saved) — shared by the catalog row and
+// the live preview, exactly like effectSentence() above does for hit points.
+// `catalog` is used to turn counter ids into the item's actual NAME — a
+// teacher should never have to read a raw id like "shield".
+function duelEffectSentence(item, catalog) {
+  const kind = item?.effect?.kind;
+  if (!DUEL_EFFECTS[kind]) return '';
+  const dice = item.effect.dice || '?';
+  const mult = Number(item.effect.mult) || 1;
+  const targets = Number(item.effect.targets) || 1;
+  const anon = !!item.effect.anonymous;
+  const price = `Costs ${Number(item.cost) || 0} points.`;
+  const nameOf = (id) => ((catalog || []).find((x) => x.id === id) || {}).name || id;
+  const stopSentence = (ids) => (ids && ids.length
+    ? ` ${ids.map(nameOf).join(' or ')} cancels it completely.`
+    : ' Nothing defends against it.');
+
+  switch (kind) {
+    case 'damage': {
+      const who = targets > 1 ? `${targets} Houses at once` : 'a House';
+      return `${price} An attack item, held in secret until Battle Day. Strikes ${who} for ${dice} × ${mult} points, taken straight off their total.${stopSentence(item.counteredBy)}`;
+    }
+    case 'steal': {
+      const secret = anon ? ' Nobody is told who did it.' : '';
+      return `${price} An attack item, held in secret until Battle Day. Steals ${dice} × ${mult} points and adds them to the attacker's own total.${secret}${stopSentence(item.counteredBy)}`;
+    }
+    case 'freeze':
+      return `${price} An attack item, held in secret until Battle Day. Freezes a House so it cannot earn points for ${dice} days.${stopSentence(item.counteredBy)}`;
+    case 'block': {
+      const stops = (item.blocks || []).map(nameOf);
+      const list = stops.length ? stops.join(', ') : 'nothing yet — pick at least one attack below';
+      return `${price} A defense item, held in secret for the week. If the House holding it is struck by ${list}, that attack does nothing at all.`;
+    }
+    case 'reveal': return `${price} A utility item. Reveals what another House has chosen to hold this week.`;
+    case 'hide': return `${price} A utility item. Hides your choices from every other House for one week.`;
+    case 'timeturn': return `${price} A utility item. Lets you change your items again after already being attacked.`;
+    case 'extraslot': return `${price} A utility item. Raises the weekly limit so this House can hold two attack or two defense items at once.`;
+    default: return price;
+  }
+}
+
 // One-line label+amount for compact spots (kept short for the row header).
 function effectSummary(effect) {
   const e = EFFECTS[effect?.kind];
@@ -1122,8 +1250,16 @@ function shopRowHTML(it) {
     </div>`;
 }
 
-// 17+ items — grouped so the teacher can still scan it.
+// The Magic Shop's editor is entirely different shape depending on which
+// Battle Day rule set is active (see store.getCombatMode()) — hit-points items
+// use effect.amount, Mr. D's duel items use dice + counters. Dispatch here
+// once, rather than sprinkling mode checks through every shop function below.
 function renderShop() {
+  return ctxRef.store.getCombatMode() === 'duel' ? renderDuelShop() : renderHpShop();
+}
+
+// 17+ items — grouped so the teacher can still scan it.
+function renderHpShop() {
   const store = ctxRef.store;
   const items = store.getShopItems();
   const groups = [
@@ -1159,6 +1295,87 @@ function renderShop() {
         <div class="admin-mini">Items students buy with house points. The effect decides what happens when an item is used.</div>
         ${sections || '<div class="admin-empty admin-empty-sm">No items yet. Add one to stock the shop.</div>'}
       </div>
+    </div>`;
+}
+
+function duelShopRowHTML(it, catalog) {
+  const eff = DUEL_EFFECTS[it.effect?.kind] || {};
+  return `
+    <div class="admin-shop-row">
+      ${shopThumbHTML(it)}
+      <div class="admin-q-main">
+        <div class="admin-q-title">${esc(it.name)} <span class="admin-faint">${esc(eff.label || '')}</span></div>
+        <div class="admin-q-desc">${esc(it.desc || '')}</div>
+        <div class="admin-shop-plain">${esc(duelEffectSentence(it, catalog))}</div>
+      </div>
+      <div class="admin-shop-cost">${it.cost}<small>pts</small></div>
+      <div class="admin-q-row-actions">
+        <button class="admin-btn admin-btn-icon" data-action="shop-edit" data-id="${esc(it.id)}" aria-label="Edit">✏️</button>
+        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="shop-del" data-id="${esc(it.id)}" aria-label="Delete">🗑️</button>
+      </div>
+    </div>`;
+}
+
+// Grouped by SLOT rather than by kind-group — attack / defense / utility is
+// how Mr. D actually thinks about his own game (one of each held per week),
+// where the hit-points shop groups by offensive/defensive/wildcard instead.
+function renderDuelShop() {
+  const store = ctxRef.store;
+  const items = store.getShopItems();
+  const groups = [
+    { key: 'attack',  title: '⚔️ Attacks',  note: 'One held per House per week — hidden until Battle Day.' },
+    { key: 'defense', title: '🛡️ Defenses', note: 'One held per House per week — hidden until attacked.' },
+    { key: 'utility', title: '🔮 Utility',   note: 'No weekly limit — each does its own thing.' },
+  ];
+  const sections = groups.map((g) => {
+    const list = items
+      .filter((it) => (it.slot || 'utility') === g.key)
+      .sort((a, b) => (a.cost - b.cost) || a.name.localeCompare(b.name));
+    if (!list.length) return '';
+    return `
+      <div class="admin-shop-group">
+        <div class="admin-shop-group-head">
+          <span class="admin-shop-group-title">${g.title} <span class="admin-faint">(${list.length})</span></span>
+          <span class="admin-faint">${esc(g.note)}</span>
+        </div>
+        <div class="admin-q-list">${list.map((it) => duelShopRowHTML(it, items)).join('')}</div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-quests">
+      ${duelShopGuideHTML()}
+      <div class="admin-card">
+        <div class="admin-rows-head">
+          <span class="admin-card-title" style="margin:0">Magic Shop <span class="admin-faint">(${items.length} items · Mr. D's rules)</span></span>
+          <button class="admin-btn admin-btn-primary" data-action="shop-new">+ New Item</button>
+        </div>
+        <div class="admin-mini">Battle Day is currently running <b>Mr. D's rules</b>, so this is what's on offer. One attack and one defense item held per House per week — the counters below decide which defense cancels which attack.</div>
+        ${sections || '<div class="admin-empty admin-empty-sm">No items yet. Add one to stock the shop.</div>'}
+      </div>
+    </div>`;
+}
+
+// Plain-language primer for Mr. D's duel rules — the counter system explained
+// once, in full, rather than scattered across every item's editor.
+function duelShopGuideHTML() {
+  return `
+    <div class="admin-card">
+      <details class="admin-details admin-guide" ${shopGuideOpen ? 'open' : ''}>
+        <summary data-action="shop-guide-toggle">📖 How Mr. D's rules work</summary>
+        <div class="admin-guide-body">
+          <p class="admin-guide-p"><b>Each House picks one attack and one defense a week, in secret.</b> Nobody — not even the other Houses — sees what a House is holding until it is actually attacked.</p>
+          <p class="admin-guide-p"><b>Buying an item does nothing right away.</b> It sits held by the House, ready to be used (or revealed) on Battle Day.</p>
+          <p class="admin-guide-p"><b>Every attack has a counter.</b> If the House being attacked is holding the exact defense that cancels it, the attack does nothing at all — no points move, nobody is frozen. This is the whole game: guessing right, and guessing what the other House guessed.</p>
+          <p class="admin-guide-p"><b>Damage and Steal are rolled on real dice</b>, live on the board — "2d6 × 100" means roll two six-sided dice, add them, then multiply by 100 points.</p>
+          <p class="admin-guide-p"><b>Freeze stops a House earning points</b> for a number of days instead of taking any.</p>
+          <p class="admin-guide-p"><b>Utility items don't attack or defend.</b> They reveal information, hide it, undo a bad week, or raise how much a House can hold at once.</p>
+          <div class="admin-guide-callout">
+            ⚠️ When you tick which defense stops which attack, the app updates BOTH items to match — editing the Sword's counters also updates the Shield's "stops" list, even though you never opened the Shield's own editor.
+          </div>
+        </div>
+      </details>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.shop, 'More about the Magic Shop in the handbook')}</div>
     </div>`;
 }
 
@@ -1210,10 +1427,16 @@ function shopGuideHTML() {
 }
 
 function openShopForm(id) {
+  if (ctxRef.store.getCombatMode() === 'duel') openDuelShopForm(id);
+  else openHpShopForm(id);
+}
+
+function openHpShopForm(id) {
   const store = ctxRef.store;
   const it = id ? store.getShopItems().find((x) => x.id === id) : null;
   const hasImg = !!(it && it.image && it.image.startsWith('media:'));
   shopForm = {
+    mode: 'hp',
     id: it ? it.id : `si-${Date.now()}`,
     isNew: !it,
     name: it?.name || '',
@@ -1231,12 +1454,49 @@ function openShopForm(id) {
   if (hasImg) hydrateShopImage(shopForm.id);
 }
 
+// Mr. D's duel items: an id, a slot derived from the kind, dice/mult/targets
+// for anything rolled, and the counter lists (counteredBy on attacks, blocks
+// on defenses) — kept as plain arrays of OTHER items' ids, resolved to names
+// only at render time.
+function openDuelShopForm(id) {
+  const store = ctxRef.store;
+  const it = id ? store.getShopItems().find((x) => x.id === id) : null;
+  const hasImg = !!(it && it.image && it.image.startsWith('media:'));
+  const kind = it?.effect?.kind || 'damage';
+  shopForm = {
+    mode: 'duel',
+    id: it ? it.id : `si-${Date.now()}`,
+    isNew: !it,
+    name: it?.name || '',
+    desc: it?.desc || '',
+    emoji: it?.emoji || '✨',
+    cost: it?.cost ?? 500,
+    effectKind: kind,
+    dice: it?.effect?.dice || (kind === 'freeze' ? '1d6' : '2d6'),
+    mult: it?.effect?.mult ?? 100,
+    targets: it?.effect?.targets ?? 1,
+    anonymous: !!it?.effect?.anonymous,
+    counteredBy: Array.isArray(it?.counteredBy) ? it.counteredBy.slice() : [],
+    blocks: Array.isArray(it?.blocks) ? it.blocks.slice() : [],
+    imageFile: null,
+    imageStored: hasImg,
+    imageUrl: '',
+  };
+  renderShopModal();
+  if (hasImg) hydrateShopImage(shopForm.id);
+}
+
 async function hydrateShopImage(id) {
   const u = await media.url(`shop:${id}:image`);
   if (u && shopForm && shopForm.id === id) { shopForm.imageUrl = u; renderShopModal(); }
 }
 
 function renderShopModal() {
+  if (shopForm && shopForm.mode === 'duel') { renderDuelShopModal(); return; }
+  renderHpShopModal();
+}
+
+function renderHpShopModal() {
   const f = shopForm;
   const m = el('admin-modal-root');
   const effChips = EFFECT_ORDER.map((k) => {
@@ -1342,9 +1602,169 @@ function renderShopModal() {
   const n = el('admin-shop-name'); if (n && f.isNew) n.focus();
 }
 
+// Mr. D's duel items: kind picker drives everything else on the page — dice
+// fields for anything rolled, and the counter picker for attack/defense
+// items, which is the actual game (see duelShopGuideHTML above).
+function renderDuelShopModal() {
+  const f = shopForm;
+  const m = el('admin-modal-root');
+  const store = ctxRef.store;
+  const catalog = store.getShopItems().filter((x) => x.id !== f.id);
+
+  const effChips = DUEL_EFFECT_ORDER.map((k) => {
+    const e = DUEL_EFFECTS[k];
+    const on = f.effectKind === k;
+    return `<label class="admin-eff-opt${on ? ' on' : ''}">
+      <input type="radio" name="admin-eff" value="${k}" data-action="shop-eff" ${on ? 'checked' : ''} />
+      <span class="admin-eff-label">${e.label}</span>
+      <span class="admin-eff-explain">${esc(e.explain)}</span>
+    </label>`;
+  }).join('');
+
+  const eff = DUEL_EFFECTS[f.effectKind] || DUEL_EFFECTS.damage;
+  const slot = DUEL_SLOT_OF_KIND[f.effectKind] || 'utility';
+  const isDamageLike = f.effectKind === 'damage' || f.effectKind === 'steal';
+  const isFreeze = f.effectKind === 'freeze';
+
+  const kindGuide = `
+    <div class="admin-kind-guide">
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">What it does</span><span>${esc(eff.does)}</span></div>
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">Vs. defenses</span><span>${esc(eff.defense)}</span></div>
+      <div class="admin-kind-guide-row"><span class="admin-kind-tag">Example</span><span class="admin-kind-example">${esc(eff.example)}</span></div>
+    </div>`;
+
+  const diceFields = (isDamageLike || isFreeze) ? `
+    <div class="admin-two">
+      <div>
+        <label class="admin-flabel" for="admin-shop-dice">${isFreeze ? 'Dice rolled for days frozen' : 'Dice rolled for damage'}</label>
+        <input id="admin-shop-dice" class="admin-input" type="text" value="${esc(f.dice)}" placeholder="2d6" style="max-width:150px" />
+      </div>
+      ${isDamageLike ? `
+      <div>
+        <label class="admin-flabel" for="admin-shop-mult">Points per die pip <span class="admin-faint">(× the roll)</span></label>
+        <input id="admin-shop-mult" class="admin-input" type="number" min="1" value="${esc(f.mult)}" style="max-width:150px" />
+      </div>` : ''}
+    </div>
+    <div class="admin-step-hint" style="margin-top:2px">${isFreeze ? 'e.g. 1d6 rolls 1 to 6 days frozen.' : `e.g. 2d6 rolled live on the board, × ${esc(f.mult)} = the points this takes off the target.`}</div>
+  ` : '';
+
+  const targetsField = f.effectKind === 'damage' ? `
+    <label class="admin-flabel" style="margin-top:12px" for="admin-shop-targets">Houses hit at once</label>
+    <input id="admin-shop-targets" class="admin-input" type="number" min="1" max="4" value="${esc(f.targets)}" style="max-width:150px" />
+    <div class="admin-step-hint">1 = a single target. The Catapult hits 2 Houses at once.</div>
+  ` : '';
+
+  const anonField = isDamageLike ? `
+    <label class="admin-check" style="margin-top:12px">
+      <input type="checkbox" id="admin-shop-anon" ${f.anonymous ? 'checked' : ''} />
+      <span>Keep the attacker's identity secret <span class="admin-faint">(like the Cloak of Invisibility)</span></span>
+    </label>` : '';
+
+  // ---- the counter picker: the heart of the game -------------------------
+  let counterSection = '';
+  if (slot === 'attack') {
+    const defenses = catalog.filter((x) => (x.slot || 'utility') === 'defense');
+    const boxes = defenses.map((x) => `
+      <label class="admin-check">
+        <input type="checkbox" class="admin-counter-check" data-counter-id="${esc(x.id)}" ${f.counteredBy.includes(x.id) ? 'checked' : ''} />
+        <span>${esc(x.emoji || '🛡️')} ${esc(x.name)}</span>
+      </label>`).join('');
+    counterSection = `
+      <label class="admin-flabel" style="margin-top:16px">Which defense cancels this attack? <span class="admin-faint">(check any that apply)</span></label>
+      <div class="admin-mini">If the House this attack lands on is holding one of the defenses you check here, the attack does nothing at all — no points move, nobody is frozen — though both items are still spent for the week. Leave everything unchecked for an attack nothing can stop, like the Catapult.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${boxes || '<div class="admin-mini">No defense items exist yet — add one first, then come back here to link them.</div>'}</div>`;
+  } else if (slot === 'defense') {
+    const attacks = catalog.filter((x) => (x.slot || 'utility') === 'attack');
+    const boxes = attacks.map((x) => `
+      <label class="admin-check">
+        <input type="checkbox" class="admin-counter-check" data-counter-id="${esc(x.id)}" ${f.blocks.includes(x.id) ? 'checked' : ''} />
+        <span>${esc(x.emoji || '⚔️')} ${esc(x.name)}</span>
+      </label>`).join('');
+    counterSection = `
+      <label class="admin-flabel" style="margin-top:16px">Which attacks does this stop? <span class="admin-faint">(check any that apply)</span></label>
+      <div class="admin-mini">This House holds this item in secret for the week. If it is attacked with one of the items you check here, that attack does nothing at all — though both items are still spent. This is the counter system — the whole game is built on matchups like this one.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">${boxes || '<div class="admin-mini">No attack items exist yet — add one first, then come back here to link them.</div>'}</div>`;
+  }
+
+  const previewItem = {
+    cost: f.cost,
+    effect: { kind: f.effectKind, dice: f.dice, mult: f.mult, targets: f.targets, anonymous: f.anonymous },
+    counteredBy: f.counteredBy, blocks: f.blocks,
+  };
+  const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
+
+  const previewUrl = f.imageFile || f.imageStored ? f.imageUrl : '';
+  const imageArea = (f.imageFile || f.imageStored)
+    ? `<div class="admin-shop-imgprev">
+         ${previewUrl ? `<img src="${previewUrl}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
+         <span class="admin-faint">${f.imageFile ? 'pending save' : 'stored'}</span>
+         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
+       </div>`
+    : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
+         <input type="file" class="admin-file" data-shopimg="1" accept="image/*" hidden />
+         <span class="admin-drop-prompt">⬇ Optional image — drop or click (falls back to the emoji)</span>
+       </div>`;
+
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="shop-close"></div>
+    <div class="admin-modal admin-modal-lg">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">${f.isNew ? '🔮 New Item' : '🔮 Edit Item'} <span class="admin-faint">— Mr. D's rules</span></div>
+        <button class="admin-btn admin-btn-icon" data-action="shop-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body admin-modal-scroll">
+        <label class="admin-flabel" for="admin-shop-name">Name</label>
+        <input id="admin-shop-name" class="admin-input" type="text" value="${esc(f.name)}" placeholder="The Sword of Destiny" />
+
+        <label class="admin-flabel" for="admin-shop-desc">Description <span class="admin-faint">(shown to students)</span></label>
+        <textarea id="admin-shop-desc" class="admin-input admin-textarea" rows="2" placeholder="Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.">${esc(f.desc)}</textarea>
+
+        <div class="admin-two">
+          <div>
+            <label class="admin-flabel" for="admin-shop-emoji">Emoji</label>
+            <input id="admin-shop-emoji" class="admin-input" type="text" value="${esc(f.emoji)}" placeholder="🗡️" style="max-width:110px" />
+          </div>
+          <div>
+            <label class="admin-flabel" for="admin-shop-cost">Cost <span class="admin-faint">(points to buy)</span></label>
+            <input id="admin-shop-cost" class="admin-input" type="number" min="1" max="9999" value="${esc(f.cost)}" style="max-width:150px" />
+          </div>
+        </div>
+
+        <label class="admin-flabel">Image <span class="admin-faint">(optional — overrides the emoji)</span></label>
+        ${imageArea}
+
+        <label class="admin-flabel" style="margin-top:16px">What kind of item is it?</label>
+        <div class="admin-eff-group">${effChips}</div>
+        ${kindGuide}
+
+        ${diceFields}
+        ${targetsField}
+        ${anonField}
+        ${counterSection}
+
+        <div class="admin-preview admin-shop-preview">
+          <span class="admin-preview-eyebrow">In plain English</span>
+          <span class="admin-shop-preview-text" id="admin-shop-preview">${esc(duelEffectSentence(previewItem, catalog))}</span>
+        </div>
+        ${saveErr}
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="shop-close">Cancel</button>
+        <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="shop-save">Save item</button>
+      </div>
+    </div>`;
+  const n = el('admin-shop-name'); if (n && f.isNew) n.focus();
+}
+
 // Live preview: recompute the sentence as the teacher types cost/amount,
 // without re-rendering (which would steal focus mid-keystroke).
 function updateShopPreview() {
+  if (!shopForm) return;
+  if (shopForm.mode === 'duel') { updateDuelShopPreview(); return; }
+  updateHpShopPreview();
+}
+
+function updateHpShopPreview() {
   if (!shopForm || !el('admin-shop-preview')) return;
   const g = (id) => (el(id) ? el(id).value : '');
   el('admin-shop-preview').textContent = effectSentence({
@@ -1354,7 +1774,33 @@ function updateShopPreview() {
   });
 }
 
+function updateDuelShopPreview() {
+  if (!shopForm || !el('admin-shop-preview')) return;
+  const f = shopForm;
+  const store = ctxRef.store;
+  const catalog = store.getShopItems().filter((x) => x.id !== f.id);
+  const g = (id) => (el(id) ? el(id).value : '');
+  const item = {
+    cost: el('admin-shop-cost') ? g('admin-shop-cost') : f.cost,
+    effect: {
+      kind: f.effectKind,
+      dice: el('admin-shop-dice') ? g('admin-shop-dice') : f.dice,
+      mult: el('admin-shop-mult') ? g('admin-shop-mult') : f.mult,
+      targets: el('admin-shop-targets') ? g('admin-shop-targets') : f.targets,
+      anonymous: el('admin-shop-anon') ? el('admin-shop-anon').checked : f.anonymous,
+    },
+    counteredBy: f.counteredBy, blocks: f.blocks,
+  };
+  el('admin-shop-preview').textContent = duelEffectSentence(item, catalog);
+}
+
 function syncShopFromDom() {
+  if (!shopForm) return;
+  if (shopForm.mode === 'duel') { syncDuelShopFromDom(); return; }
+  syncHpShopFromDom();
+}
+
+function syncHpShopFromDom() {
   if (!shopForm) return;
   const g = (id) => (el(id) ? el(id).value : '');
   shopForm.name = g('admin-shop-name');
@@ -1366,6 +1812,33 @@ function syncShopFromDom() {
   const checked = rootEl.querySelector('input[name="admin-eff"]:checked');
   if (checked) shopForm.effectKind = checked.value;
   shopForm.saveError = null;   // any edit clears the previous failure notice
+}
+
+// Reads the counter checkboxes BEFORE the kind is switched (see the
+// admin-eff change handler), so a kind change captures the counters that
+// were on screen for the kind that was active a moment ago.
+function syncDuelShopFromDom() {
+  if (!shopForm) return;
+  const f = shopForm;
+  const g = (id) => (el(id) ? el(id).value : '');
+  f.name = g('admin-shop-name');
+  f.desc = g('admin-shop-desc');
+  f.emoji = g('admin-shop-emoji') || '✨';
+  if (el('admin-shop-cost')) f.cost = g('admin-shop-cost');
+  if (el('admin-shop-dice')) f.dice = g('admin-shop-dice');
+  if (el('admin-shop-mult')) f.mult = g('admin-shop-mult');
+  if (el('admin-shop-targets')) f.targets = g('admin-shop-targets');
+  if (el('admin-shop-anon')) f.anonymous = el('admin-shop-anon').checked;
+  const checked = rootEl.querySelector('input[name="admin-eff"]:checked');
+  if (checked) f.effectKind = checked.value;
+  const counterBoxes = rootEl.querySelectorAll('.admin-counter-check');
+  if (counterBoxes.length) {
+    const ids = Array.from(counterBoxes).filter((c) => c.checked).map((c) => c.dataset.counterId);
+    const slot = DUEL_SLOT_OF_KIND[f.effectKind] || 'utility';
+    if (slot === 'attack') f.counteredBy = ids;
+    else if (slot === 'defense') f.blocks = ids;
+  }
+  f.saveError = null;
 }
 
 function stageShopImage(file) {
@@ -1383,6 +1856,12 @@ function stageShopImage(file) {
 // Explain a null from store.saveShopItem() in the teacher's own terms rather
 // than failing silently. Mirrors the store's validation order.
 function explainSaveFailure(f, store) {
+  if (f.mode === 'duel') {
+    if (!f.name.trim()) return 'This item needs a name.';
+    if (!store.DUEL_KINDS.includes(f.effectKind)) return `“${f.effectKind}” isn't a type this game understands. Pick one of the eight options above.`;
+    if (!(Number(f.cost) > 0)) return 'Give this item a price of at least 1 point.';
+    return "Something in this item wasn't accepted. Check the name, price, and type.";
+  }
   if (!f.name.trim()) return 'This item needs a name.';
   if (!store.SHOP_KINDS.includes(f.effectKind)) return `“${f.effectKind}” isn't a magic type this game understands. Pick one of the six options above.`;
   if (!f.mythicOnly && !(Number(f.cost) > 0)) return 'Give this item a price of at least 1 point — or tick “Mythic reward only” if it should be earned instead of bought.';
@@ -1391,6 +1870,11 @@ function explainSaveFailure(f, store) {
 
 async function saveShopItem() {
   syncShopFromDom();
+  if (shopForm && shopForm.mode === 'duel') { await saveDuelShopItem(); return; }
+  await saveHpShopItem();
+}
+
+async function saveHpShopItem() {
   const f = shopForm;
   const store = ctxRef.store;
   const imgKey = `shop:${f.id}:image`;
@@ -1417,6 +1901,86 @@ async function saveShopItem() {
   closeModal();
   renderBody({ force: true });
   toast(wasNew ? 'Item added.' : 'Item updated.');
+}
+
+async function saveDuelShopItem() {
+  const f = shopForm;
+  const store = ctxRef.store;
+  const imgKey = `shop:${f.id}:image`;
+  let image = '';
+  if (f.imageFile) { await media.put(imgKey, f.imageFile); image = `media:${imgKey}`; }
+  else if (f.imageStored) { image = `media:${imgKey}`; }
+  else { await media.delete(imgKey); image = ''; }
+
+  const slot = DUEL_SLOT_OF_KIND[f.effectKind] || 'utility';
+  const payload = {
+    id: f.id, name: f.name.trim(), desc: f.desc.trim(), emoji: f.emoji || '✨', image,
+    cost: f.cost, mythicOnly: false,
+    slot,
+    effect: { kind: f.effectKind },
+  };
+  if (slot === 'attack') {
+    payload.effect.dice = f.dice;
+    if (f.effectKind !== 'freeze') payload.effect.mult = f.mult;
+    if (f.effectKind === 'damage') payload.effect.targets = f.targets;
+    if ((f.effectKind === 'damage' || f.effectKind === 'steal') && f.anonymous) payload.effect.anonymous = true;
+    payload.counteredBy = f.counteredBy.slice();
+  } else if (slot === 'defense') {
+    payload.blocks = f.blocks.slice();
+  }
+
+  const saved = store.saveShopItem(payload);
+  if (!saved) {
+    shopForm.saveError = explainSaveFailure(f, store);
+    renderShopModal();
+    return;
+  }
+
+  // Keep both sides of every counter relationship in sync, whichever side was
+  // just edited from. A defense's "stops" list and an attack's "cancelled by"
+  // list are two views of the same fact — a teacher should never have to
+  // remember to go update the other item by hand.
+  syncCounterReciprocals(store, saved);
+
+  revokeShopUrls();
+  const wasNew = f.isNew;
+  shopForm = null;
+  closeModal();
+  renderBody({ force: true });
+  toast(wasNew ? 'Item added.' : 'Item updated.');
+}
+
+// After saving `saved` (an attack or a defense item), walks the rest of the
+// catalog and makes the reciprocal field agree with what was just picked —
+// e.g. checking "Shield of Protection" while editing the Sword of Destiny
+// must also add the Sword to the Shield's OWN "stops" list, even though the
+// teacher never opened the Shield's editor to do it.
+function syncCounterReciprocals(store, saved) {
+  if (saved.slot !== 'attack' && saved.slot !== 'defense') return;
+  const catalog = store.getShopItems();
+  if (saved.slot === 'attack') {
+    const wanted = new Set(saved.counteredBy || []);
+    catalog.filter((x) => x.id !== saved.id && x.slot === 'defense').forEach((def) => {
+      const has = (def.blocks || []).includes(saved.id);
+      const should = wanted.has(def.id);
+      if (has === should) return;
+      const nextBlocks = should
+        ? [...(def.blocks || []), saved.id]
+        : (def.blocks || []).filter((id) => id !== saved.id);
+      store.saveShopItem({ ...def, blocks: nextBlocks });
+    });
+  } else {
+    const wanted = new Set(saved.blocks || []);
+    catalog.filter((x) => x.id !== saved.id && x.slot === 'attack').forEach((atk) => {
+      const has = (atk.counteredBy || []).includes(saved.id);
+      const should = wanted.has(atk.id);
+      if (has === should) return;
+      const nextCountered = should
+        ? [...(atk.counteredBy || []), saved.id]
+        : (atk.counteredBy || []).filter((id) => id !== saved.id);
+      store.saveShopItem({ ...atk, counteredBy: nextCountered });
+    });
+  }
 }
 
 function revokeShopUrls() { shopUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); shopUrls.clear(); }
@@ -1995,12 +2559,57 @@ function renderBattleRulesCard() {
 
 // ===========================================================================
 // TAB — BATTLE DAY (everything that only matters when houses are fighting:
-// prize rules, hit points, punching down, and the live shield/reduction board)
+// which rule set is active, prize rules, hit points, punching down, and the
+// live shield/reduction board)
 // ===========================================================================
+
+// Which of the two complete rule sets is running right now. NOT cosmetic —
+// switching swaps the whole Magic Shop for a different catalog at different
+// prices and clears whatever every house is currently holding, so a tap here
+// always goes through the same confirmation-modal pattern as every other
+// destructive action in this file rather than switching instantly.
+function renderCombatModeCard() {
+  const store = ctxRef.store;
+  const mode = store.getCombatMode();
+  const rows = Object.entries(store.COMBAT_MODES).map(([id, def]) => `
+    <div class="admin-shop-row">
+      <div class="admin-q-main">
+        <div class="admin-q-title">${mode === id ? '✅ ' : ''}${esc(def.label)}${mode === id ? ' <span class="admin-faint">— active now</span>' : ''}</div>
+        <div class="admin-mini" style="margin:2px 0 0">${esc(def.blurb)}</div>
+      </div>
+      ${mode === id ? '' : `<button class="admin-btn admin-btn-primary" data-action="combat-mode-request" data-mode="${esc(id)}">Switch to ${esc(def.label)}</button>`}
+    </div>`).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">⚔️ Battle Day rules</div>
+      <div class="admin-warn-line">Switching is a bigger deal than it looks — it is <b>not cosmetic</b>. It swaps the 🔮 Magic Shop for a completely different set of items at different prices, and it clears out anything every House is currently holding or has stockpiled. <b>Points, the ledger, quests, the planner and every other setting are left exactly as they are.</b></div>
+      <div class="admin-q-list" style="margin-top:10px">${rows}</div>
+    </div>`;
+}
+
+// The old hit-points prize/HP/punching-down card only means anything in 'hp'
+// mode — Mr. D's rules don't use a prize roll or hit points at all. Rather
+// than leave a form of controls that silently do nothing, this swaps it for a
+// short explanation while 'duel' is active.
+function renderBattleRulesGate() {
+  const store = ctxRef.store;
+  const mode = store.getCombatMode();
+  if (mode === 'hp') return renderBattleRulesCard();
+  const hp = store.COMBAT_MODES.hp;
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">⚔️ Battle rules <span class="admin-faint">(Hit Points mode only)</span></div>
+      <div class="admin-mini">Prize rules, starting HP and punching-down all live here, but <b>none of them do anything right now</b> — Mr. D's rules (the active rule set above) don't use hit points or a prize roll at all. Switch to <b>${esc(hp.label)}</b> above to see and edit these again.</div>
+    </div>`;
+}
+
 function renderBattleDay() {
   return `
     <div class="admin-settings">
-      ${renderBattleRulesCard()}
+      ${renderCombatModeCard()}
+
+      ${renderBattleRulesGate()}
 
       ${shieldPanelHTML()}
     </div>`;
@@ -2136,6 +2745,8 @@ function renderSettings() {
         <p class="admin-mini">Bringing one back in always happens right here, never anywhere else: tap <b>⬆ Import backup</b> above and choose the file (or <b>Restore from folder…</b> if a folder is connected). It replaces everything currently on screen, so it always asks you to confirm first — nothing is lost by accident.</p>
         <p class="admin-mini" style="margin-bottom:0">Moving to a different computer some day? The file to bring with you is the newest one named <code>mrd-backup-YYYY-MM-DD.json</code> — either the one already sitting in this computer's <b>Downloads</b> folder, or the newest dated file in your connected backup folder. Copy it across any way that's easy (a memory stick, emailing it to yourself, a Google Drive folder), then use <b>Import backup</b> on the new computer.</p>
       </div>
+
+      ${renderSampleDataCard()}
 
       ${renderLockCard()}
 
@@ -2602,6 +3213,36 @@ function importBackup(file) {
   };
   reader.onerror = () => toast('Could not read that file.');
   reader.readAsText(file);
+}
+
+// ----- sample data (Settings tab — demoing on a machine that starts empty) --
+// A brand-new machine has nothing on it, which makes it hard to show anyone
+// — including Mr. D himself — what a busy term actually looks like. This
+// builds four invented weeks of activity and writes it the same way a backup
+// restore does: straight to localStorage, then a reload. See js/core/sampledata.js.
+function renderSampleDataCard() {
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🧪 Sample Data</div>
+      <div class="admin-mini">A brand-new computer starts completely empty, which makes it hard to show anyone — including yourself — what a full, busy term actually looks like. This button fills in about four weeks of realistic-looking activity: quiz scores, quest completions, Magic Shop purchases, dice rolls, and an events calendar with dates both before and after today — so every screen in the app has something real to look at.</div>
+      <div class="admin-mini"><b>This is invented sample data, not your real class.</b> It exists only so you can explore a fully populated app and then clear it out. Loading it replaces everything currently on screen, exactly like restoring a backup, so it asks you to confirm first. When you're ready to start your real term, use Reset in the Danger Zone below.</div>
+      <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="load-sample-data">🧪 Load sample data</button>
+    </div>`;
+}
+
+function loadSampleData() {
+  openConfirm(
+    'Load sample data?',
+    'This fills the app with about four weeks of invented activity — points, quests, Magic Shop purchases, dice rolls and a full events calendar — so every screen has something populated to look at. It is sample data only, not your real class. Loading it replaces everything currently on screen, exactly like restoring a backup file — nothing you have entered for real is kept. This cannot be undone, though you can Reset afterward to start clean.',
+    () => {
+      try {
+        const sample = buildSampleState();
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(sample));
+        location.reload();
+      } catch (e) { toast('Could not load sample data: ' + e.message); }
+    },
+    { danger: false, yesLabel: 'Load sample data' },
+  );
 }
 
 // ----- automatic file-based backup (js/core/backup.js) -----
@@ -4284,9 +4925,26 @@ function onClick(e) {
     case 'shop-del': {
       const id = btn.dataset.id;
       const it = store.getShopItems().find((x) => x.id === id);
-      openConfirm(`Delete item “${it ? it.name : ''}”?`, 'This removes it from the shop catalog.', () => {
+      const duel = store.getCombatMode() === 'duel';
+      const body = duel
+        ? 'This removes it from the shop catalog. Any other item naming it as a counter stops naming it — you may want to pick a new counter for those.'
+        : 'This removes it from the shop catalog.';
+      openConfirm(`Delete item “${it ? it.name : ''}”?`, body, () => {
         if (it?.image?.startsWith('media:')) media.delete(it.image.slice('media:'.length));
-        store.deleteShopItem(id); renderBody(); toast('Item deleted.');
+        store.deleteShopItem(id);
+        // Strip any dangling reference to the deleted item from every other
+        // item's counter lists, so an old id never lingers as a broken link.
+        if (duel) {
+          store.getShopItems().forEach((x) => {
+            if (Array.isArray(x.counteredBy) && x.counteredBy.includes(id)) {
+              store.saveShopItem({ ...x, counteredBy: x.counteredBy.filter((c) => c !== id) });
+            }
+            if (Array.isArray(x.blocks) && x.blocks.includes(id)) {
+              store.saveShopItem({ ...x, blocks: x.blocks.filter((c) => c !== id) });
+            }
+          });
+        }
+        renderBody(); toast('Item deleted.');
       });
       break;
     }
@@ -4294,6 +4952,7 @@ function onClick(e) {
     // backup & restore
     case 'backup-export': exportBackup(); break;
     case 'backup-import': { const inp = el('admin-import-file'); if (inp) inp.click(); break; }
+    case 'load-sample-data': loadSampleData(); break;
     case 'backup-connect': connectBackupFolder(); break;
     case 'backup-save-now': saveBackupNow(); break;
     case 'backup-restore-folder': restoreFromFolder(); break;
@@ -4460,6 +5119,26 @@ function onClick(e) {
       store.updateCombat({ punchingDown: !cur.punchingDown });
       renderBody({ force: true });
       toast(`Punching down ${!cur.punchingDown ? 'allowed' : 'blocked'}.`);
+      break;
+    }
+
+    // which Battle Day rule set is active — never switches on a tap, since it
+    // swaps the whole Magic Shop and clears every House's holdings
+    case 'combat-mode-request': {
+      const target = btn.dataset.mode;
+      const def = store.COMBAT_MODES[target];
+      if (!def) break;
+      openConfirm(
+        `Switch to "${def.label}"?`,
+        `This is not cosmetic. The Magic Shop's items change completely — different items, different prices — and anything Houses are currently holding or have stockpiled is cleared out. Points, the ledger, quests, the planner and every other setting are left exactly as they are. ${def.blurb}`,
+        () => {
+          const applied = store.setCombatMode(target);
+          activeTab = 'battle';
+          renderBody({ force: true });
+          toast(`Battle Day now uses "${store.COMBAT_MODES[applied].label}".`);
+        },
+        { danger: false, yesLabel: `Switch to ${def.label}` },
+      );
       break;
     }
 
@@ -5225,6 +5904,8 @@ export default {
       if (e.target.name === 'admin-eff') { syncShopFromDom(); shopForm.effectKind = e.target.value; renderShopModal(); return; }
       if (e.target.name === 'admin-quest-repeat') { syncQuestFromDom(); questForm.repeatable = e.target.value === '1'; renderQuestModal(); return; }
       if (e.target.id === 'admin-shop-mythic') { syncShopFromDom(); shopForm.mythicOnly = e.target.checked; renderShopModal(); return; }
+      if (e.target.id === 'admin-shop-anon') { syncShopFromDom(); renderShopModal(); return; }
+      if (e.target.classList && e.target.classList.contains('admin-counter-check')) { syncShopFromDom(); renderShopModal(); return; }
       if (e.target.id === 'admin-import-file') { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ''; return; }
       const inp = e.target.closest('input.admin-file');
       if (!inp) return;
@@ -5284,7 +5965,8 @@ export default {
         // Applies immediately, same as the master slider above.
         setScreenVolume(screen, pct);
       }
-      else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount') updateShopPreview();
+      else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount'
+        || e.target.id === 'admin-shop-dice' || e.target.id === 'admin-shop-mult' || e.target.id === 'admin-shop-targets') updateShopPreview();
       else if (e.target.id === 'admin-quest-points') updateQuestPreview({ pointsChanged: true });
       else if (e.target.id === 'admin-quest-penalty') { if (questForm) questForm.penaltyTouched = true; updateQuestPreview(); }
       else if (e.target.id === 'admin-quest-icon') updateQuestIconPreview();

@@ -11,10 +11,11 @@
 // directly, via store.applyAttack itself, unchanged.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { lock } from '../core/lock.js';
+import { createDiceSim } from './dice3d/sim.js';
 
 const STYLE_ID = 'battle-styles';
 
-// Offensive item kinds a house can use from this screen.
+// Offensive item kinds a house can use from this screen (HP-mode catalog).
 const OFFENSIVE_KINDS = new Set(['attack', 'steal', 'pierce']);
 
 // Sequence timings (ms). Every individual animation stays ≤900ms.
@@ -22,6 +23,17 @@ const TRAVEL_MS = 280;   // projectile flight
 const IMPACT_MS = 620;   // flash / shake / damage-number lifetime
 const COUNT_MS = 450;    // point-total roll
 const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
+
+// ---- Mr. D's duel rules (combatMode 'duel') — sequence timings ------------
+// His five steps play as five beats, each held long enough for a class to
+// follow: thrown -> revealed -> countered-or-not -> dice -> points. Beats
+// stay short; the dice roll itself (createDiceSim) takes as long as the
+// physics needs, on top of these.
+const DUEL2_THROW_MS = 320;    // attack item flies across the arena
+const DUEL2_REVEAL_MS = 950;   // defender's held defense flips face-up
+const DUEL2_COUNTER_MS = 1700; // hold on a successful counter — the best moment in his game
+const DUEL2_ROLL_HOLD_MS = 1400; // hold on the settled dice total before it's applied
+const DUEL2_OUTCOME_HOLD_MS = 1600; // hold on the hit/freeze outcome card before the final tally
 
 // ---- module-scoped lifecycle state -----------------------------------------
 let ctxRef = null;
@@ -38,6 +50,23 @@ let resolving = false;        // suspends subscribe re-renders mid-strike
 const timers = new Set();
 const fxNodes = new Set();    // transient combat-effect DOM nodes, force-cleaned on unmount
 
+// ---- Mr. D's duel rules — mini shop + dice overlay state -------------------
+let miniShopEl = null;        // shop popup, mounted in #overlay-root
+let miniShopOpen = false;
+let miniShopBuyerId = null;   // which house the popup is buying for
+let miniShopBuyInFlight = false;
+let diceSim = null;           // live createDiceSim instance, if a roll is mounted
+let diceOverlayEl = null;     // dice roll overlay, mounted in #overlay-root
+
+// Pairs ("attackerId:targetId") whose strike has already been thrown and
+// resolved THIS Battle Day session — the defender's held defense shows
+// face-up on their card from that point on, same as a Stone of Seeing peek
+// (store.hasRevealed). This is the local half of that rule: combat itself
+// reveals, with no item spent, and store has no flag for that. Cleared with
+// store.clearReveals() when Battle Day ends.
+const combatRevealed = new Set();
+function pairKey(attackerId, targetId) { return `${attackerId}:${targetId}`; }
+
 function later(fn, ms) {
   const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('battle:', e); } }, ms);
   timers.add(id);
@@ -45,6 +74,10 @@ function later(fn, ms) {
 }
 function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
+// A timer-based Promise, tracked in `timers` like every other delay in this
+// file, so an unmount mid-sequence sweeps it up instead of leaving a dangling
+// resolve.
+function delay(ms) { return new Promise((resolve) => { later(resolve, ms); }); }
 
 function prefersReducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -327,6 +360,12 @@ function injectStyles() {
      roughly their original size on a 720p window and lets them grow properly on
      a 1080p board (79px -> 108px, and 119px -> 162px). The strike list is the
      element allowed to scroll, so it is the one that gives. */
+  /* Duel mode stacks points, crest, name AND two labelled slot rows into one
+     card. At 1280x720 that budget does not stretch to a 22vh crest — the
+     utility row overflowed the card and collided with the teacher-scoring band
+     below it, by 118px. The crest gives way because it is the one part with no
+     information in it. On a 1080p board the vh terms give it back. */
+  .duel-root[data-mode="duel"] .duel-crest{height:clamp(64px,12.4vh,205px);}
   .duel-crest{position:relative;flex:0 0 auto;height:clamp(115px,22vh,320px);
     aspect-ratio:1;display:flex;align-items:center;justify-content:center;}
   .duel-crest img{max-width:100%;max-height:100%;height:100%;width:auto;object-fit:contain;
@@ -592,6 +631,159 @@ function injectStyles() {
     animation:duel-toast-kf .25s ease both;}
   @keyframes duel-toast-kf{0%{opacity:0;transform:translate(-50%,10px);}100%{opacity:1;transform:translate(-50%,0);}}
 
+  /* ---- Mr. D's rules (combatMode 'duel') --------------------------------- */
+  /* defender card: the secret shape, never its contents, until struck */
+  .duel-def-hidden{background:rgba(76,29,149,.18);border:1px dashed rgba(167,139,250,.5);color:#c4b5fd;
+    justify-content:center;text-align:center;}
+  .duel-def-frozen{background:rgba(30,64,175,.2);border:1px solid rgba(96,165,250,.55);color:#bfdbfe;
+    justify-content:center;text-align:center;}
+
+  /* the reveal — defender's held defense flips face-up over their crest at
+     the moment of the strike, not before */
+  .duel-reveal-card{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+    display:flex;flex-direction:column;align-items:center;gap:.2rem;
+    background:rgba(11,15,25,.95);border:2px solid #a78bfa;border-radius:1rem;
+    padding:.6rem 1.1rem;pointer-events:none;z-index:11;text-align:center;
+    box-shadow:0 14px 40px rgba(0,0,0,.6),0 0 30px -8px rgba(167,139,250,.6);
+    animation:duel-reveal-kf .4s cubic-bezier(.34,1.56,.64,1) both;}
+  @keyframes duel-reveal-kf{
+    0%{opacity:0;transform:translate(-50%,-50%) rotateY(90deg) scale(.7);}
+    55%{opacity:1;}
+    100%{opacity:1;transform:translate(-50%,-50%) rotateY(0) scale(1);}
+  }
+  .duel-reveal-emoji{font-size:clamp(1.8rem,3.4vw,2.6rem);display:block;
+    filter:drop-shadow(0 0 14px rgba(167,139,250,.6));}
+  .duel-reveal-name{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#ddd6fe;
+    font-size:clamp(.78rem,1.5vw,.95rem);white-space:nowrap;}
+
+  /* dice overlay — his rule #4: the damage dice roll live, on screen */
+  .duel-dice-overlay{position:fixed;inset:0;z-index:80;overflow:hidden;
+    background:rgba(7,9,18,.6);-webkit-backdrop-filter:blur(10px) saturate(115%);
+    backdrop-filter:blur(10px) saturate(115%);display:flex;align-items:center;
+    justify-content:center;animation:battle-curtain .18s ease-out both;}
+  .duel-dice-stage{display:flex;flex-direction:column;align-items:center;gap:.9rem;
+    width:min(720px,92vw);max-height:92vh;padding:0 1rem;}
+  .duel-dice-title{font-weight:800;color:#fca5a5;text-align:center;line-height:1.2;
+    font-size:clamp(1rem,2.4vw,1.5rem);text-shadow:0 0 22px rgba(239,68,68,.5);}
+  .duel-dice-frame{position:relative;width:100%;aspect-ratio:16/9;border-radius:1.25rem;
+    overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.65);background:rgba(0,0,0,.35);
+    border:1px solid rgba(239,68,68,.35);}
+  .duel-dice-host{position:absolute;inset:0;}
+  .duel-dice-total{min-height:2.6em;text-align:center;color:#e5e7eb;font-weight:700;
+    line-height:1.3;font-size:clamp(.85rem,1.8vw,1.05rem);opacity:0;transition:opacity .2s ease;}
+  .duel-dice-total.show{opacity:1;}
+  .duel-dice-parts{color:#9ca3af;margin-right:.5rem;}
+  .duel-dice-num{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
+    font-size:clamp(2rem,5vw,3.2rem);text-shadow:0 0 24px rgba(253,230,138,.6);}
+
+  /* mini shop — buy without leaving Battle Day */
+  .duel-shop-overlay{position:fixed;inset:0;z-index:75;background:rgba(7,9,18,.72);
+    display:flex;align-items:center;justify-content:center;padding:clamp(.75rem,3vw,2rem);
+    animation:battle-curtain .18s ease-out both;overflow-y:auto;}
+  .duel-shop-modal{position:relative;width:min(980px,100%);max-height:92vh;overflow-y:auto;
+    background:#141225;border:2px solid #a855f7;border-radius:1.5rem;
+    padding:clamp(1rem,2.4vw,1.75rem);box-shadow:0 24px 70px rgba(0,0,0,.7),0 0 60px rgba(168,85,247,.25);}
+  .duel-shop-close{position:absolute;top:.7rem;right:.7rem;min-width:36px;min-height:36px;
+    border-radius:.6rem;border:1px solid #4b5563;background:#1f2937;color:#e5e7eb;
+    font-weight:800;cursor:pointer;touch-action:manipulation;}
+  .duel-shop-title{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#e9d5ff;
+    text-align:center;font-size:clamp(1.2rem,2.6vw,1.7rem);margin-bottom:.9rem;}
+  .duel-shop-houses{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:.6rem;margin-bottom:1rem;}
+  .duel-shop-house{display:flex;flex-direction:column;align-items:center;gap:.2rem;
+    border-radius:.9rem;border:2px solid var(--pick-accent,#374151);background:#111827;
+    padding:.55rem .5rem;cursor:pointer;touch-action:manipulation;
+    transition:transform .12s ease,filter .15s ease;}
+  .duel-shop-house:hover{filter:brightness(1.14);}
+  .duel-shop-house:active{transform:scale(.97);}
+  .duel-shop-house-active{box-shadow:0 0 0 3px var(--pick-accent,#a855f7);}
+  .duel-shop-house-crest{width:36px;height:36px;object-fit:contain;}
+  .duel-shop-house-name{font-weight:800;font-size:.82rem;color:var(--pick-accent,#f9fafb);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
+  .duel-shop-house-pts{font-size:.72rem;color:#fde68a;font-variant-numeric:tabular-nums;}
+  .duel-shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.75rem;}
+  .duel-shop-item{display:flex;flex-direction:column;gap:.3rem;border-radius:1rem;
+    border:1px solid #374151;background:#111827;padding:.7rem .8rem;}
+  .duel-shop-item-head{display:flex;align-items:center;gap:.5rem;}
+  .duel-shop-item-emoji{font-size:1.7rem;flex-shrink:0;}
+  .duel-shop-item-name-wrap{flex:1;min-width:0;}
+  .duel-shop-item-name{font-weight:800;font-size:.9rem;color:#f9fafb;line-height:1.2;}
+  .duel-shop-item-held{font-weight:700;font-size:.68rem;color:#c4b5fd;white-space:nowrap;}
+  .duel-shop-item-slot{font-size:.62rem;font-weight:700;letter-spacing:.08em;color:#9ca3af;margin-top:.1rem;}
+  .duel-shop-item-cost{flex-shrink:0;font-weight:800;font-size:.82rem;color:#1e1b3a;
+    background:#fde68a;border-radius:999px;padding:.2rem .55rem;white-space:nowrap;}
+  .duel-shop-item-desc{font-size:.76rem;color:#d1d5db;line-height:1.35;flex:1;}
+  .duel-shop-buy{min-height:38px;border-radius:.7rem;border:none;font-weight:800;font-size:.85rem;
+    cursor:pointer;touch-action:manipulation;background:linear-gradient(135deg,#a855f7,#7e22ce);
+    color:#fff;transition:transform .12s ease,filter .15s ease;}
+  .duel-shop-buy:hover:not(:disabled){filter:brightness(1.12);}
+  .duel-shop-buy:active:not(:disabled){transform:scale(.96);}
+  .duel-shop-buy:disabled{opacity:.45;cursor:not-allowed;background:#374151;}
+  .duel-shop-item-reason{font-size:.7rem;font-weight:700;color:#f87171;line-height:1.3;}
+
+  /* ---- fixed item-slot cards (duel mode redesign) -------------------------
+     Points sit directly above the crest now (no HP row in this mode), and
+     item holdings render as two FIXED rows — item slots, then utility slots
+     — every cell always drawn (filled / empty / locked) so the row COUNT
+     never changes. Fixed heights + line-clamped text mean the card's total
+     height cannot move when a house buys, spends, or loses an item; the
+     attacker and defender cards use the exact same cell classes, so they
+     measure identically by construction, the same way the rest of this file
+     mirrors the two sides. */
+  /* The identity block (points, crest, name) takes the slack; the slots sit at
+     the BOTTOM of the card, which is where he asked for them and is also what
+     stops a tall card leaving dead space under them. margin-top:auto on the
+     first slot label pushes everything after it down. */
+  .duel2-slots-start{margin-top:auto;}
+  .duel2-slots-row{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:.5rem;}
+  .duel2-util-row{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;}
+  .duel2-slot{position:relative;height:clamp(56px,8.4vh,120px);border-radius:.9rem;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:.15rem;text-align:center;padding:.4rem .35rem;overflow:hidden;box-sizing:border-box;
+    border:2px solid #4b5563;background:#111827;}
+  .duel2-slot-emoji{font-size:1.5rem;line-height:1;}
+  .duel2-slot-name{font-weight:800;font-size:.78rem;line-height:1.15;color:#f9fafb;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .duel2-slot-meta{display:flex;flex-direction:column;gap:.1rem;align-items:center;}
+  .duel2-slot-dmg{font-size:.7rem;font-weight:800;color:#fca5a5;}
+  .duel2-slot-kind{font-size:.6rem;font-weight:700;letter-spacing:.04em;color:#c4b5fd;
+    background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.35);
+    border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
+  .duel2-slot-reason{position:absolute;bottom:.3rem;left:.3rem;right:.3rem;
+    font-size:.6rem;font-weight:700;color:#f87171;line-height:1.15;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;}
+  button.duel2-slot{cursor:pointer;touch-action:manipulation;font:inherit;
+    transition:transform .12s ease,border-color .15s ease,filter .15s ease;}
+  button.duel2-slot:hover:not(:disabled){border-color:#ef4444;filter:brightness(1.12);}
+  button.duel2-slot:active:not(:disabled){transform:scale(.97);}
+  button.duel2-slot:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.35);}
+  .duel2-slot-locked{border-style:dashed;border-color:#4b5563;background:rgba(17,24,39,.5);}
+  .duel2-slot-lock{font-size:1.3rem;opacity:.8;}
+  .duel2-slot-lock-label{font-size:.64rem;font-weight:700;color:#9ca3af;line-height:1.2;}
+  .duel2-slot-empty{border-style:dashed;}
+  .duel2-slot-empty-label{font-size:.72rem;font-weight:700;font-style:italic;color:#6b7280;}
+  .duel2-slot-hidden{border-color:rgba(167,139,250,.5);background:rgba(76,29,149,.16);}
+  .duel2-slot-hidden-emoji{font-size:1.6rem;}
+  .duel2-slot-hidden-label{font-size:.72rem;font-weight:800;color:#c4b5fd;}
+  .duel2-slot-revealed{border-color:rgba(96,165,250,.6);background:rgba(30,64,175,.16);}
+
+  .duel2-util-slot{height:clamp(32px,4.4vh,70px);border-radius:.75rem;border:1px solid #374151;
+    background:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:.1rem;text-align:center;padding:.3rem .2rem;overflow:hidden;box-sizing:border-box;}
+  .duel2-util-emoji{font-size:1.1rem;line-height:1;}
+  .duel2-util-name{font-size:.62rem;font-weight:800;color:#e5e7eb;line-height:1.1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
+  .duel2-util-state{font-size:.58rem;font-weight:700;color:#9ca3af;}
+  .duel2-util-empty{opacity:.5;}
+  .duel2-util-held{border-color:rgba(253,230,138,.4);}
+  button.duel2-util-slot{font:inherit;}
+  button.duel2-util-interactive{cursor:pointer;touch-action:manipulation;
+    transition:transform .12s ease,border-color .15s ease,filter .15s ease;}
+  button.duel2-util-interactive:hover:not(:disabled){border-color:#a78bfa;filter:brightness(1.15);}
+  button.duel2-util-interactive:active:not(:disabled){transform:scale(.96);}
+  button.duel2-util-interactive:not(:disabled) .duel2-util-state{color:#c4b5fd;font-weight:800;}
+  button.duel2-util-interactive:disabled{cursor:not-allowed;}
+
   /* Narrow / portrait: stack the three columns and let the page scroll. */
   @media (max-width:1080px){
     .duel-root{overflow-y:auto;display:block;}
@@ -606,6 +798,7 @@ function injectStyles() {
     .battle-stamp span,.battle-shake,.battle-ember,
     .duel-proj,.duel-proj-stopped,.duel-fx-flash,.duel-crest-shake,.duel-fx-ring,.duel-fx-ghost,
     .duel-fx-dmg,.duel-fx-chip,.duel-outcome,.duel-toast,.duel-reduce-flare,
+    .duel-reveal-card,.duel-dice-overlay,.duel-shop-overlay,
     .battle-fx-vignette{animation:none;}
   }
   `;
@@ -640,8 +833,9 @@ function triggerCinematic() {
 
   // A Battle Day session begins here — everyone's HP refills to full before
   // the duel ever renders, so no house arrives already half-beaten from last
-  // week's fight.
-  ctxRef.store.resetAllHp();
+  // week's fight. Mr. D's duel rules (combatMode 'duel') don't use hit
+  // points at all — this is HP-mode-only housekeeping.
+  if (ctxRef.store.getCombatMode() === 'hp') ctxRef.store.resetAllHp();
 
   ctxRef.audio.sfx('sword');
   // A recorded war cry REPLACES the robot voice rather than joining it — two
@@ -964,7 +1158,17 @@ function teacherRowHtml(store) {
     </div>`;
 }
 
+// Dispatches to whichever ruleset is active. HP mode (renderHpDuel) is the
+// original screen, left untouched below. 'duel' is Mr. D's own rules
+// (renderMrDDuel), built alongside it — see the STORE API note at the top of
+// this file's task brief for why the two never share a render path.
 function renderDuel() {
+  if (!rootEl || resolving) return;
+  if (ctxRef.store.getCombatMode() === 'duel') renderMrDDuel();
+  else renderHpDuel();
+}
+
+function renderHpDuel() {
   if (!rootEl || resolving) return;
   view = 'duel';
   const store = ctxRef.store;
@@ -1002,13 +1206,13 @@ function renderDuel() {
       ${teacherRowHtml(store)}
     </div>`;
 
-  wireDuel();
+  wireHpDuel();
 }
 
 // =============================================================================
-// DUEL VIEW — wiring
+// DUEL VIEW — wiring (HP mode)
 // =============================================================================
-function wireDuel() {
+function wireHpDuel() {
   if (!rootEl) return;
   const store = ctxRef.store;
 
@@ -1043,7 +1247,7 @@ function wireDuel() {
   if (clearTarget) clearTarget.addEventListener('click', () => { targetId = null; renderDuel(); });
 
   rootEl.querySelectorAll('[data-strike-item]').forEach((btn) => {
-    btn.addEventListener('click', () => strike(btn.getAttribute('data-strike-item')));
+    btn.addEventListener('click', () => strikeHp(btn.getAttribute('data-strike-item')));
   });
 
   rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
@@ -1051,6 +1255,671 @@ function wireDuel() {
       teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
     });
   });
+}
+
+// =============================================================================
+// DUEL VIEW — markup (Mr. D's rules, combatMode 'duel')
+// =============================================================================
+// His five steps, in order: (1) attacker picks a held ATTACK item, (2) the
+// defender's held DEFENSE item is revealed — hidden until this moment,
+// (3) a correct counter cancels the attack outright, (4) otherwise the
+// damage dice are rolled live and read aloud, (5) the points move. No hit
+// points here — a duel-mode strike moves POINTS directly via
+// store.applyDuelAttack, same as store.previewDuelAttack already previews.
+
+function kindTagDuel(kind) {
+  return { damage: 'Attack', steal: 'Steal', freeze: 'Freeze' }[kind] || kind;
+}
+
+// ---- fixed item-slot cards --------------------------------------------------
+// Redesigned layout: no HP in this mode, so points move up above the crest,
+// and item holdings render as a FIXED grid — 2 item slots, then 3 utility
+// slots — always all of them, whether filled, empty, or locked. That is what
+// keeps a card's height constant whatever a house happens to be holding: the
+// slot COUNT never changes, only what's drawn inside each one. See .duel2-slot
+// in the styles for the fixed heights this depends on.
+const UTILITY_ITEM_IDS = ['stone', 'shroud', 'timeturner'];
+
+// Expands getInventory's { item, count } rows into one entry per physically
+// held copy, e.g. two Swords -> [swordItem, swordItem] — each occupies its
+// own slot, independently strikeable.
+function heldSlotInstances(store, houseId, slot) {
+  const flat = [];
+  store.getInventory(houseId)
+    .filter((row) => row.item && row.item.slot === slot)
+    .forEach(({ item, count }) => { for (let i = 0; i < count; i += 1) flat.push(item); });
+  return flat;
+}
+
+function lockedSlotHtml(slotLabel) {
+  return `<div class="duel2-slot duel2-slot-locked">
+    <span class="duel2-slot-lock">🔒</span>
+    <span class="duel2-slot-lock-label">Bag of Holding unlocks this ${esc(slotLabel)} slot</span>
+  </div>`;
+}
+
+// One attack-slot cell on the attacker's card: locked (no 2nd slot without
+// the Bag of Holding), empty, or holding an item ready to strike with.
+function attackSlotHtml(item, unlocked, target, frozen) {
+  if (!unlocked) return lockedSlotHtml('attack');
+  if (!item) return `<div class="duel2-slot duel2-slot-empty"><span class="duel2-slot-empty-label">Empty attack slot</span></div>`;
+  const kind = item.effect.kind;
+  const dice = item.effect.dice || '1d6';
+  const mult = Math.max(1, Number(item.effect.mult) || 1);
+  const dmgText = kind === 'freeze' ? `${dice} days frozen` : mult > 1 ? `${dice} × ${mult}` : dice;
+  const disabled = !target || frozen;
+  const reason = frozen ? '❄️ Frozen' : (!target ? '🎯 Choose an opponent' : '');
+  return `
+    <button type="button" class="duel2-slot duel2-slot-filled" data-strike-item="${esc(item.id)}" ${disabled ? 'disabled' : ''}
+      title="${esc(item.desc || item.name)}">
+      <span class="duel2-slot-emoji">${esc(item.emoji || '⚔️')}</span>
+      <span class="duel2-slot-name">${esc(item.name)}</span>
+      <span class="duel2-slot-meta">
+        <span class="duel2-slot-dmg">${esc(dmgText)}</span>
+        <span class="duel2-slot-kind">${esc(kindTagDuel(kind))}</span>
+      </span>
+      ${reason ? `<span class="duel2-slot-reason">${esc(reason)}</span>` : ''}
+    </button>`;
+}
+
+// One defense-slot cell on the defender's card: locked, a secret (the normal
+// state — his rule #2), or revealed — either because a Stone of Seeing
+// peeked it (store.hasRevealed) or because a strike against THIS attacker has
+// already landed this session (combatRevealed). Revealed always shows what
+// is actually held right now, live, not a stale snapshot from the moment it
+// was revealed.
+function defenseSlotHtml(item, unlocked, revealed) {
+  if (!unlocked) return lockedSlotHtml('defense');
+  if (!revealed) {
+    return `<div class="duel2-slot duel2-slot-hidden">
+      <span class="duel2-slot-hidden-emoji">🎭</span>
+      <span class="duel2-slot-hidden-label">Hidden</span>
+    </div>`;
+  }
+  if (!item) {
+    return `<div class="duel2-slot duel2-slot-revealed duel2-slot-empty"><span class="duel2-slot-empty-label">Undefended</span></div>`;
+  }
+  return `<div class="duel2-slot duel2-slot-revealed">
+    <span class="duel2-slot-emoji">${esc(item.emoji || '🛡️')}</span>
+    <span class="duel2-slot-name">${esc(item.name)}</span>
+    <span class="duel2-slot-kind">Defense</span>
+  </div>`;
+}
+
+// One utility slot (Stone of Seeing / Shroud of Secrecy / Time Turner):
+// plain "held or not held" for every house, except the attacker's OWN Stone
+// slot, which is clickable — see peekWithStone.
+function utilitySlotHtml(store, houseId, itemId, interactiveOpts) {
+  const catalogItem = store.getShopItems().find((i) => i.id === itemId);
+  const emoji = (catalogItem && catalogItem.emoji) || '✨';
+  const name = (catalogItem && catalogItem.name) || itemId;
+  const held = store.countOwned(houseId, itemId);
+  if (!held) {
+    return `<div class="duel2-util-slot duel2-util-empty">
+      <span class="duel2-util-emoji">${esc(emoji)}</span>
+      <span class="duel2-util-name">${esc(name)}</span>
+      <span class="duel2-util-state">Not held</span>
+    </div>`;
+  }
+  const heldLabel = held > 1 ? `×${held} held` : 'Held';
+  if (interactiveOpts) {
+    return `<button type="button" class="duel2-util-slot duel2-util-held duel2-util-interactive" data-stone-peek
+        ${interactiveOpts.enabled ? '' : 'disabled'} title="${esc(interactiveOpts.title || '')}">
+      <span class="duel2-util-emoji">${esc(emoji)}</span>
+      <span class="duel2-util-name">${esc(name)}</span>
+      <span class="duel2-util-state">${esc(interactiveOpts.enabled ? 'Tap to peek' : heldLabel)}</span>
+    </button>`;
+  }
+  return `<div class="duel2-util-slot duel2-util-held">
+    <span class="duel2-util-emoji">${esc(emoji)}</span>
+    <span class="duel2-util-name">${esc(name)}</span>
+    <span class="duel2-util-state">${esc(heldLabel)}</span>
+  </div>`;
+}
+
+function utilityRowHtml(store, houseId, stoneOpts) {
+  return `<div class="duel2-util-row">
+    ${utilitySlotHtml(store, houseId, 'stone', stoneOpts)}
+    ${utilitySlotHtml(store, houseId, 'shroud')}
+    ${utilitySlotHtml(store, houseId, 'timeturner')}
+  </div>`;
+}
+
+// Points ABOVE the crest — duel mode has no hit points, so this is the whole
+// "head" of the card. Reuses the same points-block/crest/name partials as
+// HP mode so the two rulesets read as the same family, just laid out to its
+// own spec.
+function duelCardHeadHtml(store, house, side) {
+  return `${pointsBlockHtml(store, house, side)}${crestHtml(house, side)}<div class="duel-name">${esc(house.name)}</div>`;
+}
+
+function attackerCardHtmlDuel(store, challenger, target) {
+  const limits = store.duelSlotLimits(challenger.id);
+  const held = heldSlotInstances(store, challenger.id, 'attack');
+  const frozen = store.isFrozen(challenger.id);
+  const slots = [0, 1].map((i) => attackSlotHtml(held[i] || null, limits.attack >= i + 1, target, frozen)).join('');
+  const revealedAlready = !!target && (store.hasRevealed(challenger.id, target.id) || combatRevealed.has(pairKey(challenger.id, target.id)));
+  const stoneEnabled = !!target && store.countOwned(challenger.id, 'stone') > 0 && !revealedAlready;
+  const stoneTitle = !target ? 'Choose an opponent first'
+    : revealedAlready ? `${target.name}'s defense is already revealed`
+    : `Peek at ${target.name}'s held items`;
+  return `
+    <section class="duel-side duel-side-attacker" style="--side-accent:${esc(challenger.accent)}">
+      <div class="duel-role">⚔️ Attacker</div>
+      ${duelCardHeadHtml(store, challenger, 'challenger')}
+      <div class="duel-section-lbl duel2-slots-start">Attack slots${frozen ? ' — ❄️ frozen' : ''}</div>
+      <div class="duel2-slots-row">${slots}</div>
+      <div class="duel-section-lbl">Utility</div>
+      ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle })}
+    </section>`;
+}
+
+// The defender's held defense stays a secret here — his rule #2 says it is
+// revealed only at the moment of the strike, so this card shows the shape of
+// that secret (a locked/hidden slot) rather than its contents, until a Stone
+// of Seeing or a landed strike reveals it for real.
+function defenderCardHtmlDuel(store, target, challenger) {
+  const limits = store.duelSlotLimits(target.id);
+  const held = heldSlotInstances(store, target.id, 'defense');
+  const frozen = store.isFrozen(target.id);
+  const revealed = !!challenger && (store.hasRevealed(challenger.id, target.id) || combatRevealed.has(pairKey(challenger.id, target.id)));
+  const slots = [0, 1].map((i) => defenseSlotHtml(held[i] || null, limits.defense >= i + 1, revealed)).join('');
+  return `
+    <section class="duel-side duel-side-defender" style="--side-accent:${esc(target.accent)}">
+      <div class="duel-role">🛡️ Defender</div>
+      ${duelCardHeadHtml(store, target, 'defender')}
+      <div class="duel-section-lbl duel2-slots-start">Defense slots${frozen ? ' — ❄️ frozen' : ''}</div>
+      <div class="duel2-slots-row">${slots}</div>
+      <div class="duel-section-lbl">Utility</div>
+      ${utilityRowHtml(store, target.id)}
+    </section>`;
+}
+
+function targetPickerHtmlDuel(store, challenger) {
+  const others = Object.values(store.HOUSES).filter((h) => h.id !== challenger.id);
+  return `
+    <section class="duel-side" style="--side-accent:#4b5563">
+      <div class="duel-role">🎯 Choose an opponent</div>
+      <div class="duel-pick-prompt">Who does ${esc(challenger.name)} attack?</div>
+      <div class="duel-pick-hint">Their defense stays secret until the strike lands.</div>
+      ${housePickHtml(store, others, 'data-pick-target', { showDefenses: false })}
+    </section>`;
+}
+
+function renderMrDDuel() {
+  if (!rootEl || resolving) return;
+  view = 'duel';
+  const store = ctxRef.store;
+  const challenger = challengerHouse();
+
+  if (challenger && targetId === challenger.id) targetId = null;
+  const target = targetId != null ? store.HOUSES[targetId] : null;
+
+  const showChooser = !challenger || chooserOpen;
+  const leftHtml = showChooser ? chooserHtml(store) : attackerCardHtmlDuel(store, challenger, target);
+  const rightHtml = showChooser ? `<section class="duel-side" style="--side-accent:#374151">
+      <div class="duel-role">🛡️ Defender</div>
+      <div class="duel-pick-hint">Waiting for an attacker&hellip;</div>
+    </section>`
+    : (target ? defenderCardHtmlDuel(store, target, challenger) : targetPickerHtmlDuel(store, challenger));
+
+  rootEl.innerHTML = `
+    <div class="duel-root" data-mode="duel">
+      <div class="battle-embers">${emberField()}</div>
+      <div class="duel-topbar">
+        <div class="duel-topbar-inner">
+          <div class="duel-title font-display">⚔️ BATTLE DAY — MR. D'S RULES</div>
+        <div class="duel-topbar-actions">
+          <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
+          <button type="button" class="battle-end-btn">🏳️ End Battle</button>
+        </div>
+        </div>
+      </div>
+      <div class="duel-stage">
+        ${leftHtml}
+        ${arenaHtml(showChooser ? null : challenger, showChooser ? null : target)}
+        ${rightHtml}
+      </div>
+      ${teacherRowHtml(store)}
+    </div>`;
+
+  wireMrDDuel();
+}
+
+// =============================================================================
+// DUEL VIEW — wiring (Mr. D's rules)
+// =============================================================================
+function wireMrDDuel() {
+  if (!rootEl) return;
+  const store = ctxRef.store;
+
+  const shopBtn = rootEl.querySelector('.battle-shop-btn');
+  if (shopBtn) shopBtn.addEventListener('click', openMiniShop);
+  const endBtn = rootEl.querySelector('.battle-end-btn');
+  if (endBtn) endBtn.addEventListener('click', endBattle);
+
+  const openChooser = rootEl.querySelector('[data-open-chooser]');
+  if (openChooser) openChooser.addEventListener('click', () => { chooserOpen = true; renderDuel(); });
+
+  rootEl.querySelectorAll('[data-pick-challenger]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = Number(btn.getAttribute('data-pick-challenger'));
+      chooserOpen = false;
+      if (targetId === id) targetId = null;
+      ctxRef.audio.sfx('coin');
+      store.setActiveCore(id);
+    });
+  });
+
+  rootEl.querySelectorAll('[data-pick-target]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      targetId = Number(btn.getAttribute('data-pick-target'));
+      ctxRef.audio.sfx('sword');
+      renderDuel();
+    });
+  });
+
+  const clearTarget = rootEl.querySelector('[data-clear-target]');
+  if (clearTarget) clearTarget.addEventListener('click', () => { targetId = null; renderDuel(); });
+
+  rootEl.querySelectorAll('[data-strike-item]').forEach((btn) => {
+    btn.addEventListener('click', () => strikeDuel(btn.getAttribute('data-strike-item')));
+  });
+
+  const stoneBtn = rootEl.querySelector('[data-stone-peek]');
+  if (stoneBtn) stoneBtn.addEventListener('click', peekWithStone);
+
+  rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
+    });
+  });
+}
+
+// The Stone of Seeing: spent to look at what a house is holding. Only the
+// attacker's own Stone slot is clickable (see utilitySlotHtml) — this reveals
+// the CURRENT target's defense on their card, live, from here on (persisted
+// by store.hasRevealed, same "stays revealed" guarantee the store gives the
+// Battle-Day-long combatRevealed set below it).
+async function peekWithStone() {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const challenger = challengerHouse();
+  const target = targetId != null ? store.HOUSES[targetId] : null;
+  if (!challenger || !target) return;
+  if (store.countOwned(challenger.id, 'stone') < 1) return;
+  if (store.hasRevealed(challenger.id, target.id) || combatRevealed.has(pairKey(challenger.id, target.id))) return;
+
+  resolving = true;
+  const ok = await lock.requireUnlock('use this item');
+  if (!rootEl) { resolving = false; return; }
+  if (!ok) { resolving = false; return; }
+
+  const result = store.peekHouse(challenger.id, target.id);
+  resolving = false;
+  if (!rootEl) return;
+  renderDuel();
+  if (!result.ok) { toast(result.reason || 'The Stone of Seeing found nothing.'); return; }
+  ctxRef.audio.sfx('coin');
+  if (result.shrouded) toast(`🌫️ ${target.name} is shrouded — the Stone shows nothing (still spent).`);
+}
+
+// =============================================================================
+// MINI SHOP — buy without leaving Battle Day. Same spend path the Magic Shop
+// itself uses (store.purchase + store.addToInventory), gated by
+// store.duelCanBuy so the weekly slot limits are honoured here too.
+// =============================================================================
+function closeMiniShop() {
+  if (miniShopEl) { try { miniShopEl.remove(); } catch (e) {} fxNodes.delete(miniShopEl); miniShopEl = null; }
+  miniShopOpen = false;
+}
+
+function openMiniShop() {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const challenger = challengerHouse();
+  miniShopBuyerId = challenger ? challenger.id : Number(Object.keys(store.HOUSES)[0]);
+  miniShopOpen = true;
+  renderMiniShop();
+}
+
+function renderMiniShop() {
+  if (!miniShopOpen) return;
+  const host = document.getElementById('overlay-root');
+  if (!host) return;
+  if (miniShopEl) { try { miniShopEl.remove(); } catch (e) {} fxNodes.delete(miniShopEl); miniShopEl = null; }
+
+  const store = ctxRef.store;
+  const houses = Object.values(store.HOUSES);
+  const buyer = store.HOUSES[miniShopBuyerId] || houses[0];
+  const items = store.getShopItems();
+  const buyerPts = store.getTotal(buyer.id, 'term');
+
+  miniShopEl = document.createElement('div');
+  miniShopEl.className = 'duel-shop-overlay';
+  miniShopEl.innerHTML = `
+    <div class="duel-shop-modal">
+      <button type="button" class="duel-shop-close" data-shop-close aria-label="Close the shop">✕</button>
+      <div class="duel-shop-title font-display">🛒 Magic Shop</div>
+      <div class="duel-shop-houses">
+        ${houses.map((h) => `
+          <button type="button" class="duel-shop-house${h.id === buyer.id ? ' duel-shop-house-active' : ''}"
+            data-shop-house="${h.id}" style="--pick-accent:${esc(h.accent)}">
+            ${houseImg(h, 'duel-shop-house-crest')}
+            <span class="duel-shop-house-name">${esc(h.name)}</span>
+            <b class="duel-shop-house-pts">${store.getTotal(h.id, 'term')} pts</b>
+          </button>`).join('')}
+      </div>
+      <div class="duel-shop-grid">
+        ${items.map((item) => {
+          const gate = store.duelCanBuy(buyer.id, item.id);
+          const held = store.countOwned(buyer.id, item.id);
+          const afford = buyerPts >= item.cost;
+          const disabled = !gate.ok || !afford;
+          const why = !gate.ok ? gate.reason : (!afford ? 'Not enough points.' : '');
+          return `
+          <div class="duel-shop-item">
+            <div class="duel-shop-item-head">
+              <span class="duel-shop-item-emoji">${esc(item.emoji || '✨')}</span>
+              <div class="duel-shop-item-name-wrap">
+                <div class="duel-shop-item-name">${esc(item.name)}${held ? ` <span class="duel-shop-item-held">×${held} held</span>` : ''}</div>
+                <div class="duel-shop-item-slot">${esc((item.slot || 'utility').toUpperCase())}</div>
+              </div>
+              <div class="duel-shop-item-cost">${item.cost} pts</div>
+            </div>
+            <div class="duel-shop-item-desc">${esc(item.desc || '')}</div>
+            <button type="button" class="duel-shop-buy" data-shop-buy="${esc(item.id)}" ${disabled ? 'disabled' : ''}>
+              ${gate.ok ? (afford ? 'Buy' : 'Not enough points') : 'Slot full'}
+            </button>
+            ${why ? `<div class="duel-shop-item-reason">🚫 ${esc(why)}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  host.appendChild(miniShopEl);
+  fxNodes.add(miniShopEl);
+  wireMiniShop();
+}
+
+function wireMiniShop() {
+  if (!miniShopEl) return;
+  const closeBtn = miniShopEl.querySelector('[data-shop-close]');
+  if (closeBtn) closeBtn.addEventListener('click', closeMiniShop);
+  miniShopEl.addEventListener('click', (e) => { if (e.target === miniShopEl) closeMiniShop(); });
+
+  miniShopEl.querySelectorAll('[data-shop-house]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      miniShopBuyerId = Number(btn.getAttribute('data-shop-house'));
+      renderMiniShop();
+    });
+  });
+  miniShopEl.querySelectorAll('[data-shop-buy]').forEach((btn) => {
+    btn.addEventListener('click', () => buyMiniShopItem(btn.getAttribute('data-shop-buy')));
+  });
+}
+
+async function buyMiniShopItem(itemId) {
+  if (miniShopBuyInFlight || !miniShopOpen) return;
+  const store = ctxRef.store;
+  const item = store.getShopItems().find((i) => i.id === itemId);
+  const buyerId = miniShopBuyerId;
+  if (!item || buyerId == null) return;
+  const gate = store.duelCanBuy(buyerId, item.id);
+  if (!gate.ok) { renderMiniShop(); return; }
+
+  // Same gate the Magic Shop itself uses before spending a house's points.
+  miniShopBuyInFlight = true;
+  try {
+    const allowed = await lock.requireUnlock('buy this item');
+    if (!miniShopOpen) return;              // popup closed while the PIN pad was open
+    if (!allowed) return;                    // refused — no charge
+
+    const ok = store.purchase(buyerId, item.cost, item.name);
+    if (!ok) { renderMiniShop(); return; }
+    store.addToInventory(buyerId, item.id);
+    ctxRef.audio.sfx('coin');
+    renderMiniShop();
+  } finally {
+    miniShopBuyInFlight = false;
+  }
+}
+
+// =============================================================================
+// DICE OVERLAY — a real roll, on screen, before any points move.
+// createDiceSim's roll() only knows '1d6' | '2d6' | 'd20'. Every duel item
+// ships as 1d6, 2d6 or 3d6; a 3d6 item rolls as 2d6 THEN 1d6 (two visible
+// rolls, summed) rather than inventing a mode the sim doesn't support — the
+// running total stays on screen throughout so the class can add along.
+// Anything else a teacher might type (parseDice falls back gracefully) still
+// gets an honest uniform roll, just without a 3D die to show for it.
+// =============================================================================
+function closeDiceOverlay() {
+  if (diceSim) { try { diceSim.dispose(); } catch (e) { console.warn('battle: dice dispose failed', e); } diceSim = null; }
+  if (diceOverlayEl) { try { diceOverlayEl.remove(); } catch (e) {} fxNodes.delete(diceOverlayEl); diceOverlayEl = null; }
+}
+
+function plainRoll(n, sides) {
+  let total = 0; const rolls = [];
+  for (let i = 0; i < n; i += 1) { const v = 1 + Math.floor(Math.random() * sides); rolls.push(v); total += v; }
+  return { total, rolls };
+}
+
+// Rolls `item`'s dice for `house`, live on screen, and resolves with the
+// total the class watched land. Never rolled in software and animated as
+// something else — this total is what gets passed to applyDuelAttack.
+async function rollItemDice(item, house) {
+  const store = ctxRef.store;
+  const { n, sides } = store.parseDice(item.effect.dice);
+  const host = document.getElementById('overlay-root');
+  if (!host) {
+    console.warn('battle: no #overlay-root — rolling without the 3D dice');
+    return { ...plainRoll(n, sides), label: item.effect.dice || '1d6' };
+  }
+
+  diceOverlayEl = document.createElement('div');
+  diceOverlayEl.className = 'duel-dice-overlay';
+  diceOverlayEl.innerHTML = `
+    <div class="duel-dice-stage">
+      <div class="duel-dice-title font-display">${esc(item.emoji || '🎲')} ${esc(item.name)} — rolling&hellip;</div>
+      <div class="duel-dice-frame"><div class="duel-dice-host"></div></div>
+      <div class="duel-dice-total" data-dice-total>Rolling&hellip;</div>
+    </div>`;
+  host.appendChild(diceOverlayEl);
+  fxNodes.add(diceOverlayEl);
+  const diceHost = diceOverlayEl.querySelector('.duel-dice-host');
+  const totalEl = diceOverlayEl.querySelector('[data-dice-total]');
+  totalEl.classList.add('show');
+
+  try {
+    diceSim = createDiceSim({ container: diceHost, audio: ctxRef.audio, fate: false });
+    diceSim.setHouse(house);
+  } catch (e) {
+    console.warn('battle: could not start the 3D dice, using a plain roll instead', e);
+    closeDiceOverlay();
+    return { ...plainRoll(n, sides), label: item.effect.dice || '1d6' };
+  }
+
+  let rolls = [];
+  let label = `${n}d${sides}`;
+  try {
+    if (sides === 6 && n <= 2) {
+      const results = await diceSim.roll(n === 2 ? '2d6' : '1d6');
+      rolls = (results || []).map((r) => r.value);
+    } else if (sides === 6 && n === 3) {
+      label = '2d6 + 1d6';
+      const first = await diceSim.roll('2d6');
+      rolls.push(...(first || []).map((r) => r.value));
+      if (!diceOverlayEl) return { total: rolls.reduce((a, b) => a + b, 0), rolls, label };
+      totalEl.innerHTML = `<span class="duel-dice-parts">${esc(rolls.join(' + '))} + one more d6&hellip;</span>`;
+      await delay(450);
+      if (!diceOverlayEl || !diceSim) return { total: rolls.reduce((a, b) => a + b, 0), rolls, label };
+      const second = await diceSim.roll('1d6');
+      rolls.push(...(second || []).map((r) => r.value));
+    } else if (sides === 20 && n === 1) {
+      const results = await diceSim.roll('d20');
+      rolls = (results || []).map((r) => r.value);
+    } else {
+      // Not a shape the 3D sim can physically render (e.g. a teacher-edited
+      // spec like "4d6") — still an honest uniform roll, just without dice.
+      rolls = plainRoll(n, sides).rolls;
+    }
+  } catch (e) {
+    console.warn('battle: dice roll did not settle, using a plain draw instead', e);
+    rolls = plainRoll(n, sides).rolls;
+  }
+
+  const total = rolls.reduce((a, b) => a + b, 0);
+  if (diceOverlayEl) {
+    totalEl.innerHTML = `<span class="duel-dice-parts">${esc(rolls.join(' + '))}${rolls.length > 1 ? ' =' : ''}</span><span class="duel-dice-num">${total}</span>`;
+    ctxRef.audio.sfx('coin');
+    await delay(DUEL2_ROLL_HOLD_MS);
+  }
+  closeDiceOverlay();
+  return { total, rolls, label };
+}
+
+// =============================================================================
+// THE STRIKE (Mr. D's rules) — his five steps, one beat at a time:
+//   1. attack thrown  2. defense revealed  3. countered or not
+//   4. dice rolled (only if not countered)  5. points applied
+// =============================================================================
+async function resolveDuelSequence(challenger, target, item, preview) {
+  const store = ctxRef.store;
+  const beforeChallenger = store.getTotal(challenger.id, 'term');
+  const beforeTarget = store.getTotal(target.id, 'term');
+  const reduced = prefersReducedMotion();
+  const travel = reduced ? 0 : DUEL2_THROW_MS;
+
+  // Step 1 — the attack is thrown.
+  const chalCrest = rootEl.querySelector('[data-crest="challenger"]');
+  const defCrest = rootEl.querySelector('[data-crest="defender"]');
+  ctxRef.audio.sfx('sword');
+  if (!reduced) spawnProjectile(chalCrest, defCrest, { emoji: item.emoji || '⚔️', travel });
+  await delay(travel);
+  if (!rootEl) { closeDiceOverlay(); return; }
+
+  // Step 2 — the defender's held defense is revealed. Hidden until now: this
+  // shows whichever item actually decides the outcome (blockedBy when it
+  // counters, otherwise whatever they're holding), never a spoiler in advance.
+  const revealed = preview.blocked ? preview.blockedBy : preview.defenseHeld;
+  // From here on their defense card shows what's ACTUALLY held, live — the
+  // fixed-slot card checks this same set (see defenderCardHtmlDuel).
+  combatRevealed.add(pairKey(challenger.id, target.id));
+  const revealHost = rootEl.querySelector('[data-crest="defender"]')?.closest('.duel-side');
+  if (revealHost) {
+    spawnFxHtml(revealHost, 'duel-reveal-card', DUEL2_REVEAL_MS + 400, revealed
+      ? `<span class="duel-reveal-emoji">${esc(revealed.emoji || '🛡️')}</span><span class="duel-reveal-name">${esc(revealed.name)}</span>`
+      : `<span class="duel-reveal-emoji">💥</span><span class="duel-reveal-name">Undefended!</span>`);
+  }
+  ctxRef.audio.sfx('coin');
+  await delay(DUEL2_REVEAL_MS);
+  if (!rootEl) { closeDiceOverlay(); return; }
+
+  // Step 3 — the counter check. A correct counter cancels the attack
+  // completely: no damage, no dice. This is the best moment in his game, so
+  // it gets the biggest treatment on screen: a screen shake, a blue flash and
+  // ring on the defender's crest, and a dedicated outcome card — the same
+  // "something big just happened" language as a direct hit, just in blue.
+  if (preview.blocked) {
+    store.applyDuelAttack({ attackerId: challenger.id, targetId: target.id, itemId: item.id, rolled: 0 });
+    const mainEl = document.getElementById('module-root');
+    if (mainEl && !reduced) {
+      mainEl.classList.remove('battle-shake'); void mainEl.offsetWidth; mainEl.classList.add('battle-shake');
+      later(() => mainEl.classList.remove('battle-shake'), 550);
+    }
+    const crest = rootEl.querySelector('[data-crest="defender"]');
+    if (crest && !reduced) {
+      spawnFx(crest, 'duel-fx-ring', IMPACT_MS);
+      spawnFx(crest, 'duel-fx-flash duel-fx-flash-blue', 500);
+    }
+    ctxRef.audio.sfx('sword');
+    screenVignettePulse();
+    outcomeCard('blocked', '🛡️ COUNTERED!',
+      `${esc(target.name)}'s ${esc(revealed ? revealed.name : 'defense')} stopped ${esc(challenger.name)}'s ${esc(item.name)} cold.`,
+      `No damage, no dice`);
+    await delay(DUEL2_COUNTER_MS);
+  } else {
+    // Step 4 — not countered: the damage dice roll live, on screen.
+    const roll = await rollItemDice(item, challenger);
+    if (!rootEl) return;
+
+    // Step 5 — the points are applied, using the exact total the class watched land.
+    const out = store.applyDuelAttack({ attackerId: challenger.id, targetId: target.id, itemId: item.id, rolled: roll.total });
+    const crest = rootEl.querySelector('[data-crest="defender"]');
+    const isFreeze = item.effect.kind === 'freeze';
+    if (crest && !reduced) {
+      spawnFx(crest, `duel-fx-flash duel-fx-flash-${isFreeze ? 'amber' : 'red'}`, 500);
+      shakeCrest(crest);
+    }
+    ctxRef.audio.sfx('thud');
+    screenVignettePulse();
+
+    if (isFreeze) {
+      spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `❄️ ${out.frozenDays}d`);
+      outcomeCard('reduced', '❄️ FROZEN!',
+        `${esc(target.name)} cannot earn points for ${out.frozenDays} day${out.frozenDays === 1 ? '' : 's'}.`,
+        `${roll.label}: ${roll.total}`);
+    } else {
+      spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${out.damage}`);
+      const mult = Math.max(1, Number(item.effect.mult) || 1);
+      const stealNote = item.effect.kind === 'steal' ? ` ${esc(challenger.name)} looted <b>${out.stolen} pts</b>.` : '';
+      outcomeCard('hit', '💥 DIRECT HIT!',
+        `${esc(challenger.name)} struck ${esc(target.name)} with ${esc(item.name)}.${stealNote}`,
+        `${roll.label}: ${roll.total}${mult > 1 ? ` × ${mult}` : ''} = ${out.damage} pts`);
+    }
+    await delay(DUEL2_OUTCOME_HOLD_MS);
+  }
+  if (!rootEl) return;
+
+  // Final beat — resolving flips false HERE, before the redraw, so
+  // renderDuel() (guarded by `resolving`, like every render in this file)
+  // is actually allowed to run. One clean redraw with the final state, then
+  // the point totals are pinned back to their pre-strike values and rolled
+  // forward — the same "watch it move" convention as the HP-mode strike.
+  resolving = false;
+  renderDuel();
+  const afterChallenger = store.getTotal(challenger.id, 'term');
+  const afterTarget = store.getTotal(target.id, 'term');
+  const chalEl = rootEl.querySelector('[data-points="challenger"]');
+  if (chalEl) chalEl.textContent = String(beforeChallenger);
+  const defEl = rootEl.querySelector('[data-points="defender"]');
+  if (defEl) defEl.textContent = String(beforeTarget);
+  animatePoints('challenger', beforeChallenger, afterChallenger, COUNT_MS);
+  animatePoints('defender', beforeTarget, afterTarget, COUNT_MS);
+}
+
+async function strikeDuel(itemId) {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const challenger = challengerHouse();
+  const target = targetId != null ? store.HOUSES[targetId] : null;
+  if (!challenger || !target) return;
+  const invRow = store.getInventory(challenger.id).find((row) => row.item.id === itemId && row.item.slot === 'attack');
+  if (!invRow) return;
+
+  // Gate the strike, not the ceremony — same convention as strikeHp: picking
+  // the item is free, nothing is spent or struck until the teacher approves.
+  resolving = true;
+  const ok = await lock.requireUnlock('use this item');
+  if (!rootEl) { resolving = false; return; }
+  if (!ok) { resolving = false; return; }
+
+  const preview = store.previewDuelAttack(challenger.id, target.id, itemId);
+  if (!preview.ok) {
+    resolving = false;
+    renderDuel();
+    toast(preview.reason || 'That attack could not be used.');
+    return;
+  }
+
+  try {
+    await resolveDuelSequence(challenger, target, preview.item, preview);
+  } catch (e) {
+    console.warn('battle: duel strike sequence failed', e);
+  } finally {
+    closeDiceOverlay();
+    resolving = false;         // idempotent — resolveDuelSequence already clears this on its normal path
+  }
 }
 
 function toast(text) {
@@ -1209,7 +2078,7 @@ function resolveHpAttack(store, { toId, amount, pierce = false }) {
 // =============================================================================
 // THE STRIKE
 // =============================================================================
-async function strike(itemId) {
+async function strikeHp(itemId) {
   if (!rootEl || resolving) return;
   const store = ctxRef.store;
   const challenger = challengerHouse();
@@ -1375,7 +2244,7 @@ function landHit(o, crest, reduced, tint = 'red') {
   ctxRef.audio.sfx('thud');
   // The points-taking-away cue lands HERE, at the same instant the HP number/
   // bar actually starts to drop below — not back when the strike was thrown.
-  // Previously this fired synchronously in strike() before the projectile had
+  // Previously this fired synchronously in strikeHp() before the projectile had
   // even travelled, which read as the deduction happening mid-attack.
   ctxRef.audio.sfx('coin');
   screenVignettePulse();
@@ -1396,7 +2265,7 @@ function landHit(o, crest, reduced, tint = 'red') {
 }
 
 // If this strike finished the defender off, the duel is over: the prize has
-// already been awarded (see strike()) — this just SHOWS it, reusing the same
+// already been awarded (see strikeHp()) — this just SHOWS it, reusing the same
 // outcome-card component and FX vocabulary as every other strike result, then
 // clears the chosen opponent so the attacker can pick a new one.
 function maybeAnnounceVictory(o) {
@@ -1461,10 +2330,17 @@ async function teacherScore(houseId, delta) {
 }
 
 function endBattle() {
+  closeMiniShop();
+  closeDiceOverlay();
   clearFx();
   if (overlayEl) { overlayEl.remove(); overlayEl = null; }
   const mainEl = document.getElementById('module-root');
   if (mainEl) mainEl.classList.remove('battle-shake');
+  // Next week's holdings start secret again — clears both halves of "who has
+  // seen whose defense": the store's Stone-of-Seeing memory and this file's
+  // own record of pairs revealed by a landed strike.
+  combatRevealed.clear();
+  if (ctxRef) ctxRef.store.clearReveals();
   renderLanding();
 }
 
@@ -1484,12 +2360,18 @@ export default {
     targetId = null;
     chooserOpen = false;
     resolving = false;
+    miniShopOpen = false;
+    miniShopBuyerId = null;
+    miniShopBuyInFlight = false;
+    combatRevealed.clear();
     injectStyles();
     renderLanding();
     unsub = ctx.store.subscribe(() => { if (view === 'duel' && !resolving) renderDuel(); });
   },
 
   unmount() {
+    closeMiniShop();
+    closeDiceOverlay();     // disposes the WebGL dice sim if a roll is mid-flight
     clearTimers();
     clearFx();
     if (unsub) { unsub(); unsub = null; }
