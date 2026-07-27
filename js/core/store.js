@@ -251,25 +251,26 @@ function defaultState() {
       // the app must never lock a teacher out of a fresh install. `len` is the
       // digit count so the PIN pad knows when an entry is complete.
       lock: { pinHash: '', len: 4, minutes: 15 },
-      // Per-screen accent colours (see MODULE_THEMES). Seeded from the defaults
-      // so a teacher edit is always a diff against something concrete.
-      moduleThemes: null,
-      // 'grid' | 'carousel' per screen (see LAYOUT_SCREENS).
-      layouts: null,
-      combat: null,      // see defaultCombat()
-      // Die of Destiny outcome table (see defaultDiceProphecy()). Seeded from
-      // the defaults so a teacher edit is always a diff against something
-      // concrete, same reasoning as moduleThemes below.
-      diceProphecy: null,
-      // Teacher recordings per sound (see SFX_SLOTS). Empty = use the built-in.
-      sfx: null,
+      // THESE ARE FILLED IN, NOT NULL, AND THAT MATTERS. They used to be null
+      // and were seeded by the migration in load() — but that migration only
+      // runs when there IS saved state, so a browser opening the app for the
+      // FIRST time got the nulls and nothing else. It cost the teacher his
+      // sound during a live demo: settings.sfx was null, so every recording in
+      // /sfx was unassigned, and the Battle Day war cry has no synth fallback
+      // and simply played silence. Anything seeded from a constant belongs
+      // here, where a first run and a hundredth run get the same thing.
+      moduleThemes: Object.fromEntries(Object.entries(MODULE_THEMES)
+        .map(([id, d]) => [id, { color: d.color, matchHouse: d.matchHouse }])),
+      layouts: Object.fromEntries(Object.keys(LAYOUT_SCREENS).map((id) => [id, DEFAULT_LAYOUT])),
+      combat: defaultCombat(),
+      diceProphecy: defaultDiceProphecy(),
+      // Teacher recordings per sound (see SFX_SLOTS). '' = use the built-in.
+      sfx: Object.fromEntries(Object.entries(SFX_SLOTS).map(([id, s]) => [id, s.file || ''])),
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
       // Teacher edits to the four houses (name/motto/accent/artwork). Applied
       // over the built-in defaults at load so nothing is hardcoded for them.
       houses: {},
-      // Intro videos offered in the POTW dropdown. Seeded from CONFIG so the
-      // teacher can add their own without anyone editing source.
-      introVideos: null,
+      introVideos: (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v })),
     },
     // houseId -> { itemId: count }. What each house has bought and not yet used.
     inventory: {},
