@@ -734,7 +734,23 @@ function injectStyles() {
      the BOTTOM of the card, which is where he asked for them and is also what
      stops a tall card leaving dead space under them. margin-top:auto on the
      first slot label pushes everything after it down. */
-  .duel2-slots-start{margin-top:auto;}
+  /* THE CARD IS A 60/40 SPLIT. Identity on top — role, points, crest, name —
+     and the slots below. Fixed shares rather than content-driven heights,
+     because the slots were sized by clamp() and ended up too small to read
+     while the top half kept space it did not need.
+     Everything in the bottom half sizes to ITS share: the slot rows are
+     flex:1 1 0 and the buttons fill their row, so the buttons get whatever the
+     40% leaves after the two labels. On a 1080p board that is roughly double
+     what the old fixed clamp gave them. */
+  .duel2-top{flex:0 0 60%;min-height:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:.2rem;width:100%;}
+  .duel2-bottom{flex:0 0 40%;min-height:0;width:100%;display:flex;
+    flex-direction:column;gap:.15rem;}
+  .duel2-bottom .duel-section-lbl{flex:0 0 auto;}
+  .duel2-bottom .duel2-slots-row{flex:1 1 0;min-height:0;}
+  .duel2-bottom .duel2-util-row{flex:1 1 0;min-height:0;}
+  .duel2-bottom .duel2-slot,
+  .duel2-bottom .duel2-util-slot{height:100%;min-height:0;}
   /* Breathing room under the utility row. It was sitting hard against the card's
      bottom edge, which read as an overlap even where nothing actually
      overflowed. */
@@ -745,13 +761,16 @@ function injectStyles() {
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:.1rem;text-align:center;padding:.22rem .35rem;overflow:hidden;box-sizing:border-box;
     border:2px solid #4b5563;background:#111827;}
-  .duel2-slot-emoji{font-size:1.5rem;line-height:1;}
+    /* Type scales with the slot now. The 60/40 split roughly doubled the
+     button height, but the text was still sized for the old 64px slot and
+     that is what made it unreadable across a classroom. */
+  .duel2-slot-emoji{font-size:clamp(1.5rem,2.4vh,2.4rem);line-height:1;}
     /* flex:0 0 auto is load-bearing. The ATTACK slot carries a damage line the
      defense slot does not, so with everything shrinkable the name — the one
      thing you have to read to know which weapon it is — was the part that gave,
      collapsing to 1px while the emoji kept its full 24. Measured, not guessed:
      the defender's name rendered at 14px and the attacker's at 1px. */
-  .duel2-slot-name{flex:0 0 auto;font-weight:800;font-size:.78rem;line-height:1.15;color:#f9fafb;
+  .duel2-slot-name{flex:0 0 auto;font-weight:800;font-size:clamp(.82rem,1.5vh,1.15rem);line-height:1.15;color:#f9fafb;
     overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
     /* Row, not column. At the shorter slot height the badge and the damage
      stacked needed 35px and the slot had 64 to hold everything — so the bottom
@@ -759,8 +778,8 @@ function injectStyles() {
      fit: "Attack · 2d6 x 100" reads as one line. */
   .duel2-slot-meta{display:flex;flex-direction:row;gap:.35rem;align-items:center;
     justify-content:center;flex-wrap:wrap;}
-  .duel2-slot-dmg{font-size:.7rem;font-weight:800;color:#fca5a5;}
-  .duel2-slot-kind{font-size:.6rem;font-weight:700;letter-spacing:.04em;color:#c4b5fd;
+  .duel2-slot-dmg{font-size:clamp(.72rem,1.25vh,1rem);font-weight:800;color:#fca5a5;}
+  .duel2-slot-kind{font-size:clamp(.62rem,1.1vh,.88rem);font-weight:700;letter-spacing:.04em;color:#c4b5fd;
     background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.35);
     border-radius:999px;padding:.05rem .4rem;white-space:nowrap;}
   .duel2-slot-reason{position:absolute;bottom:.3rem;left:.3rem;right:.3rem;
@@ -784,10 +803,10 @@ function injectStyles() {
   .duel2-util-slot{height:clamp(46px,6.4vh,94px);border-radius:.75rem;border:1px solid #374151;
     background:#111827;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:.1rem;text-align:center;padding:.3rem .2rem;overflow:hidden;box-sizing:border-box;}
-  .duel2-util-emoji{font-size:1.1rem;line-height:1;}
-  .duel2-util-name{font-size:.62rem;font-weight:800;color:#e5e7eb;line-height:1.1;
+  .duel2-util-emoji{font-size:clamp(1.1rem,1.9vh,1.8rem);line-height:1;}
+  .duel2-util-name{font-size:clamp(.66rem,1.25vh,1rem);font-weight:800;color:#e5e7eb;line-height:1.1;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
-  .duel2-util-state{font-size:.58rem;font-weight:700;color:#9ca3af;}
+  .duel2-util-state{font-size:clamp(.62rem,1.1vh,.9rem);font-weight:700;color:#9ca3af;}
   .duel2-util-empty{opacity:.5;}
   .duel2-util-held{border-color:rgba(253,230,138,.4);}
   button.duel2-util-slot{font:inherit;}
@@ -1419,12 +1438,16 @@ function attackerCardHtmlDuel(store, challenger, target) {
     : `Peek at ${target.name}'s held items`;
   return `
     <section class="duel-side duel-side-attacker" style="--side-accent:${esc(challenger.accent)}">
-      <div class="duel-role">⚔️ Attacker</div>
-      ${duelCardHeadHtml(store, challenger, 'challenger')}
-      <div class="duel-section-lbl duel2-slots-start">Attack slots${frozen ? ' — ❄️ frozen' : ''}</div>
-      <div class="duel2-slots-row">${slots}</div>
-      <div class="duel-section-lbl">Utility</div>
-      ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle })}
+      <div class="duel2-top">
+        <div class="duel-role">⚔️ Attacker</div>
+        ${duelCardHeadHtml(store, challenger, 'challenger')}
+      </div>
+      <div class="duel2-bottom">
+        <div class="duel-section-lbl">Attack slots${frozen ? ' — ❄️ frozen' : ''}</div>
+        <div class="duel2-slots-row">${slots}</div>
+        <div class="duel-section-lbl">Utility</div>
+        ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle })}
+      </div>
     </section>`;
 }
 
@@ -1440,12 +1463,16 @@ function defenderCardHtmlDuel(store, target, challenger) {
   const slots = [0, 1].map((i) => defenseSlotHtml(held[i] || null, limits.defense >= i + 1, revealed)).join('');
   return `
     <section class="duel-side duel-side-defender" style="--side-accent:${esc(target.accent)}">
-      <div class="duel-role">🛡️ Defender</div>
-      ${duelCardHeadHtml(store, target, 'defender')}
-      <div class="duel-section-lbl duel2-slots-start">Defense slots${frozen ? ' — ❄️ frozen' : ''}</div>
-      <div class="duel2-slots-row">${slots}</div>
-      <div class="duel-section-lbl">Utility</div>
-      ${utilityRowHtml(store, target.id)}
+      <div class="duel2-top">
+        <div class="duel-role">🛡️ Defender</div>
+        ${duelCardHeadHtml(store, target, 'defender')}
+      </div>
+      <div class="duel2-bottom">
+        <div class="duel-section-lbl">Defense slots${frozen ? ' — ❄️ frozen' : ''}</div>
+        <div class="duel2-slots-row">${slots}</div>
+        <div class="duel-section-lbl">Utility</div>
+        ${utilityRowHtml(store, target.id)}
+      </div>
     </section>`;
 }
 
