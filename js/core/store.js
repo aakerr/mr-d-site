@@ -415,6 +415,9 @@ function defaultState() {
     // houseId -> epoch ms while a Shroud of Secrecy hides their held items from
     // the Stone of Seeing.
     shrouded: {},
+    // viewerHouseId -> { targetHouseId: ts } — who has used a Stone of Seeing on
+    // whom. Cleared when Battle Day ends.
+    revealed: {},
     // houseId -> DAMAGE TAKEN, not current HP. Refilled (cleared) at the start
     // of each Battle Day. Storing "current" looked right until a house won a
     // battle: the prize pushed it over a 500-point boundary, its maximum rose,
@@ -776,6 +779,7 @@ function load() {
       for (const [id, exp] of Object.entries(merged.shields)) {
         if (!(Number(exp) > Date.now())) delete merged.shields[id];
       }
+      merged.revealed = merged.revealed && typeof merged.revealed === 'object' ? merged.revealed : {};
       merged.shrouded = merged.shrouded && typeof merged.shrouded === 'object' ? merged.shrouded : {};
       for (const [id, until] of Object.entries(merged.shrouded)) {
         if (!(Number(until) > Date.now())) delete merged.shrouded[id];
@@ -1566,10 +1570,25 @@ export const store = {
         reason: `${HOUSES[targetId]?.name || 'That house'} is under a Shroud of Secrecy — the Stone shows nothing. It is still used up.` };
     }
     store.consumeFromInventory(viewerId, 'stone');
+    // Remembered, not just returned. Every screen re-renders on any store
+    // change, so a reveal held only in the caller's variable would vanish the
+    // moment anything else happened — mid-lesson, in front of the class, after
+    // they spent 1000 points on it. It stays revealed until Battle Day ends.
+    if (!state.revealed || typeof state.revealed !== 'object') state.revealed = {};
+    if (!state.revealed[viewerId]) state.revealed[viewerId] = {};
+    state.revealed[viewerId][targetId] = Date.now();
     const items = store.getInventory(targetId).map(({ item, count }) => ({ name: item.name, slot: item.slot, count }));
     emit();
     return { ok: true, shrouded: false, items, reason: '' };
   },
+
+  // Has this house already looked at that one? Drives whether the defender's
+  // held item is shown face-up on the board.
+  hasRevealed(viewerId, targetId) {
+    return !!((state.revealed || {})[viewerId] || {})[targetId];
+  },
+  // Cleared when Battle Day ends, so next week's holdings are secret again.
+  clearReveals() { state.revealed = {}; emit(); },
 
   // Shroud of Secrecy: one week of immunity from the Stone. Spent on use.
   raiseShroud(houseId) {
