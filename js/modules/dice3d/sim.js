@@ -665,7 +665,13 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
   function settle(now) {
     rolling = false;
     pauseAt = now + 900 + ROLL.settleAnticipationMs;
-    audio?.sfx?.('diceland');   // the die coming to rest — same light tap
+    // NO SOUND HERE. The die's last bounce already played one through
+    // onCollide, and that bounce IS the landing — settle() only runs once rest
+    // detection has seen ten consecutive still frames, which measured over a
+    // second after the final contact. A cue at this moment therefore arrives
+    // when the dice have visibly been sitting there, reading as a stray noise
+    // rather than part of the roll. Measured on a real d20 roll: nine impact
+    // taps, the last gap 1116ms.
     // Fate accounting: we always DISPLAY the real settled face; a target miss
     // (rare numerical divergence) just means the physics face is shown instead.
     for (const d of dice) {

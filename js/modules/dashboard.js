@@ -185,30 +185,33 @@ function renderHero(state, store) {
              of dead space under "CAMELOT!" against 10px above it. Margins here
              cancel that reserved space, so the numbers below are what is
              actually visible between letters.
-             The ratios (.0806 above, .1758 below) are Cinzel's ink inset per em,
-             measured with canvas TextMetrics; they scale with the name because
-             they are multiplied by its font size. Change the typeface and they
-             must be re-measured. --wel-ink/--motto-ink are those lines' visible
-             heights, likewise measured rather than assumed. -->
-        <div class="flex-1 min-w-[240px] flex flex-col justify-start" style="
+             Every ratio below is an ink inset per em, measured with canvas
+             TextMetrics rather than guessed: Cinzel caps sit .0806 below the top
+             of their line box and .1758 above the bottom; the label and the
+             italic motto have their own. They multiply by each line's font size,
+             so changing a size keeps the gaps honest. Change the TYPEFACE and
+             they all need re-measuring.
+             The four numbers on the next line are the only ones meant to be
+             edited: two font sizes, the name size, and the two gaps. -->
+        <div class="flex-1 min-w-[240px] flex flex-col justify-center" style="
              height:var(--crest-h);
-             --gap-top:2px; --gap-bot:0px;
-             --wel-ink:10.8px; --motto-ink:18.4px;
-             --name-fs:calc((var(--crest-h) - var(--wel-ink) - var(--gap-top) - var(--motto-ink) - var(--gap-bot)) / 0.7436)">
-          <div class="text-white/80 font-bold uppercase tracking-[0.25em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:16px;line-height:1;margin-top:-2.9px;margin-bottom:calc(var(--gap-top) - 2.3px - 0.0806 * var(--name-fs))">Welcome</div>
+             --gap-top:6px; --gap-bot:6px;
+             --wel-fs:16px; --motto-fs:24px; --name-fs:135px">
+          <div class="text-white/80 font-bold uppercase tracking-[0.25em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:var(--wel-fs);line-height:1;margin-bottom:calc(var(--gap-top) - 0.1438 * var(--wel-fs) - 0.0806 * var(--name-fs))">Welcome</div>
           <!-- Sized OFF the crest, not off the viewport: the name is whatever is
                left of the shield's height once the other two lines and the two
                gaps are taken out. That is what makes top and bottom line up on
                their own at any screen size — a vh value only matches at the one
                height it was tuned at and drifts everywhere else.
-               --name-fs above solves for the size whose INK fills what is left
-               of the shield once the other two lines and the gaps are removed,
-               which is why the letters meet the shield's edges rather than the
-               boxes doing so invisibly. -->
+               An explicit size now, set above, rather than solved from the
+               shield: he asked for a specific one. The column therefore centres
+               on the shield instead of spanning it edge to edge — with the name
+               smaller than the shield's height, something has to give, and the
+               gaps he specified are the part worth holding exactly. -->
           <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:var(--name-fs)">
             ${h.name.toUpperCase()}!
           </h1>
-          <p class="text-white/90 italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:26px;line-height:1;margin-top:calc(var(--gap-bot) - 0.1758 * var(--name-fs) - 3.4px)">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
+          <p class="text-white/90 italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:var(--motto-fs);line-height:1;margin-top:calc(var(--gap-bot) - 0.1758 * var(--name-fs) - 0.1308 * var(--motto-fs))">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
         </div>
       </div>
     </div>`;
