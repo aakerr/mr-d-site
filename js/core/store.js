@@ -27,6 +27,24 @@ function defaultAwardPresets() {
   ];
 }
 
+// Die of Destiny (d20) outcome table. `id` is the stable key a teacher edit is
+// keyed to (see saveDiceOutcome) — it never changes even if wording does.
+// `min`/`max`/`hasButton`/`mythic` are NOT teacher-editable: every one of the
+// 20 faces on the die must map to exactly one outcome with no gaps or overlaps,
+// or a roll could come up with nothing to show the class. Opening those up
+// risked breaking that guarantee for very little benefit, so only the points,
+// title, description and emoji can be changed — see saveDiceOutcome below.
+function defaultDiceProphecy() {
+  return [
+    { id: 'catastrophe', min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 10 points',                        points: -10, hasButton: true },
+    { id: 'misfortune',  min: 2,  max: 5,  emoji: '🌧️', title: 'Misfortune',     desc: 'Teacher picks the next challenger',            points: 0,   hasButton: false },
+    { id: 'neutral',     min: 6,  max: 9,  emoji: '😐', title: 'Fate is Neutral', desc: 'Nothing happens',                              points: 0,   hasButton: false },
+    { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: 'Move your token / +2 class points',            points: 2,   hasButton: true },
+    { id: 'fortune',     min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
+    { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a Mythic Relic to defend your house!', points: 20, hasButton: true, mythic: true },
+  ];
+}
+
 // Quest kinds. The icon rides on the card so a class can tell at a glance what
 // sort of task it is — which is what the repeated crossed-swords could never do.
 // 'service' is the fallback for anything untyped (a quest the teacher wrote
@@ -219,6 +237,10 @@ function defaultState() {
       // 'grid' | 'carousel' per screen (see LAYOUT_SCREENS).
       layouts: null,
       combat: null,      // see defaultCombat()
+      // Die of Destiny outcome table (see defaultDiceProphecy()). Seeded from
+      // the defaults so a teacher edit is always a diff against something
+      // concrete, same reasoning as moduleThemes below.
+      diceProphecy: null,
       // Teacher recordings per sound (see SFX_SLOTS). Empty = use the built-in.
       sfx: null,
       awardPresets: defaultAwardPresets(),  // one-tap awards on the Records screen
@@ -469,6 +491,25 @@ function load() {
         });
         merged.settings.moduleThemes = out;
       }
+      // Dice outcome points/wording (Die of Destiny) — teacher-editable in
+      // Admin. Rebuilt every load, keyed by id, same reasoning as moduleThemes
+      // above: min/max/hasButton/mythic always come from the shipped defaults
+      // (so a roll can never land on a gap), while points/title/desc/emoji are
+      // taken from the saved copy when present and valid.
+      {
+        const def = defaultDiceProphecy();
+        const saved = Array.isArray(merged.settings.diceProphecy) ? merged.settings.diceProphecy : [];
+        merged.settings.diceProphecy = def.map((d) => {
+          const s = saved.find((x) => x.id === d.id) || {};
+          return {
+            ...d,
+            points: Number.isFinite(Number(s.points)) ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(s.points)))) : d.points,
+            title: typeof s.title === 'string' && s.title.trim() ? s.title.trim().slice(0, 40) : d.title,
+            desc: typeof s.desc === 'string' && s.desc.trim() ? s.desc.trim().slice(0, 140) : d.desc,
+            emoji: typeof s.emoji === 'string' && s.emoji.trim() ? s.emoji.trim().slice(0, 4) : d.emoji,
+          };
+        });
+      }
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
@@ -573,9 +614,15 @@ function startOfWeek(d = new Date()) {
   x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x;
 }
 
-function todayStr() {
-  const d = new Date();
+// 'YYYY-MM-DD' in LOCAL time. Deliberately not toISOString(), which converts to
+// UTC first and so reports the wrong day either side of midnight for anyone
+// west of Greenwich — this app deals in school days, not instants.
+function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function todayStr() {
+  return ymd(new Date());
 }
 
 function addDays(dateStr, n) {
@@ -805,6 +852,44 @@ export const store = {
     if (!def) return false;
     return store.setModuleTheme(moduleId, { color: def.color, matchHouse: def.matchHouse });
   },
+
+  // ----- Die of Destiny prophecy table (teacher-editable in Admin) -----
+  // Ranges (min/max), hasButton and mythic stay fixed — see the note on
+  // defaultDiceProphecy() for why a roll can never land on a gap. Only points,
+  // title, desc and emoji can change.
+
+  getDiceProphecy() {
+    return state.settings.diceProphecy || defaultDiceProphecy();
+  },
+
+  saveDiceOutcome(id, patch = {}) {
+    const list = store.getDiceProphecy();
+    const i = list.findIndex((o) => o.id === id);
+    if (i < 0) return null;
+    const o = list[i];
+    // Clamped/validated HERE, not just in the Admin form — same MAX_DELTA
+    // ceiling every points transaction respects, so a stray keystroke can
+    // never save an outcome addPoints would silently cut down anyway.
+    const next = {
+      ...o,
+      points: Number.isFinite(Number(patch.points)) ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(patch.points)))) : o.points,
+      title: typeof patch.title === 'string' && patch.title.trim() ? patch.title.trim().slice(0, 40) : o.title,
+      desc: typeof patch.desc === 'string' && patch.desc.trim() ? patch.desc.trim().slice(0, 140) : o.desc,
+      emoji: typeof patch.emoji === 'string' && patch.emoji.trim() ? patch.emoji.trim().slice(0, 4) : o.emoji,
+    };
+    const updated = list.slice();
+    updated[i] = next;
+    state.settings.diceProphecy = updated;
+    emit();
+    return next;
+  },
+
+  resetDiceOutcome(id) {
+    const def = defaultDiceProphecy().find((d) => d.id === id);
+    if (!def) return false;
+    return !!store.saveDiceOutcome(id, def);
+  },
+
   // Icon for a quest's kind, falling back rather than rendering a blank.
   questType(q) { return QUEST_TYPES[q && q.type] || QUEST_TYPES[DEFAULT_QUEST_TYPE]; },
   // The mark shown on a quest card. Each quest carries its own so a board of
@@ -1362,9 +1447,20 @@ export const store = {
 
   // ----- POTW quiz bounty ledger (prevents double-paying on relaunch) -----
 
+  // A paid bounty is remembered per profile PER WEEK, so relaunching the same
+  // voyage in the same lesson can't pay twice, but next week's class gets a
+  // fresh set of bounties.
+  //
+  // A blank weekOf used to collapse to the literal string 'nodate', which meant
+  // every week shared one bucket: pay a bounty once and that question was dead
+  // for the rest of the term, with nothing in the UI to explain why. The
+  // shipped Mesopotamia profile has weekOf:'' — so this hit the default
+  // profile. Falling back to the CURRENT week's Monday keeps the intended
+  // weekly reset for profiles the teacher hasn't scheduled to a date.
   bountyKey(profileKey, index) {
     const p = state.potw.profiles[profileKey];
-    return `${profileKey}|${p?.weekOf || 'nodate'}|${index}`;
+    const week = p?.weekOf || ymd(startOfWeek());
+    return `${profileKey}|${week}|${index}`;
   },
 
   isBountyPaid(profileKey, index) {
@@ -1406,7 +1502,16 @@ export const store = {
 
   savePotwProfile(key, profile) {
     if (!key || !profile?.title) return false;
-    state.potw.profiles[key] = profile;
+    const clean = { ...profile };
+    // bountyPoints is per-profile, teacher-set in Admin. Clamped/validated
+    // HERE, not just in the form — this also receives whole profile objects
+    // off a backup restore, and a blank/garbage value must fall back to the
+    // built-in default (see bountyPoints() in potw.js) rather than saving NaN
+    // or an unbounded award.
+    const bp = Math.round(Number(profile.bountyPoints));
+    if (Number.isFinite(bp) && bp > 0) clean.bountyPoints = Math.min(MAX_DELTA, bp);
+    else delete clean.bountyPoints;
+    state.potw.profiles[key] = clean;
     emit();
     return true;
   },

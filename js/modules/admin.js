@@ -1,5 +1,5 @@
 // admin.js — Teacher's Admin Panel for Mr. D's Classroom OS
-// Tabs: 📅 Planner, 🗺️ Quests, 🔮 Shop, 🌍 Place of the Week, ⚙️ Settings (always last).
+// Tabs: 📅 Planner, 🗺️ Quests, 🔮 Shop, 🌍 Place of the Week, ⚔️ Battle Day, ❓ Help, ⚙️ Settings (always last).
 // Owns ONLY this file. Renders into #module-root. All state flows through the
 // store APIs (never mutated directly). Media blobs go through js/core/media.js.
 // Injects <style id="admin-styles"> once; styles are theme-token aware (light/dark).
@@ -17,10 +17,13 @@ const MAIN_TABS = [
   { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
   { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
 ];
+// ⚔️ Battle Day sits right after the main tabs — every Battle-Day-only control
+// (prize rules, hit points, punching down, live shields/defenses) lives here.
 // ❓ Help sits immediately before Settings; Settings is always last.
+const BATTLE_TAB = { id: 'battle', label: "<img src='images/icon-battle.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Battle Day" };
 const HELP_TAB = { id: 'help', label: '❓ Help' };
 const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
-const TABS = [...MAIN_TABS, HELP_TAB, SETTINGS_TAB];
+const TABS = [...MAIN_TABS, BATTLE_TAB, HELP_TAB, SETTINGS_TAB];
 
 // Article ids in js/core/help.js. Kept in one place so a rename over there is a
 // one-line fix here. (These are TOPIC ids, not category ids — openHelp() takes
@@ -181,6 +184,7 @@ function renderBody({ force = false } = {}) {
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
   else if (activeTab === 'quests') body.innerHTML = renderQuests();
   else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
+  else if (activeTab === 'battle') body.innerHTML = renderBattleDay();
   else if (activeTab === 'help') body.innerHTML = renderHelp();
   else if (activeTab === 'settings') body.innerHTML = renderSettings();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
@@ -1716,6 +1720,41 @@ function renderAwardPresetsCard() {
     </div>`;
 }
 
+// ---- Die of Destiny prophecy table (dice roll outcomes) --------------------
+function renderDiceProphecyCard() {
+  const store = ctxRef.store;
+  const rows = store.getDiceProphecy().map((o) => diceRowHTML(o)).join('');
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎲 Die of Destiny — Prophecy Table</div>
+      <div class="admin-mini">These are the six outcomes a student can land on when they roll the d20. Change the points, the title, the description or the emoji on any row below — it saves the moment you type, no separate Save button needed. The <b>ranges</b> (which numbers on the die trigger which outcome) are fixed on purpose: all 20 faces have to map to exactly one outcome, with no gaps and no numbers shared between two outcomes, or a roll could come up with nothing to show the class. Letting those ranges be edited risked breaking that guarantee for very little benefit, so only the wording and points below can change.</div>
+      <div class="admin-dice-rows" style="margin-top:12px">${rows}</div>
+    </div>`;
+}
+
+function diceRowHTML(o) {
+  const rangeLabel = o.min === o.max ? `Roll ${o.min}` : `Roll ${o.min}–${o.max}`;
+  return `
+    <div class="admin-dice-row" data-dice-id="${esc(o.id)}">
+      <div class="admin-dice-range" title="These numbers on the d20 trigger this outcome">${esc(rangeLabel)}</div>
+      <input class="admin-input admin-dice-emoji" type="text" maxlength="4" value="${esc(o.emoji)}"
+        data-dice-id="${esc(o.id)}" data-dice-field="emoji" aria-label="Emoji" />
+      <div class="admin-dice-main">
+        <input class="admin-input" type="text" value="${esc(o.title)}"
+          data-dice-id="${esc(o.id)}" data-dice-field="title" aria-label="Outcome title" placeholder="Outcome name" />
+        <input class="admin-input admin-input-sm" type="text" value="${esc(o.desc)}"
+          data-dice-id="${esc(o.id)}" data-dice-field="desc" aria-label="What happens" placeholder="What happens when this comes up" />
+      </div>
+      <div class="admin-dice-points">
+        <label class="admin-flabel" style="margin:0">Points</label>
+        <input class="admin-input" type="number" value="${esc(o.points)}"
+          data-dice-id="${esc(o.id)}" data-dice-field="points" aria-label="Points awarded" />
+      </div>
+      <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="dice-reset" data-dice-id="${esc(o.id)}"
+        title="Put this row back to its shipped wording and points">Reset</button>
+    </div>`;
+}
+
 function openAwardForm(id) {
   const store = ctxRef.store;
   const p = id ? store.getAwardPresets().find((x) => x.id === id) : null;
@@ -1951,6 +1990,19 @@ function renderBattleRulesCard() {
     </div>`;
 }
 
+// ===========================================================================
+// TAB — BATTLE DAY (everything that only matters when houses are fighting:
+// prize rules, hit points, punching down, and the live shield/reduction board)
+// ===========================================================================
+function renderBattleDay() {
+  return `
+    <div class="admin-settings">
+      ${renderBattleRulesCard()}
+
+      ${shieldPanelHTML()}
+    </div>`;
+}
+
 function renderSettings() {
   const store = ctxRef.store;
   const s = store.getSettings();
@@ -1985,8 +2037,6 @@ function renderSettings() {
         <div class="admin-hint" style="margin-top:.75rem">The top-bar term label and the Morning Dashboard update the moment you save.</div>
       </div>
 
-      ${renderBattleRulesCard()}
-
       ${renderHousesCard()}
 
       ${renderScreenColoursCard()}
@@ -1994,6 +2044,8 @@ function renderSettings() {
       ${renderScreenLayoutCard()}
 
       ${renderAwardPresetsCard()}
+
+      ${renderDiceProphecyCard()}
 
       <div class="admin-card">
         <div class="admin-card-title">Term Start / End Markers</div>
@@ -2047,8 +2099,6 @@ function renderSettings() {
       ${renderMusicCard()}
 
       ${renderSfxCard()}
-
-      ${shieldPanelHTML()}
 
       <div class="admin-card">
         <div class="admin-card-title">Backup &amp; Restore</div>
@@ -2391,22 +2441,22 @@ function updateShieldTimes() {
 }
 
 // Both time-based defenses in one place: full shields and damage reductions.
+// Always lists all four houses (not just the ones currently protected) so the
+// card never renders as inert text-only — a house with nothing active still
+// gets its own row, saying so plainly, rather than being silently omitted.
 function shieldPanelHTML() {
   const store = ctxRef.store;
-  const live = Object.values(store.HOUSES)
-    .map((h) => ({
-      house: h,
-      shield: store.shieldRemainingMs(h.id),
-      reduce: store.reductionRemainingMs(h.id),
-    }))
-    .filter((x) => x.shield > 0 || x.reduce > 0)
-    .sort((a, b) => Math.max(b.shield, b.reduce) - Math.max(a.shield, a.reduce));
+  const rows = Object.values(store.HOUSES).map((house) => ({
+    house,
+    shield: store.shieldRemainingMs(house.id),
+    reduce: store.reductionRemainingMs(house.id),
+  }));
 
   const defRow = (house, kind, ms) => `
     <div class="admin-def-line">
       <span class="admin-shield-emoji">${kind === 'shield' ? '🛡️' : '🕵️'}</span>
       <div class="admin-q-main">
-        <div class="admin-def-name">${kind === 'shield' ? 'Shield' : 'Damage halved'}</div>
+        <div class="admin-def-name">${kind === 'shield' ? 'Shield — blocks the next strike completely' : 'Damage halved — the next strike only does half'}</div>
         <div class="admin-q-desc"><span class="admin-def-time" data-house="${house.id}" data-kind="${kind}">${esc(fmtRemaining(ms))}</span></div>
       </div>
       <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="${kind === 'shield' ? 'shield-clear' : 'reduction-clear'}" data-house="${house.id}">Clear</button>
@@ -2415,16 +2465,22 @@ function shieldPanelHTML() {
   return `
     <div class="admin-card">
       <div class="admin-card-title">🛡️ Active Defenses</div>
-      <div class="admin-mini">Shields block attacks outright; damage reduction halves them. Clear one early if a house used it by mistake.</div>
-      ${live.length ? `<div class="admin-shield-list">${live.map(({ house, shield, reduce }) => `
+      <div class="admin-mini">
+        A house can be protected two ways going into a fight: a <b>Shield</b> (bought in the Magic Shop, or won) blocks the very next strike against that house completely — the house loses no HP at all, as if the attack never landed. <b>Damage halved</b> (usually a Mythic reward from a natural 20) cuts the HP lost on the next strike in half instead of blocking it outright. Neither one does anything to points directly, and neither stops a <b>Pierce</b> weapon, which always gets through in full no matter what a house has active. This board shows, house by house, exactly what is protecting them right now — live, updating on its own. If a class activated one by mistake, or a fight already happened and you want to reset before the next one, tap <b>Clear</b> to end it early. Nothing spent on it is refunded; it just stops working from that moment on.
+      </div>
+      <div class="admin-shield-list">${rows.map(({ house, shield, reduce }) => {
+        const lines = [];
+        if (shield > 0) lines.push(defRow(house, 'shield', shield));
+        if (reduce > 0) lines.push(defRow(house, 'reduce', reduce));
+        const body = lines.length
+          ? `<div class="admin-def-lines">${lines.join('')}</div>`
+          : `<div class="admin-mini" style="margin:0">No shield or damage reduction active — a strike against ${esc(house.name)} right now would land at full strength.</div>`;
+        return `
         <div class="admin-shield-row" style="--house:${house.accent}">
           <div class="admin-def-house" style="color:${house.accent}">${esc(house.name)}</div>
-          <div class="admin-def-lines">
-            ${shield > 0 ? defRow(house, 'shield', shield) : ''}
-            ${reduce > 0 ? defRow(house, 'reduce', reduce) : ''}
-          </div>
-        </div>`).join('')}</div>`
-        : '<div class="admin-empty admin-empty-sm">No house currently has a shield or damage reduction.</div>'}
+          ${body}
+        </div>`;
+      }).join('')}</div>
     </div>`;
 }
 
@@ -3262,6 +3318,8 @@ function openPotwEditor(key) {
       facts: (p.quickFacts || []).join('\n'),
       sources: (p.primarySources || []).map((s) => ({ emoji: s.emoji || '', name: s.name || '', desc: s.desc || '' })),
       quiz: (p.quiz || []).map((q) => ({ q: q.q || '', a: q.a || '' })),
+      // Blank means "use the built-in default" (see bountyPoints() in potw.js).
+      bountyPoints: p.bountyPoints != null ? String(p.bountyPoints) : '',
       // Prefer showing back what the teacher actually pasted (openUrl) so
       // re-saving keeps deriving the same canonical embed url; older profiles
       // saved before openUrl existed fall back to the stored embed url.
@@ -3280,6 +3338,7 @@ function openPotwEditor(key) {
       facts: '',
       sources: [{ emoji: '', name: '', desc: '' }],
       quiz: [{ q: '', a: '' }],
+      bountyPoints: '',
       pres: { type: null, pdf: null, images: [], url: '' },
       links: [],
       flyover: { file: null, existing: false, name: '', size: 0, url: '' },
@@ -3467,6 +3526,10 @@ function renderPotwModal() {
               <span class="admin-card-title admin-mini-title" style="margin:0">Quiz</span>
               <button class="admin-btn admin-btn-sm" data-action="potw-quiz-add">+ Add question</button>
             </div>
+            <label class="admin-flabel" for="admin-p-bounty">Bounty points per question</label>
+            <input id="admin-p-bounty" class="admin-input admin-input-sm" type="number" min="1" max="9999"
+              value="${esc(f.bountyPoints)}" placeholder="50" style="max-width:150px" />
+            <div class="admin-step-hint" style="margin:4px 0 10px">Whichever house answers a quiz question first, live, earns this many points on the spot. Leave this blank to use the app's built-in default of 50 points per question.</div>
             <div class="admin-qrows">${quizRows || '<div class="admin-empty admin-empty-sm">No questions yet.</div>'}</div>
 
             ${linksSectionHTML()}
@@ -3844,6 +3907,7 @@ function syncPotwFromDom() {
   const ext = rootEl.querySelector('details.admin-extras');
   if (ext) potwForm.extrasOpen = ext.open;
   if (has('admin-p-facts')) potwForm.facts = g('admin-p-facts');
+  if (has('admin-p-bounty')) potwForm.bountyPoints = g('admin-p-bounty');
   potwForm.sources = [...rootEl.querySelectorAll('.admin-srow')].map((r) => ({
     emoji: r.querySelector('.admin-s-emoji').value.trim(),
     name: r.querySelector('.admin-s-name').value.trim(),
@@ -3917,6 +3981,9 @@ async function savePotw() {
     quickFacts: f.facts.split('\n').map((s) => s.trim()).filter(Boolean),
     primarySources: f.sources.filter((s) => s.name || s.desc || s.emoji),
     quiz: f.quiz.filter((q) => q.q || q.a),
+    // Raw pass-through — store.savePotwProfile clamps/validates this (a blank
+    // or garbage value there falls back to the built-in default of 50).
+    bountyPoints: f.bountyPoints,
   };
   if (presentation) profile.presentation = presentation;
   // A legacy free-text videoUrl is preserved only while the teacher hasn't picked
@@ -4288,6 +4355,15 @@ function onClick(e) {
       store.resetModuleTheme(id);
       renderBody({ force: true });
       toast(`${label} colour reset to its shipped default.`);
+      break;
+    }
+
+    // dice prophecy table (Die of Destiny outcomes)
+    case 'dice-reset': {
+      const id = btn.dataset.diceId;
+      store.resetDiceOutcome(id);
+      renderBody({ force: true });
+      toast('Outcome reset to its shipped wording and points.');
       break;
     }
 
@@ -4772,6 +4848,17 @@ function injectStyles() {
   .admin-qrow{display:grid;grid-template-columns:1fr 1fr 44px;gap:6px;align-items:center;}
   @media (max-width:600px){.admin-srow,.admin-qrow{grid-template-columns:1fr;}}
 
+  /* dice tab (Die of Destiny prophecy table) */
+  .admin-dice-rows{display:flex;flex-direction:column;gap:10px;}
+  .admin-dice-row{display:grid;grid-template-columns:96px 56px 1fr 96px auto;gap:10px;align-items:center;
+    padding:10px 12px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.7rem;}
+  .admin-dice-range{font-size:.78rem;font-weight:700;color:var(--color-text-soft);text-align:center;
+    background:var(--color-card2);border-radius:.4rem;padding:8px 4px;}
+  .admin-dice-emoji{text-align:center;font-size:1.1rem;padding-left:4px;padding-right:4px;}
+  .admin-dice-main{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .admin-dice-points{display:flex;flex-direction:column;gap:2px;}
+  @media (max-width:760px){.admin-dice-row{grid-template-columns:1fr;}}
+
   /* shop tab */
   .admin-key-row .admin-btn{flex-shrink:0;}
   .admin-shop-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
@@ -5116,6 +5203,13 @@ export default {
         const sw = el(`admin-mct-swatch-${id}`);
         if (sw) sw.style.background = hex;
       }
+      else if (e.target.dataset && e.target.dataset.diceId) {
+        // Prophecy table rows save straight to the store as the teacher types,
+        // same live-write pattern as the battle-rules and colour fields above.
+        // The store clamps/validates (saveDiceOutcome), so a stray keystroke
+        // here can never save something the dice screen would choke on.
+        ctxRef.store.saveDiceOutcome(e.target.dataset.diceId, { [e.target.dataset.diceField]: e.target.value });
+      }
     };
     rootEl.addEventListener('input', inputHandler);
 
@@ -5140,11 +5234,12 @@ export default {
     rootEl.addEventListener('dragleave', dragLeaveHandler);
     rootEl.addEventListener('drop', dropHandler);
 
-    // keep the auto-backup "last saved …" line live (writes don't emit store changes)
+    // keep the auto-backup "last saved …" line and the Active Defenses
+    // countdowns live (writes don't emit store changes). Backup status only
+    // exists on Settings; shield/reduction timers now live on Battle Day.
     backupStatusTimer = setInterval(() => {
-      if (activeTab !== 'settings') return;
-      updateBackupStatusLine();
-      updateShieldTimes();
+      if (activeTab === 'settings') updateBackupStatusLine();
+      if (activeTab === 'battle') updateShieldTimes();
     }, 5000);
 
     unsub = ctx.store.subscribe(() => { renderBody(); });

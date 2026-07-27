@@ -21,18 +21,11 @@ let relicInFlight = false;        // a relic claim is mid-PIN-check; blocks a se
 let history = [];         // [{ mode, value1, value2?, total, outcome? }] — kept, not rendered
 const MAX_HISTORY = 8;
 
-// Prophecy table: d20 outcome ranges (unchanged classroom behavior).
-const PROPHECY = [
-  { min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 10 points',                        points: -10, hasButton: true },
-  { min: 2,  max: 5,  emoji: '🌧️', title: 'Misfortune',     desc: 'Teacher picks the next challenger',            points: 0,   hasButton: false },
-  { min: 6,  max: 9,  emoji: '😐', title: 'Fate is Neutral', desc: 'Nothing happens',                              points: 0,   hasButton: false },
-  { min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: 'Move your token / +2 class points',            points: 2,   hasButton: true },
-  { min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
-  { min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a Mythic Relic to defend your house!', points: 20, hasButton: true, mythic: true },
-];
-
+// Prophecy table: d20 outcome ranges. Teacher-editable in Admin (points,
+// title, desc, emoji) — see store.getDiceProphecy()/saveDiceOutcome(). The
+// ranges themselves stay fixed in the store so a roll can never land on a gap.
 function getProphecy(num) {
-  return PROPHECY.find((p) => num >= p.min && num <= p.max) || null;
+  return store.getDiceProphecy().find((p) => num >= p.min && num <= p.max) || null;
 }
 
 function createStyles() {
@@ -258,7 +251,7 @@ function showPlaque(el, innerHtml, variant) {
 }
 
 function prophecyRowsHtml(activeMin) {
-  return PROPHECY.map((row) => `
+  return store.getDiceProphecy().map((row) => `
     <div class="dice-prophecy-row ${activeMin === row.min ? 'active' : ''}">
       <div class="dice-prophecy-emoji">${row.emoji}</div>
       <div>
