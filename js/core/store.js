@@ -674,6 +674,34 @@ function showPersistFailure(err) {
   (document.body || document.documentElement).appendChild(bar);
 }
 
+// ---- ledger memoisation -----------------------------------------------------
+// Every screen re-renders on ANY store change, and the Records screen alone
+// makes ~50 passes over state.transactions per render (8 getTotal calls, 36
+// inside getWeeklySeries, plus the breakdown). Most changes that trigger a
+// render never touch the ledger at all — a theme toggle, a sound setting, a
+// layout switch — so nearly all of that work was recomputing an identical
+// answer.
+//
+// This cache is safe because the invalidation surface is provably small: the
+// ONLY three places that can change state.transactions are addPoints(),
+// removeTransaction() and resetAll(), and each bumps the version. If you add a
+// fourth, bump it there too — that is the whole contract.
+//
+// Time and settings are handled by the KEY rather than the version, because
+// they change without any ledger mutation: a 'week' scope answer depends on
+// which week it is now, and the weekly series depends on the term dates the
+// teacher set in Admin. Both are folded into the key, so a week rolling over or
+// a term being re-dated produces a different key and a fresh answer instead of
+// a stale hit.
+let ledgerCache = new Map();
+function bumpLedger() { ledgerCache = new Map(); }
+function cached(key, compute) {
+  if (ledgerCache.has(key)) return ledgerCache.get(key);
+  const value = compute();
+  ledgerCache.set(key, value);
+  return value;
+}
+
 function emit() { persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
 
 function startOfWeek(d = new Date()) {
@@ -982,15 +1010,23 @@ export const store = {
     if (!delta || !HOUSES[houseId]) return null;
     const tx = { id: `tx-${Date.now()}-${state.transactions.length}`, ts: Date.now(), houseId: Number(houseId), delta, reason, tag };
     state.transactions.push(tx);
+    bumpLedger();
     emit();
     return tx;
   },
 
+  // Returns a NUMBER, so there is no aliasing risk in handing back a cached
+  // value — this is the hot one, called for every house on nearly every render.
   getTotal(houseId, scope = 'term') {
     const since = scope === 'week' ? startOfWeek().getTime() : 0;
-    return state.transactions.reduce((sum, t) => (t.houseId === Number(houseId) && t.ts >= since ? sum + t.delta : sum), 0);
+    return cached(`total|${Number(houseId)}|${since}`, () =>
+      state.transactions.reduce((sum, t) => (t.houseId === Number(houseId) && t.ts >= since ? sum + t.delta : sum), 0));
   },
 
+  // Deliberately NOT cached: it builds a fresh array of fresh objects that
+  // callers sort and decorate, and handing out a shared array would let one
+  // screen's edit surface in another. The expensive part is getTotal, which is
+  // cached, so rebuilding this wrapper costs four lookups and a sort.
   getTotals(scope = 'term') {
     return Object.values(HOUSES)
       .map((house) => ({ house, total: store.getTotal(house.id, scope) }))
@@ -1012,40 +1048,59 @@ export const store = {
 
   // Points per house for each week of the term — the shape of the House Cup
   // race. `cumulative` gives the running total instead of the week's net.
+  // The single most expensive read in the app: weeks x houses full-array
+  // reduces, 36 of them on a 9-week term, every time Records re-renders.
+  // The term dates are in the KEY because the teacher can change them in Admin
+  // without ever touching the ledger.
+  //
+  // Callers get a fresh array of fresh objects built from the cached numbers.
+  // Copying 9 small objects is nothing against 36 passes over the ledger, and
+  // it means a screen that decorates or sorts the result cannot corrupt what
+  // the next screen reads.
   getWeeklySeries({ cumulative = false } = {}) {
     const s = store.getSettings();
     const start = new Date(s.termStart + 'T00:00:00').getTime();
     const weeks = Math.max(1, Number(s.termWeeks) || 9);
-    const running = {};
-    const out = [];
-    for (let w = 0; w < weeks; w++) {
-      const from = start + w * 7 * 86400000;
-      const to = from + 7 * 86400000;
-      const totals = {};
-      for (const id of Object.keys(HOUSES)) {
-        const net = state.transactions.reduce((sum, t) =>
-          (t.houseId === Number(id) && t.ts >= from && t.ts < to ? sum + t.delta : sum), 0);
-        running[id] = (running[id] || 0) + net;
-        totals[id] = cumulative ? running[id] : net;
+    const raw = cached(`series|${cumulative}|${start}|${weeks}`, () => {
+      const running = {};
+      const rows = [];
+      for (let w = 0; w < weeks; w++) {
+        const from = start + w * 7 * 86400000;
+        const to = from + 7 * 86400000;
+        const totals = {};
+        for (const id of Object.keys(HOUSES)) {
+          const net = state.transactions.reduce((sum, t) =>
+            (t.houseId === Number(id) && t.ts >= from && t.ts < to ? sum + t.delta : sum), 0);
+          running[id] = (running[id] || 0) + net;
+          totals[id] = cumulative ? running[id] : net;
+        }
+        rows.push({ week: w + 1, from, totals });
       }
-      out.push({ week: w + 1, from: new Date(from), totals });
-    }
-    return out;
+      return rows;
+    });
+    return raw.map((r) => ({ week: r.week, from: new Date(r.from), totals: { ...r.totals } }));
   },
 
   // Where a house's points actually came from, by tag.
+  // Copied out on the way back for the same reason as getWeeklySeries: the
+  // caller gets its own object to do as it likes with.
   getBreakdown(houseId, scope = 'term') {
     const since = scope === 'week' ? startOfWeek().getTime() : 0;
-    const by = {};
-    for (const t of state.transactions) {
-      if (t.houseId !== Number(houseId) || t.ts < since) continue;
-      const key = t.tag || 'manual';
-      by[key] = by[key] || { earned: 0, lost: 0, net: 0, count: 0 };
-      if (t.delta >= 0) by[key].earned += t.delta; else by[key].lost += -t.delta;
-      by[key].net += t.delta;
-      by[key].count += 1;
-    }
-    return by;
+    const by = cached(`breakdown|${Number(houseId)}|${since}`, () => {
+      const acc = {};
+      for (const t of state.transactions) {
+        if (t.houseId !== Number(houseId) || t.ts < since) continue;
+        const key = t.tag || 'manual';
+        acc[key] = acc[key] || { earned: 0, lost: 0, net: 0, count: 0 };
+        if (t.delta >= 0) acc[key].earned += t.delta; else acc[key].lost += -t.delta;
+        acc[key].net += t.delta;
+        acc[key].count += 1;
+      }
+      return acc;
+    });
+    const out = {};
+    for (const [k, v] of Object.entries(by)) out[k] = { ...v };
+    return out;
   },
 
   // ----- award presets + bulk awards (teacher-defined routines) -----
@@ -1267,6 +1322,7 @@ export const store = {
     const i = state.transactions.findIndex((t) => t.id === id);
     if (i < 0) return false;
     state.transactions.splice(i, 1);
+    bumpLedger();
     emit();
     return true;
   },
@@ -1594,6 +1650,7 @@ export const store = {
 
   resetAll() {
     state = defaultState();
+    bumpLedger();
     emit();
   },
 };
