@@ -30,6 +30,7 @@ const OUTCOME_MS = 2600; // static outcome caption (text, 250ms pop-in)
 // stay short; the dice roll itself (createDiceSim) takes as long as the
 // physics needs, on top of these.
 const DUEL2_THROW_MS = 900;    // attack item flies across the arena — slow enough to follow
+const DUEL2_PRE_ROLL_MS = 500;     // dice sit in the tray a beat before they are thrown
 const DUEL2_CHARGE_BTN_MS = 620;   // the chosen weapon pulses before anything moves
 const DUEL2_CHARGE_CREST_MS = 620; // then the attacker's own crest winds up
 const DUEL2_IMPACT_MS = 700;       // the defending card takes the hit
@@ -504,9 +505,11 @@ function injectStyles() {
   .duel-arena-hint{color:#9ca3af;font-size:.82rem;max-width:15rem;line-height:1.35;}
 
   /* projectile: fixed-position so it flies between the two crests wherever they sit */
-  .duel-proj{position:fixed;z-index:70;pointer-events:none;font-size:2.1rem;line-height:1;
-    width:44px;height:44px;margin:-22px 0 0 -22px;display:flex;align-items:center;justify-content:center;
-    filter:drop-shadow(0 0 12px rgba(253,224,71,.8));
+  /* Bigger. It crosses a 1900px board in front of a class — at 2.1rem it was a
+     detail you had to already be looking for. */
+  .duel-proj{position:fixed;z-index:70;pointer-events:none;font-size:clamp(2.6rem,5.2vh,4.4rem);line-height:1;
+    width:76px;height:76px;margin:-38px 0 0 -38px;display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 0 18px rgba(253,224,71,.85));
     animation:duel-proj-kf var(--travel,280ms) cubic-bezier(.35,0,.75,1) both;}
   @keyframes duel-proj-kf{
     0%{opacity:0;transform:translate(0,0) scale(.5) rotate(-20deg);}
@@ -1842,6 +1845,12 @@ async function rollItemDice(item, house) {
     closeDiceOverlay();
     return { ...plainRoll(n, sides), label: item.effect.dice || '1d6' };
   }
+
+  // The overlay used to arrive and throw in the same frame, so the dice were
+  // already tumbling before anyone had found them on the board. Let them sit in
+  // the tray for a beat first — the room looks at the dice, THEN they go.
+  if (!prefersReducedMotion()) await delay(DUEL2_PRE_ROLL_MS);
+  if (!diceSim) return { ...plainRoll(n, sides), label: item.effect.dice || '1d6' };
 
   let rolls = [];
   let label = `${n}d${sides}`;
