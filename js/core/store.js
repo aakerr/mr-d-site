@@ -505,7 +505,13 @@ function defaultState() {
           title: 'Ancient Mesopotamia',
           subtitle: 'Modern Day Iraq • The Fertile Crescent',
           weekOf: '',            // 'YYYY-MM-DD' Monday — launches during that week
-          introVideoId: 'rock',  // preset from CONFIG.POTW_INTRO_VIDEOS
+          // NEVER hardcode a preset id here. 'rock' and 'classic' were baked in
+          // once, then retired from CONFIG.POTW_INTRO_VIDEOS — and because the
+          // remap that fixes them lives in load()'s `if (raw)` branch, every
+          // FRESH install shipped a profile pointing at a video that no longer
+          // existed. Place of the Week silently fell back to its title card and
+          // never played anything. Read the id from config instead.
+          introVideoId: CONFIG.POTW_DEFAULT_VIDEO_ID,
           camera: { center: { lat: 32.5363, lng: 44.4223, altitude: 150 }, range: 2000, tilt: 60, heading: 45 },
           quickFacts: [
             'The "Land Between Two Rivers" — the Tigris and the Euphrates.',
@@ -529,7 +535,8 @@ function defaultState() {
           title: 'Ancient Egypt',
           subtitle: 'Modern Day Egypt • The Gift of the Nile',
           weekOf: '2026-07-27',      // plays the week of Mon Jul 27
-          introVideoId: 'classic',
+          introVideoId: (CONFIG.POTW_INTRO_VIDEOS[1] || CONFIG.POTW_INTRO_VIDEOS[0] || {}).id
+            || CONFIG.POTW_DEFAULT_VIDEO_ID,
           camera: { center: { lat: 29.9792, lng: 31.1342, altitude: 150 }, range: 2200, tilt: 60, heading: 45 },
           quickFacts: [
             'The Nile flooded every year, leaving rich black soil the Egyptians called "kemet".',
@@ -816,17 +823,7 @@ function load() {
         }
         merged.settings.introVideos = kept.length ? kept : (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
       }
-      // A profile still pointing at a retired preset (or at an id that no longer
-      // exists at all) would resolve to an empty URL and silently fall through
-      // to whatever the fallback chain offers. Point those at the default.
-      {
-        const ids = new Set((merged.settings.introVideos || []).map((v) => v.id));
-        for (const p of Object.values(merged.potw.profiles || {})) {
-          if (p && !p.videoUrl && p.introVideoId && !ids.has(p.introVideoId)) {
-            p.introVideoId = CONFIG.POTW_DEFAULT_VIDEO_ID;
-          }
-        }
-      }
+      repairPotwVideos(merged);
       // Teacher's house edits are applied IN PLACE onto the shared HOUSES
       // objects, so every module holding a reference sees the new values.
       applyHouseOverrides(merged.settings.houses);
@@ -837,7 +834,10 @@ function load() {
       return merged;
     }
   } catch (e) { console.warn('store: failed to load, using defaults', e); }
-  return defaultState();
+  // Fresh install, or a save too broken to read. It goes through the same repair
+  // as a loaded state — defaults are not automatically self-consistent, and
+  // pretending otherwise is what broke this in the first place.
+  return repairPotwVideos(defaultState());
 }
 
 // A failed save used to be a console.warn and nothing else. That is the worst
@@ -848,6 +848,25 @@ function load() {
 //
 // Now it says so on screen, once, and stays out of the way after that. Losing
 // a point award silently is worse than an ugly banner.
+// A profile pointing at a preset that no longer exists resolves to an empty URL
+// and Place of the Week silently shows its title card instead of playing
+// anything. This has to run on EVERY path into a state object — saved or fresh.
+// Repairs that live only inside load()'s `if (raw)` branch have now broken
+// first-ever visits twice in this project (sound effects, then this), which is
+// exactly the case nobody tests because the developer's browser always has a
+// save in it.
+function repairPotwVideos(st) {
+  if (!st || !st.potw || !st.settings) return st;
+  const ids = new Set((st.settings.introVideos || []).map((v) => v.id));
+  if (!ids.size) return st;
+  for (const p of Object.values(st.potw.profiles || {})) {
+    if (p && !p.videoUrl && p.introVideoId && !ids.has(p.introVideoId)) {
+      p.introVideoId = CONFIG.POTW_DEFAULT_VIDEO_ID;
+    }
+  }
+  return st;
+}
+
 let persistFailed = false;
 function persist() {
   try {
