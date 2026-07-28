@@ -16,9 +16,38 @@ import { maybeRunFirstRun } from './firstrun.js';
 import { health } from './health.js';
 import { lock } from './lock.js';
 import { backup } from './backup.js';
+import { prefersReducedMotion } from './util.js';
 
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
+
+// 7.2 — the "saved ✓" pulse needs one small keyframe the shared theme.css
+// doesn't carry, so it's injected here the same way dashboard.js injects its
+// own STYLE block: owned by the module that uses it, never duplicated.
+const SAVED_PULSE_STYLE_ID = 'shell-saved-pulse-styles';
+const SAVED_PULSE_STYLE = `
+@keyframes shell-saved-fade {
+  0%   { opacity: 0; transform: scale(0.75); }
+  18%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.shell-saved-pulse {
+  position: absolute; top: -3px; right: -3px;
+  width: 17px; height: 17px; border-radius: 999px;
+  background: #16a34a; color: #fff; font: 800 11px/17px system-ui, sans-serif;
+  text-align: center; pointer-events: none;
+  animation: shell-saved-fade 1.5s ease both;
+}
+.shell-saved-pulse-static { animation: none; opacity: 1; }
+`;
+function ensureSavedPulseStyle() {
+  if (document.getElementById(SAVED_PULSE_STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = SAVED_PULSE_STYLE_ID;
+  s.textContent = SAVED_PULSE_STYLE;
+  document.head.appendChild(s);
+}
 
 // Shared width expression for the center house-pill — hoisted so both
 // renderTopbar() (which positions the pill itself, plus the mute and ±
@@ -117,6 +146,7 @@ export function initShell(ctx) {
     return;
   }
   initialized = true;
+  ensureSavedPulseStyle();
 
   // Make the speaker toggle actually silence things today (see applySoundGate).
   try { applySoundGate(audio, store); } catch (e) { console.warn('shell: sound gate failed', e); }
@@ -252,6 +282,35 @@ export function initShell(ctx) {
   let backupPanelOpen = false;
   let backupPanelClosing = false;
 
+  // ---------------- 7.2: "saved ✓" pulse on the cloud button ----------------
+  // The cloud button shows nothing at all once backup is fully healthy
+  // (bHealth.level === 'folder', see backupBtnHtml below) — right, for a
+  // steady state, but it left a teacher with zero positive feedback that
+  // anything was ever actually saved. This adds a one-shot ✓ that appears and
+  // fades whenever a transaction lands AND it genuinely reached disk.
+  let savedPulseUntil = 0;     // Date.now() the ✓ has fully faded by
+  let savedPulseFiredAt = 0;   // throttle clock — see the 5s guard below
+  let savedPulseTimer = null;  // forces one more paint so the ✓ actually clears
+  let lastTxCount = null;      // baseline for "did a transaction just land?"
+
+  function maybeTriggerSavedPulse() {
+    let txCount = null;
+    try { txCount = (store.getState().transactions || []).length; } catch (e) { return; }
+    const prev = lastTxCount;
+    lastTxCount = txCount;
+    if (prev == null || txCount <= prev) return;              // first paint, or not a new award
+    if (Date.now() - savedPulseFiredAt < 5000) return;         // max one pulse per 5s — a burst of awards must not strobe
+    if (!store.lastPersistOk()) return;                        // the write itself failed — nothing to celebrate
+    const h = safeBackupHealth();
+    // 'attention'/'none' stay the dominant, urgent signal — a cheerful ✓ has
+    // no business appearing next to "your backup has stopped".
+    if (!h || h.level === 'attention' || h.level === 'none') return;
+    savedPulseFiredAt = Date.now();
+    savedPulseUntil = Date.now() + 1500;
+    if (savedPulseTimer) clearTimeout(savedPulseTimer);
+    savedPulseTimer = setTimeout(() => { savedPulseTimer = null; renderTopbar(); }, 1550);
+  }
+
   function safeBackupHealth() {
     try { return backup.health(); } catch (e) { console.warn('shell: backup.health() failed', e); return null; }
   }
@@ -342,7 +401,12 @@ export function initShell(ctx) {
     // nothing rather than a broken bar (see safeBackupHealth()).
     let backupBtnHtml = '';
     const bHealth = safeBackupHealth();
-    if (bHealth && bHealth.level !== 'folder') {
+    // 7.2 — the ✓ pulse is the one reason this button ever appears while
+    // fully healthy ('folder' level normally renders nothing at all, see the
+    // file header note above maybeTriggerSavedPulse()).
+    const pulsing = Date.now() < savedPulseUntil
+      && bHealth && bHealth.level !== 'attention' && bHealth.level !== 'none';
+    if (bHealth && (bHealth.level !== 'folder' || pulsing)) {
       const level = bHealth.level;
       const urgent = level === 'attention' || level === 'none';
       // Reuses .sound-trigger-btn/.sound-trigger-dot wholesale (identical 44px
@@ -353,12 +417,19 @@ export function initShell(ctx) {
       const roseGlow = level === 'none'
         ? 'background:rgba(244,63,94,0.18);box-shadow:0 0 0 1px rgba(244,63,94,0.65);opacity:1;'
         : '';
-      const title = level === 'daily'
-        ? `Backup: ${bHealth.message}`
-        : `Backup needs attention: ${bHealth.message}`;
+      const title = pulsing && level === 'folder'
+        ? 'Saved'
+        : (level === 'daily' ? `Backup: ${bHealth.message}` : `Backup needs attention: ${bHealth.message}`);
+      // prefers-reduced-motion: no fade animation, just a static ✓ that this
+      // same render pass removes once savedPulseUntil has passed (the timer
+      // in maybeTriggerSavedPulse forces that repaint).
+      const pulseHtml = pulsing
+        ? `<span class="shell-saved-pulse${prefersReducedMotion() ? ' shell-saved-pulse-static' : ''}" aria-hidden="true">&check;</span>`
+        : '';
       backupBtnHtml = `
       <button type="button" data-backup-btn data-open="${backupPanelOpen}" data-muted="${urgent}" class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="left:calc(50% + ${pillWidthExpr}/2 + 12px + 52px)" title="${title}" aria-label="Backup status">
         <span class="sound-trigger-dot leading-none" style="${roseGlow}">☁️</span>
+        ${pulseHtml}
       </button>
       `;
     }
@@ -859,6 +930,7 @@ export function initShell(ctx) {
   function rerenderAll() {
     applyAccentVars();
     applyThemeSettings();
+    maybeTriggerSavedPulse(); // before renderTopbar, so a fresh pulse paints in the same pass
     renderTopbar(); // re-evaluates backup.health() too, so the trigger updates the moment a folder connects (or a permission drops)
     if (backupPanelOpen || backupPanelClosing) renderBackupPanel(); // keep its message current while open
     // Keep the FAB's preselected house following the active core, but only
@@ -881,6 +953,11 @@ export function initShell(ctx) {
   // registry.home() right after initShell), but if that ever changed and we
   // somehow booted straight into 'admin', don't flash the FAB into view.
   try { currentModuleId = registry.currentId?.() ?? currentModuleId; } catch (e) { /* keep default */ }
+  // Baseline for maybeTriggerSavedPulse's "did a transaction just land?"
+  // check, taken at boot rather than left to the first store event — without
+  // this, the very first award of a session would set the baseline instead
+  // of pulsing against it.
+  try { lastTxCount = (store.getState().transactions || []).length; } catch (e) { /* stays null */ }
   applyAccentVars();
   applyThemeSettings(); // apply any saved theme (mode + seasonal) immediately on load
   renderTopbar();
