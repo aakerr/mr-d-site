@@ -298,5 +298,3 @@ export function readFace(data, quaternion) {
   }
   return [best, bestDot];
 }
-
-export const DIE_SIDES = { d6: 6, d20: 20 };

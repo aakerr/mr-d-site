@@ -129,6 +129,7 @@ export function rollInHost(hostEl, options = {}) {
  * Runs `n` complete throws and tallies settled values.
  *   auditRolls('d20', 300, { fate: false }) -> { counts, targeted, hits }
  * Needs a temporary sized host; callers usually run this from the console.
+ * Console-only dev tool — no app code calls this.
  */
 export function auditRolls(mode, n, { fate = false, host = null } = {}) {
   const el = host || document.createElement('div');

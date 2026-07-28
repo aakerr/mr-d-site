@@ -848,6 +848,6 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     dispose,
     isRolling: () => rolling,
     audit,
-    getFateStats: () => ({ ...fateStats }),
+    getFateStats: () => ({ ...fateStats }), // console-only dev tool — no app code calls this
   };
 }

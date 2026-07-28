@@ -2,11 +2,11 @@
 // The 3D tray (js/modules/dice3d/*) drops, tumbles and settles the dice; this
 // module reads the physics-decided face and drives the classroom UI: the in-tray
 // result number, the d20 celebration + outcome plaque (overlaid on the stage),
-// one-tap point awards, and the (currently hidden) roll-history state. If WebGL
-// or the physics import is unavailable it degrades to a simple Math.random roller.
+// one-tap point awards. If WebGL or the physics import is unavailable it
+// degrades to a simple Math.random roller.
 import { lock } from '../core/lock.js';
 
-let store, registry, audio;
+let store, audio;
 let sim = null;           // 3D simulation handle (null in fallback mode)
 let sim3dFailed = false;
 let storeUnsub = null;    // store subscription (recolors dice on core change)
@@ -19,8 +19,6 @@ let awardedThisRoll = false;      // one award per roll; a new roll re-enables a
 let awardInFlight = false;        // an award is mid-PIN-check; blocks a second tap
 let relicClaimedThisRoll = false; // one Mythic relic per natural 20
 let relicInFlight = false;        // a relic claim is mid-PIN-check; blocks a second tap
-let history = [];         // [{ mode, value1, value2?, total, outcome? }] — kept, not rendered
-const MAX_HISTORY = 8;
 
 // Prophecy table: d20 outcome ranges. Teacher-editable in Admin (points,
 // title, desc, emoji) — see store.getDiceProphecy()/saveDiceOutcome(). The
@@ -327,9 +325,6 @@ async function performRoll(el) {
 function showD6Result(el, mode, values) {
   const total = values.reduce((a, b) => a + b, 0);
   updateTrayResult(el, values.length > 1 ? `${values.join(' + ')} = ${total}` : `${total}`);
-
-  history.unshift({ mode, value1: values[0], value2: values[1], total });
-  if (history.length > MAX_HISTORY) history.pop();
 }
 
 function showD20Result(el, value) {
@@ -343,9 +338,6 @@ function showD20Result(el, value) {
 
   clearTimeout(celebrateTimer);
   celebrateTimer = setTimeout(() => showOutcomePlaque(el, prophecy, variant), 1200);
-
-  history.unshift({ mode: 'd20', value1: value, total: value, outcome: prophecy.title });
-  if (history.length > MAX_HISTORY) history.pop();
 }
 
 const ptsLabel = (pts) => (pts > 0 ? `+${pts}` : `${pts}`);
@@ -554,7 +546,6 @@ export default {
 
   async mount(el, ctx) {
     store = ctx.store;
-    registry = ctx.registry;
     audio = ctx.audio;
     currentMode = '1d6';
     rollInProgress = false;
@@ -671,6 +662,5 @@ export default {
     awardInFlight = false;
     relicClaimedThisRoll = false;
     relicInFlight = false;
-    history = [];
   },
 };
