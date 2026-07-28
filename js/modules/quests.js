@@ -33,6 +33,8 @@ let unsub = null;
 let clickHandler = null;
 let keyHandler = null;
 let lockHandler = null;
+let resizeHandler = null;
+let resizeTimer = null;   // debounce for resizeHandler — its own slot so a new resize can cancel the last
 let tickTimer = null;
 const timers = new Set();
 const fxNodes = new Set();
@@ -1122,6 +1124,18 @@ export default {
     lockHandler = () => render();
     window.addEventListener('lock:changed', lockHandler);
 
+    // --board-w is measured from the grid's computed column tracks, and
+    // auto-fit changes those with the viewport — so after a window resize the
+    // hero, lockbar and Hall of Deeds held the OLD width until something else
+    // happened to re-render. Re-measure when the resize settles; debounced,
+    // because a drag-resize fires this continuously and one measurement at
+    // the end is all the layout needs.
+    resizeHandler = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resizeTimer = null; syncBoardWidth(); }, 150);
+    };
+    window.addEventListener('resize', resizeHandler);
+
     // Keeps "accepted 12 min ago" honest without any other churn.
     tickTimer = setInterval(() => { if (!ui || !ui.modal) render(); }, 60000);
 
@@ -1137,9 +1151,11 @@ export default {
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     if (keyHandler) document.removeEventListener('keydown', keyHandler);
     if (lockHandler) window.removeEventListener('lock:changed', lockHandler);
+    if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+    if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
     const st = document.getElementById(STYLE_ID);
     if (st) st.remove();
-    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; lockHandler = null; ui = null;
+    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; lockHandler = null; resizeHandler = null; ui = null;
     lastBoardW = 0;
   },
 };
