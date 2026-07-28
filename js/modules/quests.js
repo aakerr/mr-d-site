@@ -214,6 +214,9 @@ function injectStyles() {
     flex-wrap:wrap;text-align:center;border:3px dashed var(--h,#374151);border-radius:1.5rem;
     padding:clamp(14px,2.6vh,30px) clamp(14px,2vw,28px);background:rgba(17,24,39,.7);}
   .quest-hero-empty-icon{font-size:clamp(2rem,5vh,3.4rem);line-height:1;}
+  /* 1em ties the mark to the wrapper's own clamp() above (and its mobile
+     override further down) instead of duplicating the sizing logic here. */
+  .quest-hero-empty-mark{height:1em;width:auto;max-width:none;object-fit:contain;display:block;}
   .quest-hero-empty-title{font-family:Cinzel,Georgia,serif;font-weight:800;
     font-size:clamp(1.2rem,3vh,2rem);color:#f3f4f6;}
   .quest-hero-empty-sub{font-size:clamp(1.05rem,2vh,1.35rem);color:var(--color-text-soft,#9ca3af);margin-top:.15em;}
@@ -254,6 +257,10 @@ function injectStyles() {
   .quest-head-push{flex:1 1 auto;min-width:0;}
   .quest-board-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
     font-size:clamp(1.1rem,2.6vh,1.8rem);color:var(--color-text,#e5e7eb);}
+  /* Same em-relative mark as the masthead's scroll icon, sized off this
+     title's own font-size so it tracks the mobile override below for free. */
+  .quest-board-mark{height:1.1em;width:auto;max-width:none;object-fit:contain;
+    display:inline-block;vertical-align:-0.22em;margin-right:.3em;}
   .quest-board-count{color:var(--color-text-soft,#9ca3af);font-weight:700;font-size:clamp(1rem,1.8vh,1.2rem);}
   .quest-sort{min-height:44px;padding:.4em 1em;border-radius:.8rem;border:1px solid var(--color-line,#374151);
     background:var(--color-card2,#1f2937);color:var(--color-text,#e5e7eb);font-weight:700;font-family:inherit;cursor:pointer;
@@ -599,7 +606,7 @@ function heroHtml(store, core) {
   if (!q) {
     return `
       <section class="quest-hero-empty" style="--h:${screenAccent(store, house).color}">
-        <div class="quest-hero-empty-icon">🧭</div>
+        <div class="quest-hero-empty-icon"><img class="quest-hero-empty-mark" src="images/icon-quest.png" alt="" onerror="this.outerHTML='🧭'" /></div>
         <div>
           <div class="quest-hero-empty-title">${esc(house.name)} has no quest yet</div>
           <div class="quest-hero-empty-sub">Pick one from the board below — it moves up here once accepted.</div>
@@ -706,7 +713,7 @@ function boardHtml(store, core) {
   return `
     <section class="quest-board">
       <div class="quest-board-head">
-        <span class="quest-board-title">📜 Quests to Choose From</span>
+        <span class="quest-board-title"><img class="quest-board-mark" src="images/icon-quest.png" alt="" onerror="this.outerHTML='📜 '" />Quests to Choose From</span>
         <span class="quest-board-count">${quests.length} available</span>
         <div class="quest-head-push"></div>
         <button type="button" class="quest-sort" data-q="sort">Points ${ui.sortAsc ? '▲ low first' : '▼ high first'}</button>

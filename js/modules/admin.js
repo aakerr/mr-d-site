@@ -932,7 +932,9 @@ function renderQuestModal() {
     <div class="admin-modal-bg" data-action="quest-close"></div>
     <div class="admin-modal admin-modal-lg">
       <div class="admin-modal-head">
-        <div class="admin-modal-title">${f.isNew ? '🗺️ New Quest' : '✏️ Edit Quest'}</div>
+        <div class="admin-modal-title">${f.isNew
+          ? `<img class="admin-modal-mark" src="images/icon-quest.png" alt="" onerror="this.outerHTML='🗺️'" />New Quest`
+          : `<img class="admin-modal-mark" src="images/icon-quest.png" alt="" onerror="this.outerHTML='✏️'" />Edit Quest`}</div>
         <button class="admin-btn admin-btn-icon" data-action="quest-close" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body admin-modal-scroll">
@@ -6104,6 +6106,10 @@ function injectStyles() {
   @keyframes admin-pop{from{opacity:0;transform:translate(-50%,-46%) scale(.96);}to{opacity:1;transform:translate(-50%,-50%) scale(1);}}
   .admin-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--color-card2);}
   .admin-modal-title{font-family:Cinzel,serif;font-weight:800;font-size:1.2rem;color:#f59e0b;}
+  /* Quest board's own scroll mark, so the New/Edit Quest modal reads as the
+     same place the board title and empty-state hero already point to. */
+  .admin-modal-mark{height:1.05em;width:auto;max-width:none;object-fit:contain;
+    display:inline-block;vertical-align:-0.2em;margin-right:.35em;}
   .admin-modal-body{padding:18px 22px;overflow-y:auto;}
   .admin-modal-scroll{max-height:64vh;}
   .admin-modal-lead{color:var(--color-text-soft);font-size:.9rem;line-height:1.55;margin-bottom:8px;}
