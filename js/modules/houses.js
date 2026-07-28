@@ -863,6 +863,14 @@ function filteredTxs(store, s) {
   return s.cat === 'all' ? txs : txs.filter((t) => catOf(t.tag) === s.cat);
 }
 
+// Same "is anything narrowing the view" question renderLedgerStats answers
+// for its "N entries shown" line — pulled out so the CSV export toast can ask
+// it too, and the two can never drift into disagreeing about what "filtered"
+// means.
+function isFilterActive(s) {
+  return s.cat !== 'all' || !!s.from || !!s.to || !!s.search || s.scope !== 'all';
+}
+
 function categoriesInUse(store) {
   const seen = new Set(store.getState().transactions.map((t) => catOf(t.tag)));
   return [...seen].sort((a, b) => catRank(a) - catRank(b));
@@ -905,7 +913,7 @@ function renderLedgerRows(store, s) {
 function renderLedgerStats(store, s) {
   const txs = filteredTxs(store, s);
   const net = txs.reduce((n, t) => n + t.delta, 0);
-  const filtered = s.cat !== 'all' || s.from || s.to || s.search || s.scope !== 'all';
+  const filtered = isFilterActive(s);
   return `<span class="font-bold" style="color:var(--color-text)">${txs.length}</span> ${txs.length === 1 ? 'entry' : 'entries'}${filtered ? ' shown' : ''} ·
     net <span class="font-extrabold ${net >= 0 ? 'text-emerald-400' : 'text-red-400'}">${signed(net)}</span>`;
 }
@@ -1300,8 +1308,12 @@ export default {
       }
 
       if (e.target.closest('[data-export]')) {
+        // Read the filter state BEFORE exporting — downloadCsv doesn't touch
+        // `s`, but this keeps the toast's claim about what it exported tied
+        // to the same moment the export actually ran, not a moment after.
+        const filtered = isFilterActive(s);
         const n = downloadCsv(store, s);
-        showToast(toastHost, n ? `Exported ${n} ${n === 1 ? 'entry' : 'entries'} to CSV` : 'Nothing to export');
+        showToast(toastHost, n ? `Exported ${n} ${n === 1 ? 'entry' : 'entries'} to CSV${filtered ? ' (filtered)' : ''}` : 'Nothing to export');
         return;
       }
 
