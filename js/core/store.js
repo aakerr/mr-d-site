@@ -1251,7 +1251,7 @@ export const store = {
     // duelPunchDown — and the switch for it sits in his own Battle Day panel.
     const allowed = store.getCombatMode() === 'duel' ? store.getCombat().duelPunchDown !== false : c.punchingDown;
     if (!allowed && store.getTotal(defenderId, 'term') < store.getTotal(attackerId, 'term')) {
-      return { ok: false, reason: 'They have fewer points than you — punching down is switched off in Admin.' };
+      return { ok: false, reason: 'They have fewer points than you — the rule against punching down is on.' };
     }
     return { ok: true, reason: '' };
   },
