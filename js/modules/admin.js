@@ -713,6 +713,20 @@ function questPenalty(q) {
   return Number.isFinite(p) ? Math.max(0, Math.round(p)) : Math.round(Number(q?.points || 0) / 2);
 }
 
+// The mark for a quest's kind, mirroring quests.js's own — store.questIcon()
+// decides on emoji terms which one wins (the quest's own typed icon, or its
+// category's), and this renders that same decision: a custom icon stays
+// plain emoji, a category fallback gets its painted art (itself falling back
+// to the category emoji if that PNG ever 404s). Precedence lives in
+// store.questIcon() alone; never let a rendering shortcut here race ahead of it.
+function questMarkHtml(store, q) {
+  if (q && q.icon) return esc(q.icon);
+  const t = store.questType(q);
+  return t.art
+    ? `<img class="admin-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc(t.icon)}'" />`
+    : esc(t.icon);
+}
+
 // One plain-English sentence describing a quest, shared by the catalog list and
 // the editor's live preview — so the teacher reads the same words in both.
 function questSentence(q) {
@@ -773,7 +787,7 @@ function renderQuests() {
       <div class="admin-q-row">
         <div class="admin-q-pts">${q.points}<small>pts</small></div>
         <div class="admin-q-main">
-          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${esc(store.questIcon(q))}</span> ${esc(q.title)}</div>
+          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${questMarkHtml(store, q)}</span> ${esc(q.title)}</div>
           <div class="admin-q-desc">${esc(q.desc || '')}</div>
           <div class="admin-shop-plain">${esc(questSentence(q))}</div>
           <div class="admin-q-statusrow">${status}</div>
@@ -911,7 +925,7 @@ function renderQuestModal() {
   // Driven entirely off store.QUEST_TYPES — a fifth kind added there shows up
   // here with no changes needed.
   const typeOpts = Object.values(store.QUEST_TYPES).map((t) => `
-    <button class="admin-theme-opt${f.type === t.id ? ' on' : ''}" data-action="quest-type" data-type="${esc(t.id)}" title="${esc(t.blurb)}">${t.icon} ${esc(t.label)}</button>
+    <button class="admin-theme-opt${f.type === t.id ? ' on' : ''}" data-action="quest-type" data-type="${esc(t.id)}" title="${esc(t.blurb)}">${questMarkHtml(store, { type: t.id })} ${esc(t.label)}</button>
   `).join('');
   const opts = [
     { key: true, label: '♻️ Repeatable', explain: 'Any house can earn this again. It returns to the board after it is completed.' },
@@ -953,7 +967,7 @@ function renderQuestModal() {
           <div>
             <label class="admin-flabel">Shows on the board as</label>
             <div class="admin-preview" style="margin:0">
-              <span class="admin-preview-label" id="admin-quest-icon-preview" style="font-size:1.8rem">${esc(store.questIcon(f))}</span>
+              <span class="admin-preview-label" id="admin-quest-icon-preview" style="font-size:1.8rem">${questMarkHtml(store, f)}</span>
             </div>
           </div>
         </div>
@@ -1023,13 +1037,15 @@ function updateQuestPreview({ pointsChanged = false } = {}) {
   });
 }
 
-// Live preview of what store.questIcon() will actually show on the card —
-// the typed icon, or the Type icon when the box is empty. Recomputed on every
-// keystroke and whenever the Type picker changes, since both feed the fallback.
+// Live preview of what questMarkHtml() will actually show on the card — the
+// typed icon, or the Type art when the box is empty. Recomputed on every
+// keystroke and whenever the Type picker changes, since both feed the
+// fallback. innerHTML, not textContent — the fallback is now a painted PNG,
+// not just an emoji character.
 function updateQuestIconPreview() {
   if (!questForm || !el('admin-quest-icon-preview')) return;
   const icon = el('admin-quest-icon') ? el('admin-quest-icon').value : questForm.icon;
-  el('admin-quest-icon-preview').textContent = ctxRef.store.questIcon({ type: questForm.type, icon });
+  el('admin-quest-icon-preview').innerHTML = questMarkHtml(ctxRef.store, { type: questForm.type, icon });
 }
 
 function saveQuestFromForm() {
@@ -6110,6 +6126,12 @@ function injectStyles() {
      same place the board title and empty-state hero already point to. */
   .admin-modal-mark{height:1.05em;width:auto;max-width:none;object-fit:contain;
     display:inline-block;vertical-align:-0.2em;margin-right:.35em;}
+  /* The quest-kind art shown wherever questMarkHtml() renders it — catalog
+     rows, the Type picker, and the editor's "shows on the board as" preview.
+     Sized off whichever element already carries the font-size, so it tracks
+     that element's own text without a rule of its own for each home. */
+  .admin-icon-mark{height:1em;width:auto;max-width:none;object-fit:contain;
+    display:inline-block;vertical-align:-0.25em;}
   .admin-modal-body{padding:18px 22px;overflow-y:auto;}
   .admin-modal-scroll{max-height:64vh;}
   .admin-modal-lead{color:var(--color-text-soft);font-size:.9rem;line-height:1.55;margin-bottom:8px;}

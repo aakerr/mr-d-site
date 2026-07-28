@@ -69,11 +69,14 @@ function defaultDiceProphecy() {
 // sort of task it is — which is what the repeated crossed-swords could never do.
 // 'service' is the fallback for anything untyped (a quest the teacher wrote
 // before this existed, or one restored from an older backup).
+// `art` is the owner-painted PNG for the kind — shown on a quest's card
+// UNLESS that quest carries its own custom `icon` (see questIcon() below,
+// which still decides on emoji terms; the art is just what renders it).
 const QUEST_TYPES = {
-  service:   { id: 'service',   icon: '🤝', label: 'Service',   blurb: 'Helping the school run' },
-  academic:  { id: 'academic',  icon: '📚', label: 'Academic',  blurb: 'Learning and schoolwork' },
-  community: { id: 'community', icon: '❤️', label: 'Community', blurb: 'Giving and kindness' },
-  habit:     { id: 'habit',     icon: '⭐', label: 'Habit',     blurb: 'Daily and weekly conduct' },
+  service:   { id: 'service',   icon: '🤝', art: 'images/quest-service.png',   label: 'Service',   blurb: 'Helping the school run' },
+  academic:  { id: 'academic',  icon: '📚', art: 'images/quest-academic.png',  label: 'Academic',  blurb: 'Learning and schoolwork' },
+  community: { id: 'community', icon: '❤️', art: 'images/quest-community.png', label: 'Community', blurb: 'Giving and kindness' },
+  habit:     { id: 'habit',     icon: '⭐', art: 'images/quest-habit.png',     label: 'Habit',     blurb: 'Daily and weekly conduct' },
 };
 const DEFAULT_QUEST_TYPE = 'service';
 

@@ -172,6 +172,11 @@ function injectStyles() {
   .quest-hero-head{display:flex;align-items:baseline;gap:clamp(8px,1.2vw,16px);min-width:0;}
   .quest-hero-icon{flex:0 0 auto;line-height:1;font-size:clamp(1.5rem,3.6vh,2.4rem);
     filter:drop-shadow(0 4px 12px var(--hs,rgba(245,158,11,.5)));}
+  /* The painted quest-kind art, sized off whatever font-size its wrapping
+     element already carries (hero/card/deed/modal each set their own) —
+     one rule, four homes, always contain-fit and never cropped. */
+  .quest-icon-mark{height:1em;width:auto;max-width:none;object-fit:contain;
+    display:inline-block;vertical-align:-0.25em;}
   .quest-hero-eyebrow{display:flex;align-items:center;gap:clamp(6px,1vw,12px);flex-wrap:wrap;
     font-size:clamp(1rem,1.8vh,1.25rem);font-weight:800;letter-spacing:.1em;text-transform:uppercase;
     color:var(--h,#f59e0b);}
@@ -569,6 +574,22 @@ function crest(house, cls) {
   return `<img src="${esc(house.image)}" alt="" class="${cls}" onerror="this.style.display='none'" />`;
 }
 
+// The mark for a quest's kind. store.questIcon() already decided, on emoji
+// terms, which one wins — a teacher-typed icon on the quest itself, or the
+// category's. This just renders that same decision: a custom icon stays
+// plain emoji (it's the teacher's own pick, no art was painted for it), and
+// a category fallback gets its painted art, itself falling back to the
+// category emoji if that PNG ever 404s. Never swap questIcon() for this
+// without re-checking that precedence — the art must never jump ahead of a
+// quest's own icon.
+function questMarkHtml(store, q) {
+  if (q && q.icon) return esc(q.icon);
+  const t = store.questType(q);
+  return t.art
+    ? `<img class="quest-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc(t.icon)}'" />`
+    : esc(t.icon);
+}
+
 // The single most important thing a student needs to understand about a quest
 // besides what it's worth: can we do it again, or is it gone forever?
 function repeatChip(q) {
@@ -624,7 +645,7 @@ function heroHtml(store, core) {
           <span class="quest-hero-timer">⏱ accepted ${esc(activeFor(q.startedTs))} ago</span>
         </div>
         <div class="quest-hero-head">
-          <span class="quest-hero-icon">${esc(store.questIcon(q))}</span>
+          <span class="quest-hero-icon">${questMarkHtml(store, q)}</span>
           <h2 class="quest-hero-title">${esc(q.title)}</h2>
         </div>
         <p class="quest-hero-desc">${esc(q.desc || 'No description — ask Mr. D what this one takes.')}</p>
@@ -686,7 +707,7 @@ function boardHtml(store, core) {
     return `
       <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${sa.color};--hs:${sa.soft}">
         <div class="quest-card-top">
-          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${esc(ctxRef.store.questIcon(q))}</span>
+          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${questMarkHtml(ctxRef.store, q)}</span>
           <div class="quest-card-text">
             <div class="quest-card-title">${esc(q.title)}</div>
             <div class="quest-card-desc">${esc(q.desc || '')}</div>
@@ -750,7 +771,7 @@ function deedsHtml(store, core) {
             const src = store.getQuestCatalog().find((q) => q.id === c.questId);
             return `
               <div class="quest-deed" style="--h:${h ? h.accent : '#6b7280'}">
-                <span class="quest-deed-icon">${esc(store.questIcon(src))}</span>
+                <span class="quest-deed-icon">${questMarkHtml(store, src)}</span>
                 <div class="quest-deed-main">
                   <div class="quest-deed-title">${esc(c.title)}</div>
                   <div class="quest-deed-meta">${esc(h ? h.name : '')} · ${esc(shortWhen(c.ts))}</div>
@@ -785,7 +806,7 @@ function modalHtml(store) {
   if (m.kind === 'accept') {
     const q = store.getQuestCatalog().find((x) => x.id === m.questId);
     if (!q) return '';
-    icon = store.questType(q).icon;   // the quest's own kind reads better than a generic sword
+    icon = questMarkHtml(store, { type: q.type });   // the quest's own kind reads better than a generic sword — { type } only (no icon), same as before: this dialog has always shown the KIND'S mark here, never the quest's own custom one
     title = 'Accept this quest?';
     body = `<b>${esc(house.name)}</b> takes on <b>${esc(q.title)}</b> for <b>${q.points} points</b>.`;
     extra = `<div class="quest-modal-info">It leaves the board while you hold it. Giving up later costs
