@@ -720,11 +720,13 @@ function questPenalty(q) {
 // to the category emoji if that PNG ever 404s). Precedence lives in
 // store.questIcon() alone; never let a rendering shortcut here race ahead of it.
 function questMarkHtml(store, q) {
-  if (q && q.icon) return esc(q.icon);
+  // Category art ALWAYS leads — the owner's spec is icons per KIND, not per
+  // quest. A quest's own emoji is only the fallback when the kind has no art.
   const t = store.questType(q);
-  return t.art
-    ? `<img class="admin-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc(t.icon)}'" />`
-    : esc(t.icon);
+  if (t.art) {
+    return `<img class="admin-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc((q && q.icon) || t.icon)}'" />`;
+  }
+  return esc((q && q.icon) || t.icon);
 }
 
 // One plain-English sentence describing a quest, shared by the catalog list and
@@ -960,9 +962,9 @@ function renderQuestModal() {
 
         <div class="admin-two">
           <div>
-            <label class="admin-flabel" for="admin-quest-icon">Icon <span class="admin-faint">(optional)</span></label>
+            <label class="admin-flabel" for="admin-quest-icon">Fallback icon <span class="admin-faint">(optional)</span></label>
             <input id="admin-quest-icon" class="admin-input" type="text" value="${esc(f.icon)}" placeholder="🧹" maxlength="8" style="max-width:110px;text-align:center;font-size:1.3rem" />
-            <div class="admin-step-hint">Leave blank to just use the Type icon above. Open your emoji picker with <b>Ctrl+Cmd+Space</b> (Mac) or <b>Win+.</b> (Windows), then paste it in.</div>
+            <div class="admin-step-hint">The board always shows the Type's artwork above — this emoji appears only if that artwork ever fails to load.</div>
           </div>
           <div>
             <label class="admin-flabel">Shows on the board as</label>
@@ -3042,23 +3044,25 @@ function renderDataSafety() {
 
 // ----- background music (quiet per-screen ambient loops) -------------------
 
-// Screens a teacher would plausibly want music on. Place of the Week takes no
-// background loop — its video and presentation carry the room — so it's
-// deliberately left out here; its flight music is a slot of its own, appended
-// after these rows (see FLYOVER_SLOT below).
+// Screens a teacher would plausibly want music on. Place of the Week's row is
+// its LANDING screen only — the voyage overlay (video, flight, presentation)
+// carries its own sound and silences the loop while it runs; the flight music
+// stays a slot of its own, appended after these rows (see FLYOVER_SLOT below).
 // Battle Day IS assignable — it just plays under the battle, and the opening
 // voice line still comes through on top of it. Reads the live module registry
 // when available so a future module shows up here automatically; falls back
 // to the known screen list if the registry isn't wired for some reason.
-const AMBIENT_EXCLUDE = new Set(['admin', 'potw']);
+const AMBIENT_EXCLUDE = new Set(['admin']);
 const AMBIENT_SCREENS_FALLBACK = [
   { id: 'dashboard', label: 'Morning Dashboard' },
   { id: 'council',   label: 'Council of Four' },
   { id: 'houses',    label: 'Records' },
+  { id: 'potw',      label: 'Place of the Week' },
   { id: 'quests',    label: 'Quests' },
   { id: 'shop',      label: 'Magic Shop' },
   { id: 'dice',      label: 'Die of Destiny' },
   { id: 'battle',    label: 'Battle Day' },
+  { id: 'wheel',     label: 'Wheel of Fate' },
 ];
 
 // The one row here that isn't a screen: the music under Place of the Week's
@@ -3095,14 +3099,18 @@ const SUGGESTED_MUSIC_FILES = [
 // One-tap starter mapping so the teacher can hear the whole thing immediately,
 // then tweak from there. 60% for the "working" screens he wants barely-there;
 // 100% for the screens he wants more present.
+// Kept identical to CONFIG.AMBIENT_TRACKS (the shipped default), so this
+// button doubles as "put the music back the way it came".
 const SUGGESTED_MUSIC_SETUP = [
-  { screen: 'dashboard', src: 'music/bridging-the-path.mp3',   volume: 0.6 },
-  { screen: 'council',   src: 'music/the-grand-pavilion.mp3',  volume: 1 },
-  { screen: 'houses',    src: 'music/honor-roll.mp3',          volume: 0.6 },
-  { screen: 'quests',    src: 'music/the-long-road-ahead.mp3', volume: 1 },
-  { screen: 'shop',      src: 'music/breath-of-fate.mp3',      volume: 0.6 },
-  { screen: 'dice',      src: 'music/looming-roll.mp3',        volume: 1 },
-  { screen: 'battle',    src: 'music/storming-the-gates.mp3',  volume: 1 },
+  { screen: 'dashboard', src: 'music/the-grand-pavilion.mp3',  volume: 0.5 },
+  { screen: 'council',   src: 'music/the-grand-pavilion.mp3',  volume: 0.5 },
+  { screen: 'houses',    src: 'music/honor-roll.mp3',          volume: 0.5 },
+  { screen: 'potw',      src: 'music/vanguard-charge.mp3',     volume: 0.5 },
+  { screen: 'quests',    src: 'music/the-long-road-ahead.mp3', volume: 0.5 },
+  { screen: 'shop',      src: 'music/bridging-the-path.mp3',   volume: 0.5 },
+  { screen: 'dice',      src: 'music/looming-roll.mp3',        volume: 0.5 },
+  { screen: 'battle',    src: 'music/storming-the-gates.mp3',  volume: 0.5 },
+  { screen: 'wheel',     src: 'music/breath-of-fate.mp3',      volume: 0.5 },
 ];
 
 // A screen's tracks entry is either a plain path (legacy) or { src, volume }

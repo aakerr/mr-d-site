@@ -37,16 +37,23 @@ export const CONFIG = {
   // opens (~27.3s in), silent by ~30.4s. This file runs 32s.
   POTW_FLYOVER_DEFAULT: 'music/travel-zoom.mp3',
 
-  // Quiet looping music per screen. Drop files in /music and map them here (or
-  // per-screen in Admin → Settings). Screens that make their own noise — Place
-  // of the Week, Battle Day — are intentionally left out.
+  // Quiet looping music per screen — WHAT A FRESH INSTALL SOUNDS LIKE. This
+  // map is live (store ships ambient tracks:null, which means "use this"), so
+  // Mr. D hears the same assignment Anthony approved without touching Admin.
+  // Editing any track in Admin → Look & Sound copies the whole map into the
+  // save and takes over from here. Each volume is a multiplier of the master
+  // ambient volume (0.6 shipped). The voyage overlay inside Place of the Week
+  // makes its own noise — potw here is its LANDING screen only.
   AMBIENT_TRACKS: {
-    // dashboard: 'music/honor-roll.mp3',
-    // council:   'music/the-grand-pavilion.mp3',
-    // quests:    'music/bridging-the-path.mp3',
-    // shop:      'music/vanguard-charge.mp3',
-    // houses:    'music/breath-of-fate.mp3',
-    // dice:      'music/looming-roll.mp3',
+    dashboard: { src: 'music/the-grand-pavilion.mp3', volume: 0.5 },
+    council:   { src: 'music/the-grand-pavilion.mp3', volume: 0.5 },
+    houses:    { src: 'music/honor-roll.mp3',         volume: 0.5 },
+    quests:    { src: 'music/the-long-road-ahead.mp3', volume: 0.5 },
+    shop:      { src: 'music/bridging-the-path.mp3',  volume: 0.5 },
+    battle:    { src: 'music/storming-the-gates.mp3', volume: 0.5 },
+    dice:      { src: 'music/looming-roll.mp3',       volume: 0.5 },
+    wheel:     { src: 'music/breath-of-fate.mp3',     volume: 0.5 },
+    potw:      { src: 'music/vanguard-charge.mp3',    volume: 0.5 },
   },
 
   // ---- the economy's one scale ---------------------------------------------
@@ -62,17 +69,16 @@ export const CONFIG = {
   // rebalance is this line rather than forty scattered ones — and a new item
   // cannot quietly land on the wrong scale, because there is only one to land on.
   //
-  // STILL AT THE OLD SCALE, and each is a decision rather than a refactor —
-  // they change what the app pays out, so they are listed here to be chosen
-  // deliberately, not fixed in passing:
-  //   • the one-tap award presets (Bell Ringer +5, Map Quiz +50) — store.js
-  //     defaultAwardPresets()
-  //   • quest rewards (10-50) — defaultQuestCatalog()
-  //   • the Die of Destiny's outcomes (-10 to +20) — defaultDiceProphecy()
-  //   • Battle Day's ± step (10) and the flat prize (150) — defaultCombat()
-  // Against a 450-point sword, a 5-point Bell Ringer is ninety good deeds a
-  // sale. Mr. D's own duel prices (4.5-10 × SCALE) sit below the 3,000-6,000
-  // canon too, on purpose — they are his numbers, from his document.
+  // 2026-07-28: the stragglers were rescaled ×10 on the owner's call ("add a
+  // 0 to all the default scoring — Mr. D likes big point totals"): the one-tap
+  // award presets (Bell Ringer +50, Map Quiz +500 — defaultAwardPresets()),
+  // the Die of Destiny outcomes (-100 to +200 — defaultDiceProphecy()), the
+  // Wheel of Fate awards (50/100 — wheel.js), the top-bar quick chips
+  // (±50/±100 — shell.js) and Battle Day's ± step (100 — defaultCombat()).
+  // A save from before the rescale is lifted by the scoreScale10x migration
+  // in load() — values equal to the old defaults only; teacher edits stay.
+  // Mr. D's own duel prices (4.5-10 × SCALE) sit below the 3,000-6,000 canon
+  // on purpose — they are his numbers, from his document.
   //
   // Changing SCALE also means rewording every shipped description that quotes
   // the multiplier out loud ("2d6 × 100 points"), which is why those live next

@@ -753,10 +753,10 @@ export function initShell(ctx) {
         </div>
 
         <div class="grid grid-cols-4 gap-2">
-          <button type="button" data-fab-quick="5" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-emerald-400 text-sm">+5</button>
-          <button type="button" data-fab-quick="-5" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-rose-400 text-sm">-5</button>
-          <button type="button" data-fab-quick="10" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-emerald-400 text-sm">+10</button>
-          <button type="button" data-fab-quick="-10" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-rose-400 text-sm">-10</button>
+          <button type="button" data-fab-quick="50" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-emerald-400 text-sm">+50</button>
+          <button type="button" data-fab-quick="-50" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-rose-400 text-sm">-50</button>
+          <button type="button" data-fab-quick="100" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-emerald-400 text-sm">+100</button>
+          <button type="button" data-fab-quick="-100" class="fab-quick-btn rounded-xl bg-white/5 font-bold text-rose-400 text-sm">-100</button>
         </div>
 
         <div class="flex items-center gap-2">

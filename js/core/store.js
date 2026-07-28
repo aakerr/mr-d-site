@@ -28,11 +28,11 @@ function defaultHouses() { return JSON.parse(JSON.stringify(HOUSE_DEFAULTS)); }
 // The teacher's most-used awards, one tap each. Editable in Admin.
 function defaultAwardPresets() {
   return [
-    { id: 'ap-bell',     label: 'Bell Ringer done',  points: 5,  tag: 'manual' },
-    { id: 'ap-homework', label: 'Homework Hero',     points: 10, tag: 'manual' },
-    { id: 'ap-teamwork', label: 'Great teamwork',    points: 5,  tag: 'manual' },
-    { id: 'ap-quiz',     label: 'Map Quiz Champion', points: 50, tag: 'manual' },
-    { id: 'ap-penalty',  label: 'Penalty',           points: -5, tag: 'manual' },
+    { id: 'ap-bell',     label: 'Bell Ringer done',  points: 50,   tag: 'manual' },
+    { id: 'ap-homework', label: 'Homework Hero',     points: 100,  tag: 'manual' },
+    { id: 'ap-teamwork', label: 'Great teamwork',    points: 50,   tag: 'manual' },
+    { id: 'ap-quiz',     label: 'Map Quiz Champion', points: 500,  tag: 'manual' },
+    { id: 'ap-penalty',  label: 'Penalty',           points: -50,  tag: 'manual' },
   ];
 }
 
@@ -45,15 +45,15 @@ function defaultAwardPresets() {
 // title, description and emoji can be changed — see saveDiceOutcome below.
 function defaultDiceProphecy() {
   return [
-    { id: 'catastrophe', min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 10 points',                        points: -10, hasButton: true },
+    { id: 'catastrophe', min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 100 points',                       points: -100, hasButton: true },
     { id: 'misfortune',  min: 2,  max: 5,  emoji: '🌧️', title: 'Misfortune',     desc: 'Teacher picks the next challenger',            points: 0,   hasButton: false },
     { id: 'neutral',     min: 6,  max: 9,  emoji: '😐', title: 'Fate is Neutral', desc: 'Nothing happens',                              points: 0,   hasButton: false },
     // "Move your token" was left over from a physical board version — there is
     // no token in this app, and this string is what the outcome plaque shows a
     // whole class during a live roll. "class points" was the odd one out too:
     // every other row, and the rest of the app, says house points.
-    { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: '+2 house points',                              points: 2,   hasButton: true },
-    { id: 'fortune',     min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
+    { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: '+20 house points',                             points: 20,  hasButton: true },
+    { id: 'fortune',     min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+50 house points',                             points: 50,  hasButton: true },
     // NO RELIC IN THE PROMISE. Relics only exist in the hit-points catalog —
     // defaultDuelCatalog() has none — and Mr. D's rules ship as the default. So
     // on every shipped install a natural 20 promised a Mythic Relic, the relic
@@ -61,7 +61,7 @@ function defaultDiceProphecy() {
     // 1-in-20 roll deliver nothing but the points with no explanation. The
     // relic is offered by the chooser when relics actually exist; the text no
     // longer commits the app to something it may not be able to do.
-    { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: 'The highest roll there is — +20 points to your house!', points: 20, hasButton: true, mythic: true },
+    { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: 'The highest roll there is — +200 points to your house!', points: 200, hasButton: true, mythic: true },
   ];
 }
 
@@ -277,7 +277,7 @@ function defaultCombat() {
     // The ± buttons on Battle Day's teacher-scoring row. This was hardcoded to
     // 10 in battle.js, which made it the one point value on the whole screen
     // he could not change without editing source.
-    teacherScore: 10,
+    teacherScore: 100,
   };
 }
 
@@ -365,8 +365,12 @@ function defaultState() {
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
       soundEnabled: true,       // master switch for sound effects/voice
-      // Quiet per-screen background loops (see js/core/ambient.js).
-      ambient: { enabled: false, volume: 0.25, tracks: null },  // opt-in: teacher turns it on in Admin
+      // Quiet per-screen background loops (see js/core/ambient.js). Ships ON:
+      // tracks:null means "use CONFIG.AMBIENT_TRACKS" — the bundled per-screen
+      // map — until the teacher edits a track in Admin, which materialises a
+      // real map here. Config stays the single source for what a fresh
+      // install sounds like.
+      ambient: { enabled: true, volume: 0.6, tracks: null },
       // Teacher PIN (js/core/lock.js). Empty pinHash = off, which is the default:
       // the app must never lock a teacher out of a fresh install. `len` is the
       // digit count so the PIN pad knows when an entry is complete.
@@ -1081,6 +1085,32 @@ function load() {
       // four editable fields the teacher has not touched — which is what lets a
       // wording fix here reach a laptop that has already saved.
       merged.settings.diceProphecy = materializeDiceProphecy(merged.settings.diceProphecy);
+      // 2026-07-28 rescale: the one-tap presets and Battle Day's ± step now
+      // ship ×10 (Mr. D plays with big totals). A browser that saved before
+      // then still holds the old numbers — but ONLY values equal to the old
+      // shipped defaults are lifted; anything the teacher typed is theirs.
+      if (!merged.settings.scoreScale10x) {
+        merged.settings.scoreScale10x = true;
+        const oldPresetPoints = { 'ap-bell': 5, 'ap-homework': 10, 'ap-teamwork': 5, 'ap-quiz': 50, 'ap-penalty': -5 };
+        (merged.settings.awardPresets || []).forEach((ap) => {
+          if (ap && oldPresetPoints[ap.id] === ap.points) ap.points *= 10;
+        });
+        if (merged.settings.combat.teacherScore === 10) merged.settings.combat.teacherScore = 100;
+      }
+      // One-time seed: a save whose ambient track map materialised before a
+      // screen shipped with bundled music (potw, council, wheel) never hears
+      // it — the saved map wins over CONFIG wholesale. Fill only the keys the
+      // save has never seen, once; a track the teacher later clears stays
+      // cleared because this never runs again.
+      if (!merged.settings.ambientSeeded && merged.settings.ambient
+          && merged.settings.ambient.tracks && typeof merged.settings.ambient.tracks === 'object') {
+        merged.settings.ambientSeeded = true;
+        for (const [id, entry] of Object.entries(CONFIG.AMBIENT_TRACKS || {})) {
+          if (!(id in merged.settings.ambient.tracks)) {
+            merged.settings.ambient.tracks[id] = typeof entry === 'string' ? entry : { ...entry };
+          }
+        }
+      }
       // The revision marker that used to drive that fix by hand. Nothing reads
       // it any more; drop it so it stops riding along in every backup.
       delete merged.settings.diceDescRev;
