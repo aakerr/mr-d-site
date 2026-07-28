@@ -1451,7 +1451,8 @@ function openShopForm(id) {
 function openHpShopForm(id) {
   const store = ctxRef.store;
   const it = id ? store.getShopItems().find((x) => x.id === id) : null;
-  const hasImg = !!(it && it.image && it.image.startsWith('media:'));
+  const img = typeof it?.image === 'string' ? it.image : '';
+  const hasImg = img.startsWith('media:');
   shopForm = {
     mode: 'hp',
     id: it ? it.id : `si-${Date.now()}`,
@@ -1464,7 +1465,11 @@ function openHpShopForm(id) {
     effectKind: it?.effect?.kind || 'attack',
     effectAmount: it?.effect?.amount ?? 20,
     imageFile: null,      // staged new File
-    imageStored: hasImg,  // an existing stored image is present
+    imageStored: hasImg,  // an existing stored (media:) image is present
+    // Shipped catalog art is a plain repo path (images/shop/…), not an
+    // uploaded blob. Carried through the form so editing a price doesn't
+    // silently strip the artwork; an upload or Remove still replaces it.
+    imagePath: hasImg ? '' : img,
     imageUrl: '',         // preview object URL
   };
   renderShopModal();
@@ -1478,7 +1483,8 @@ function openHpShopForm(id) {
 function openDuelShopForm(id) {
   const store = ctxRef.store;
   const it = id ? store.getShopItems().find((x) => x.id === id) : null;
-  const hasImg = !!(it && it.image && it.image.startsWith('media:'));
+  const img = typeof it?.image === 'string' ? it.image : '';
+  const hasImg = img.startsWith('media:');
   const kind = it?.effect?.kind || 'damage';
   shopForm = {
     mode: 'duel',
@@ -1497,6 +1503,8 @@ function openDuelShopForm(id) {
     blocks: Array.isArray(it?.blocks) ? it.blocks.slice() : [],
     imageFile: null,
     imageStored: hasImg,
+    // See openHpShopForm — shipped repo-path art survives the edit round-trip.
+    imagePath: hasImg ? '' : img,
     imageUrl: '',
   };
   renderShopModal();
@@ -1547,11 +1555,11 @@ function renderHpShopModal() {
     ? '<div class="admin-warn-line">Half-damage relics are usually Mythic rewards. If it\'s purchasable, attacks become very weak — are you sure?</div>' : '';
   const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
 
-  const previewUrl = f.imageFile || f.imageStored ? f.imageUrl : '';
-  const imageArea = (f.imageFile || f.imageStored)
+  const previewUrl = (f.imageFile || f.imageStored) ? f.imageUrl : f.imagePath;
+  const imageArea = (f.imageFile || f.imageStored || f.imagePath)
     ? `<div class="admin-shop-imgprev">
-         ${previewUrl ? `<img src="${previewUrl}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
-         <span class="admin-faint">${f.imageFile ? 'pending save' : 'stored'}</span>
+         ${previewUrl ? `<img src="${esc(previewUrl)}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
+         <span class="admin-faint">${f.imageFile ? 'pending save' : (f.imageStored ? 'stored' : 'shipped art')}</span>
          <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
        </div>`
     : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
@@ -1710,11 +1718,11 @@ function renderDuelShopModal() {
   };
   const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
 
-  const previewUrl = f.imageFile || f.imageStored ? f.imageUrl : '';
-  const imageArea = (f.imageFile || f.imageStored)
+  const previewUrl = (f.imageFile || f.imageStored) ? f.imageUrl : f.imagePath;
+  const imageArea = (f.imageFile || f.imageStored || f.imagePath)
     ? `<div class="admin-shop-imgprev">
-         ${previewUrl ? `<img src="${previewUrl}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
-         <span class="admin-faint">${f.imageFile ? 'pending save' : 'stored'}</span>
+         ${previewUrl ? `<img src="${esc(previewUrl)}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
+         <span class="admin-faint">${f.imageFile ? 'pending save' : (f.imageStored ? 'stored' : 'shipped art')}</span>
          <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
        </div>`
     : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
@@ -1900,6 +1908,7 @@ async function saveHpShopItem() {
   let image = '';
   if (f.imageFile) { await media.put(imgKey, f.imageFile); image = `media:${imgKey}`; }
   else if (f.imageStored) { image = `media:${imgKey}`; }
+  else if (f.imagePath) { image = f.imagePath; } // shipped repo-path art rides through untouched
   else { await media.delete(imgKey); image = ''; } // emoji-only or image removed
 
   // The store owns validation: it checks the kind, forces cost 0 for mythic
@@ -1929,6 +1938,7 @@ async function saveDuelShopItem() {
   let image = '';
   if (f.imageFile) { await media.put(imgKey, f.imageFile); image = `media:${imgKey}`; }
   else if (f.imageStored) { image = `media:${imgKey}`; }
+  else if (f.imagePath) { image = f.imagePath; } // shipped repo-path art rides through untouched
   else { await media.delete(imgKey); image = ''; }
 
   const slot = DUEL_SLOT_OF_KIND[f.effectKind] || 'utility';
@@ -5143,7 +5153,7 @@ function onClick(e) {
     case 'shop-img-del': {
       syncShopFromDom();
       if (shopForm.imageUrl && shopUrls.has(shopForm.imageUrl)) { try { URL.revokeObjectURL(shopForm.imageUrl); } catch (e) {} shopUrls.delete(shopForm.imageUrl); }
-      shopForm.imageFile = null; shopForm.imageStored = false; shopForm.imageUrl = '';
+      shopForm.imageFile = null; shopForm.imageStored = false; shopForm.imagePath = ''; shopForm.imageUrl = '';
       renderShopModal();
       break;
     }

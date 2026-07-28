@@ -159,56 +159,60 @@ const HP_POINTS_PER_STEP = 50000;
 //   Warhorse         1000 -> 700   (was -212)
 // His originals are in the comments beside each, and every price is editable in
 // Admin, so putting them back is a two-second job if he prefers his own.
+// Every item ships with hand-drawn art under images/shop/ — static repo files,
+// like the house shields, so a fresh install has them with no uploads and no
+// IndexedDB involved. A teacher can still replace any of them from Admin's
+// shop editor (an upload writes a 'media:…' key over the path, and wins).
 function defaultDuelCatalog() {
   return [
     // ---- attacks ----
-    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: '', cost: 450,  slot: 'attack',   // his doc: 600
+    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: 'images/shop/sword-of-destiny.png', cost: 450,  slot: 'attack',   // his doc: 600
       effect: { kind: 'damage', dice: '2d6', mult: 100 }, counteredBy: ['shield'],
       desc: 'Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.' },
-    { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: '', cost: 600,  slot: 'attack',
+    { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: 'images/shop/net-of-entrapment.png', cost: 600,  slot: 'attack',
       effect: { kind: 'steal', dice: '2d6', mult: 100 }, counteredBy: ['gauntlet'],
       desc: 'Steal 2d6 × 100 points and add them to your own total. The Gauntlet of Defense stops it.' },
-    { id: 'iceaxe',     name: 'The Legendary Ice Axe',    emoji: '🪓', image: '', cost: 500,  slot: 'attack',
+    { id: 'iceaxe',     name: 'The Legendary Ice Axe',    emoji: '🪓', image: 'images/shop/legendary-ice-axe.png', cost: 500,  slot: 'attack',
       effect: { kind: 'freeze', dice: '1d6' }, counteredBy: ['shield'],
       desc: 'Freeze a House so it cannot earn points for 1d6 days. The Shield of Protection stops it.' },
-    { id: 'cloak',      name: 'Cloak of Invisibility',    emoji: '🫥', image: '', cost: 400,  slot: 'attack',
+    { id: 'cloak',      name: 'Cloak of Invisibility',    emoji: '🫥', image: 'images/shop/cloak-of-invisibility.png', cost: 400,  slot: 'attack',
       effect: { kind: 'steal', dice: '1d6', mult: 100, anonymous: true }, counteredBy: ['bow'],
       desc: 'Steal 1d6 × 100 points without anyone learning who did it. The Bow of Seeking finds you.' },
-    { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: '', cost: 1000, slot: 'attack',
+    { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: 'images/shop/catapult.png', cost: 1000, slot: 'attack',
       effect: { kind: 'damage', dice: '3d6', mult: 100, targets: 2 }, counteredBy: [],
       desc: 'Hit TWO Houses for 3d6 × 100 points each. Nothing defends against it.' },
-    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: '', cost: 700, slot: 'attack',   // his doc: 1000
+    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: 'images/shop/staff-of-ra.png', cost: 700, slot: 'attack',   // his doc: 1000
       effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['eye'],
       desc: 'A blast of concentrated sunlight for 3d6 × 100 points. The Eye of Horus stops it.' },
-    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: '', cost: 700, slot: 'attack',   // his doc: 1000
+    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: 'images/shop/warhorse.png', cost: 700, slot: 'attack',   // his doc: 1000
       effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['bow'],
       desc: 'A charging warhorse for 3d6 × 100 points. The Bow of Seeking brings it down.' },
 
     // ---- defenses ----
-    { id: 'shield',     name: 'The Shield of Protection', emoji: '🛡️', image: '', cost: 500,  slot: 'defense',
+    { id: 'shield',     name: 'The Shield of Protection', emoji: '🛡️', image: 'images/shop/shield-of-protection.png', cost: 500,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['sword', 'iceaxe'],
       desc: 'Stops the Sword of Destiny or the Legendary Ice Axe for one Battle Day.' },
-    { id: 'gauntlet',   name: 'Gauntlet of Defense',      emoji: '🧤', image: '', cost: 400,  slot: 'defense',
+    { id: 'gauntlet',   name: 'Gauntlet of Defense',      emoji: '🧤', image: 'images/shop/gauntlet-of-defense.png', cost: 400,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['net'],
       desc: 'Stops every attack from the Net of Entrapment.' },
-    { id: 'bow',        name: 'Bow of Seeking',           emoji: '🏹', image: '', cost: 400,  slot: 'defense',
+    { id: 'bow',        name: 'Bow of Seeking',           emoji: '🏹', image: 'images/shop/bow-of-seeking.png', cost: 400,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['cloak', 'warhorse'],
       desc: 'Seeks out the Cloak of Invisibility or the Warhorse and stops the attack.' },
-    { id: 'eye',        name: 'The Eye of Horus',         emoji: '👁️', image: '', cost: 500,  slot: 'defense',
+    { id: 'eye',        name: 'The Eye of Horus',         emoji: '👁️', image: 'images/shop/eye-of-horus.png', cost: 500,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['staffra'],
       desc: 'Defends against the Staff of Ra.' },
 
     // ---- utility ----
-    { id: 'stone',      name: 'The Stone of Seeing',      emoji: '🔮', image: '', cost: 1000, slot: 'utility',
+    { id: 'stone',      name: 'The Stone of Seeing',      emoji: '🔮', image: 'images/shop/stone-of-seeing.png', cost: 1000, slot: 'utility',
       effect: { kind: 'reveal' },
       desc: 'Reveals what another House has chosen to do this week.' },
-    { id: 'shroud',     name: 'The Shroud of Secrecy',    emoji: '🌫️', image: '', cost: 500,  slot: 'utility',
+    { id: 'shroud',     name: 'The Shroud of Secrecy',    emoji: '🌫️', image: 'images/shop/shroud-of-secrecy.png', cost: 500,  slot: 'utility',
       effect: { kind: 'hide' },
       desc: 'Hides your actions from every other House for one week.' },
-    { id: 'timeturner', name: 'The Time Turner',          emoji: '⏳', image: '', cost: 1000, slot: 'utility',
+    { id: 'timeturner', name: 'The Time Turner',          emoji: '⏳', image: 'images/shop/time-turner.png', cost: 1000, slot: 'utility',
       effect: { kind: 'timeturn' },
       desc: 'Go back and change your items after you have been attacked.' },
-    { id: 'bagofholding', name: 'The Bag of Holding',     emoji: '🎒', image: '', cost: 500,  slot: 'utility',
+    { id: 'bagofholding', name: 'The Bag of Holding',     emoji: '🎒', image: 'images/shop/bag-of-holding.png', cost: 500,  slot: 'utility',
       effect: { kind: 'extraslot' },
       desc: 'An extra weapon slot — carry two attack or two defense items at once.' },
   ];
@@ -225,6 +229,11 @@ const MAX_DELTA = 9999;
 // Bump when a shipped shop description needs to reach browsers that have
 // already saved their own copy of the catalog. See the migration in load().
 const SHOP_DESC_REV = 3;
+
+// Same idea for shipped item ARTWORK (images/shop/): bump when new art needs
+// to reach saved catalogs. One-time by design — running the fill on every
+// load would resurrect art the teacher deliberately removed in Admin.
+const SHOP_ART_REV = 1;
 
 // Same idea for the dice prophecy table, which is saved state for the same
 // reason and went stale for the same reason.
@@ -817,6 +826,26 @@ function load() {
         if (merged.settings.combatMode === 'hp') merged.shop.catalog = refresh(merged.shop.catalog);
         merged.shop.parked.hp = refresh(merged.shop.parked.hp);
         merged.shop.descRev = SHOP_DESC_REV;
+      }
+      // Shipped item artwork (images/shop/) arrived after browsers had saved
+      // their catalogs — and the catalog is SAVED STATE, so art added to
+      // defaultDuelCatalog() reaches fresh installs only. Backfill it by id
+      // into saved duel items that have NO image: an image the teacher set —
+      // an Admin upload ('media:…' key) or any hand-entered path — is never
+      // touched. One-time via SHOP_ART_REV (like the description refresh
+      // above) so art the teacher deliberately REMOVES afterwards stays
+      // removed instead of reappearing on every reload. Scoped to the DUEL
+      // catalog(s) on purpose: 'catapult' and 'cloak' also exist in the
+      // hit-points catalog as entirely different items, and this is the only
+      // other place a by-id pass could cross the two.
+      if (Number(merged.shop.artRev) !== SHOP_ART_REV) {
+        const duelArt = Object.fromEntries(defaultDuelCatalog().filter((i) => i.image).map((i) => [i.id, i.image]));
+        const fillArt = (list) => (Array.isArray(list) ? list.map((item) => (
+          item && duelArt[item.id] && !item.image ? { ...item, image: duelArt[item.id] } : item
+        )) : list);
+        if (merged.settings.combatMode === 'duel') merged.shop.catalog = fillArt(merged.shop.catalog);
+        merged.shop.parked.duel = fillArt(merged.shop.parked.duel);
+        merged.shop.artRev = SHOP_ART_REV;
       }
       merged.planner = { ...def.planner, ...(merged.planner || {}) };
       if (!Array.isArray(merged.planner.events)) merged.planner.events = [];
