@@ -10,3 +10,6 @@ images/valhalla.png
 images/rivendell.png
 images/*-old*.png
 docs-in/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
