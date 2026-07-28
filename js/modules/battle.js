@@ -278,7 +278,10 @@ function injectStyles() {
     background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%);
     mix-blend-mode:soft-light;transform:translateX(-130%);
     animation:battle-glint .9s ease-out 1.7s 1 both;}
-  @keyframes battle-glint{to{transform:translateX(130%);}}
+  /* The band FADES as it exits: with fill:both the final frame holds for the
+     rest of the cinematic, and a bare translateX parked the bright band just
+     past the title's right edge — a white streak hanging beside the letters. */
+  @keyframes battle-glint{85%{opacity:1;}to{transform:translateX(150%);opacity:0;}}
   @keyframes battle-letter-stamp{
     0%{opacity:0;transform:scale(3) rotate(-8deg);}
     60%{opacity:1;transform:scale(.9) rotate(2deg);}
