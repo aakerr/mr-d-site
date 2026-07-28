@@ -150,7 +150,7 @@ unless a dependency is called out. One item = one commit.
   ledger reason is already free text and Records search (verified live) makes it
   findable later. Cap ~80 chars, escape on render (FIX-PLAN 1.20's shared escaper).
 
-- [ ] **7.5 (owner request, 2026-07-27): freeze visibility and countdown.** The Ice Axe
+- [x] **7.5 (owner request, 2026-07-27): freeze visibility and countdown.** The Ice Axe
   freeze (1d6 school days, weekends excluded) is already fully ENFORCED — the store
   refuses positive awards app-wide with spoken refusals, school-day counting is correct,
   re-freeze extends, Admin can thaw. What's missing is visibility outside Battle Day's
