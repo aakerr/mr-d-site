@@ -150,6 +150,22 @@ unless a dependency is called out. One item = one commit.
   ledger reason is already free text and Records search (verified live) makes it
   findable later. Cap ~80 chars, escape on render (FIX-PLAN 1.20's shared escaper).
 
+- [ ] **7.5 (owner request, 2026-07-27): freeze visibility and countdown.** The Ice Axe
+  freeze (1d6 school days, weekends excluded) is already fully ENFORCED — the store
+  refuses positive awards app-wide with spoken refusals, school-day counting is correct,
+  re-freeze extends, Admin can thaw. What's missing is visibility outside Battle Day's
+  duel cards. Build:
+  1. `store.getFreezeInfo(houseId)` → `{ frozen, until, schoolDaysLeft, label }` with a
+     weekend-aware label ("thaws in 3 school days", "thaws Monday"). Reuse freezeHouse's
+     school-day math — one implementation, not two.
+  2. A shared frost treatment (❄️ badge + subtle ice-blue tint + thaw label) applied to
+     every prominent house identity: dashboard standings rows, Council podium columns,
+     Records house tabs/header, and unify Battle Day's existing duel-card indicator to
+     the same visual language. Measure the paired elements — the frozen column/row must
+     stay symmetric with its neighbours.
+  3. Label-based countdown (school days), no ticking clock.
+  Implement AFTER the current wave frees store/dashboard/council/houses.
+
 ## Phase 8 — Structural (bigger, do deliberately)
 
 - [ ] **8.1 Shipped content becomes code; saved state holds only teacher overrides.**
