@@ -5410,11 +5410,18 @@ function injectStyles() {
   .admin-wrap{height:100%;display:flex;flex-direction:column;background:var(--color-page);color:var(--color-text);overflow:hidden;}
   .admin-head{flex-shrink:0;padding:16px 20px 12px;border-bottom:1px solid var(--color-card2);
     background:linear-gradient(180deg,rgba(245,158,11,.06),transparent);}
-  .admin-titlebar{display:flex;align-items:center;gap:14px;margin-bottom:12px;}
+  /* The title and the tab bar sit over the work area, not off in the corner
+     away from it. Every tab's content is a centred column — 820px on Settings,
+     wider elsewhere — so centring the header on the page lines it up with all
+     of them rather than with any one tab's width. */
+  .admin-titlebar{display:flex;align-items:center;gap:14px;margin-bottom:12px;
+    justify-content:center;}
   .admin-key{font-size:2rem;filter:drop-shadow(0 0 12px rgba(245,158,11,.5));}
   .admin-title{font-family:Cinzel,serif;font-weight:800;font-size:1.5rem;color:#f59e0b;letter-spacing:.03em;}
   .admin-sub{color:var(--color-text-soft);font-size:.85rem;}
-  .admin-seg{display:inline-flex;gap:4px;padding:4px;background:var(--color-card);border:1px solid var(--color-line);border-radius:1rem;flex-wrap:wrap;}
+  .admin-seg{display:flex;width:max-content;max-width:100%;margin-inline:auto;
+    gap:4px;padding:4px;background:var(--color-card);border:1px solid var(--color-line);
+    border-radius:1rem;flex-wrap:wrap;justify-content:center;}
   .admin-seg-btn{min-height:44px;padding:10px 20px;border:none;border-radius:.75rem;background:transparent;
     color:var(--color-text-soft);font-weight:700;font-size:.95rem;cursor:pointer;transition:background .18s ease,color .18s ease;}
   .admin-seg-btn:hover{color:var(--color-text);}
