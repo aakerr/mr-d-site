@@ -126,6 +126,15 @@ function sectionHeader(iconName, label) {
   return `<div class="flex items-center gap-2 text-gray-400 text-sm font-semibold uppercase tracking-wide mb-1.5">${icon(iconName)}<span>${label}</span></div>`;
 }
 
+// 6.1 — a fresh install's fallback plan ("Bell Ringer: Map of the Fertile
+// Crescent") used to read as today's ACTUAL schedule with nothing telling the
+// class otherwise. store.getItineraryInfo()/getHomeworkInfo() now say when
+// the fallback fired; this is the one line that tells a teacher, not the
+// class, to go build the real thing.
+function sampleCaption() {
+  return `<div class="text-[11px] text-gray-500 italic mb-1 -mt-0.5">Sample plan &mdash; build yours in Admin &rarr; Planner.</div>`;
+}
+
 // <img> with a graceful emoji-fallback sibling, shown if the PNG 404s.
 function pngWithEmojiFallback(src, emoji, cls, wrapCls) {
   return `<div class="${wrapCls} relative flex items-center justify-center shrink-0">
@@ -269,10 +278,12 @@ function renderItinerary(state, store) {
         </div>
       </div>`;
   }
-  const items = store.getItinerary();
+  const info = store.getItineraryInfo();
+  const items = info.items;
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
       ${sectionHeader('calendar', 'Daily Itinerary')}
+      ${info.sample ? sampleCaption() : ''}
       <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${items.length ? items.map((it, i) => `
           <div class="flex items-start gap-2.5 shrink-0">
@@ -284,10 +295,12 @@ function renderItinerary(state, store) {
 }
 
 function renderHomework(state, store) {
-  const items = state.activeCore === 'all' ? [] : store.getHomework();
+  const info = state.activeCore === 'all' ? { items: [], sample: false } : store.getHomeworkInfo();
+  const items = info.items;
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
+      ${info.sample ? sampleCaption() : ''}
       <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
           (items.length ? items.map((hw) => `
