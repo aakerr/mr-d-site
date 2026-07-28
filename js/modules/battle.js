@@ -60,6 +60,7 @@ const CRY_TAIL_MS = 500;         // beat of silence after the war cry ends
 const CINEMATIC_MAX_MS = 8000;   // backstop if the recording never fires 'ended'
 let chooserOpen = false;      // "change attacker" picker showing
 let resolving = false;        // suspends subscribe re-renders mid-strike
+let strikeCancelled = false;  // End Battle pressed mid-strike — the sequence stands down at its next beat
 const timers = new Set();
 const fxNodes = new Set();    // transient combat-effect DOM nodes, force-cleaned on unmount
 
@@ -2159,6 +2160,10 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
   const beforeTarget = store.getTotal(target.id, 'term');
   const reduced = prefersReducedMotion();
   const travel = reduced ? 0 : DUEL2_THROW_MS;
+  // Checked at every beat. Before the first applyDuelAttack a cancellation
+  // calls the whole strike off — nothing spent, nothing struck. After it the
+  // strike is committed and only the remaining ceremony is skipped.
+  const aborted = () => !rootEl || strikeCancelled;
 
   const chalCrest = rootEl.querySelector('[data-crest="challenger"]');
   const defCrest = rootEl.querySelector('[data-crest="defender"]');
@@ -2175,14 +2180,14 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
       later(() => btn.classList.remove('duel2-slot-charging'), DUEL2_CHARGE_BTN_MS + 200);
     }
     await delay(DUEL2_CHARGE_BTN_MS);
-    if (!rootEl) { closeDiceOverlay(); return; }
+    if (aborted()) { closeDiceOverlay(); return; }
     if (chalCrest) {
       chalCrest.classList.remove('duel-crest-charge'); void chalCrest.offsetWidth;
       chalCrest.classList.add('duel-crest-charge');
       later(() => chalCrest.classList.remove('duel-crest-charge'), DUEL2_CHARGE_CREST_MS + 200);
     }
     await delay(DUEL2_CHARGE_CREST_MS);
-    if (!rootEl) { closeDiceOverlay(); return; }
+    if (aborted()) { closeDiceOverlay(); return; }
   }
 
   // Step 1 — the attack crosses, slowly enough to watch, and lands ON the
@@ -2190,7 +2195,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
   ctxRef.audio.sfx('sword');
   if (!reduced) spawnProjectile(chalCrest, defCrest, { emoji: item.emoji || '⚔️', travel });
   await delay(travel);
-  if (!rootEl) { closeDiceOverlay(); return; }
+  if (aborted()) { closeDiceOverlay(); return; }
   if (!reduced) {
     if (defCrest) {
       defCrest.classList.remove('duel-crest-shake'); void defCrest.offsetWidth;
@@ -2200,7 +2205,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
     }
     ctxRef.audio.sfx('thud');
     await delay(DUEL2_IMPACT_MS);
-    if (!rootEl) { closeDiceOverlay(); return; }
+    if (aborted()) { closeDiceOverlay(); return; }
   }
 
   // Step 2 — the defender's held defense is revealed. Hidden until now: this
@@ -2218,7 +2223,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
   }
   ctxRef.audio.sfx('coin');
   await delay(DUEL2_REVEAL_MS);
-  if (!rootEl) { closeDiceOverlay(); return; }
+  if (aborted()) { closeDiceOverlay(); return; }
 
   // Set once the totals have already been rolled in step 5, so the final beat
   // knows not to pin them back and replay the same count a second time.
@@ -2255,10 +2260,21 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
     // A null roll was cancelled under us — nothing applies, the item stays in
     // the armoury (applyDuelAttack is the only thing that spends it and it
     // never runs), and strikeDuel's finally resets `resolving`.
-    if (!roll || !rootEl) return;
+    if (!roll || aborted()) return;
 
     // Step 5 — the points are applied, using the exact total the class watched land.
     const out = store.applyDuelAttack({ attackerId: challenger.id, targetId: target.id, itemId: item.id, rolled: roll.total });
+    // From this line the strike is COMMITTED — points moved, item spent. A
+    // cancellation from here on only skips ceremony, and the second house of
+    // a two-target item must still take its hit before we stand down, or an
+    // End Battle press would half-land the strike.
+    let secondDone = false;
+    const applySecond = () => {
+      if (!second || secondDone) return null;
+      secondDone = true;
+      return store.applyDuelAttack({
+        attackerId: challenger.id, targetId: second.id, itemId: item.id, rolled: roll.total, consume: false });
+    };
     const crest = rootEl.querySelector('[data-crest="defender"]');
     const isFreeze = item.effect.kind === 'freeze';
     if (crest && !reduced) {
@@ -2287,7 +2303,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
       pointsRolled = true;
       spawnFx(crest, 'duel-fx-tally duel-fx-tally-dmg', 2200, `−${out.damage}`);
       await delay(DUEL2_TALLY_HOLD_MS);
-      if (!rootEl) return;
+      if (aborted()) { applySecond(); return; }
       // The defending card rocks WHILE its total comes down, so the shake and
       // the falling number read as one event rather than two.
       const defCard = crest ? crest.closest('.duel-side') : null;
@@ -2298,7 +2314,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
       }
       animatePoints('defender', beforeTarget, store.getTotal(target.id, 'term'), DUEL2_DRAIN_MS);
       await delay(DUEL2_DRAIN_MS + 200);
-      if (!rootEl) return;
+      if (aborted()) { applySecond(); return; }
 
       // A steal is not damage — the points go SOMEWHERE. So the item flies back
       // the way it came, and the attacker's crest gets the mirror of what the
@@ -2309,16 +2325,16 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
         if (crest && chalCrest && !reduced) {
           spawnProjectile(crest, chalCrest, { emoji: item.emoji || '⚔️', travel: DUEL2_RETURN_MS });
           await delay(DUEL2_RETURN_MS);
-          if (!rootEl) return;
+          if (aborted()) { applySecond(); return; }
           ctxRef.audio.sfx('coin');
           shakeCrest(chalCrest);
         }
         if (chalCrest) spawnFx(chalCrest, 'duel-fx-tally duel-fx-tally-gain', 2200, `+${gained}`);
         await delay(DUEL2_TALLY_HOLD_MS);
-        if (!rootEl) return;
+        if (aborted()) { applySecond(); return; }
         animatePoints('challenger', beforeChallenger, beforeChallenger + gained, DUEL2_DRAIN_MS);
         await delay(DUEL2_DRAIN_MS + 200);
-        if (!rootEl) return;
+        if (aborted()) { applySecond(); return; }
       }
 
       // THE SECOND HOUSE. One roll, two victims — re-rolling would double a
@@ -2328,12 +2344,12 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
       // has to hold two defenders at once.
       if (second) {
         await delay(700);
-        if (!rootEl) return;
+        if (aborted()) { applySecond(); return; }
         targetId = second.id;
         resolving = false; renderDuel(); resolving = true;   // swap the defender card
         if (!rootEl) return;
         await delay(600);
-        if (!rootEl) return;
+        if (aborted()) { applySecond(); return; }
 
         const chalCrest2 = rootEl.querySelector('[data-crest="challenger"]');
         const crest2 = rootEl.querySelector('[data-crest="defender"]');
@@ -2341,11 +2357,10 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
         if (chalCrest2 && crest2 && !reduced) {
           spawnProjectile(chalCrest2, crest2, { emoji: item.emoji || '⚔️', travel: DUEL2_THROW_MS });
           await delay(DUEL2_THROW_MS);
-          if (!rootEl) return;
+          if (aborted()) { applySecond(); return; }
         }
         // Its own block check — the second house's defenses are its own.
-        const out2 = store.applyDuelAttack({
-          attackerId: challenger.id, targetId: second.id, itemId: item.id, rolled: roll.total, consume: false });
+        const out2 = applySecond();
         if (crest2 && !reduced) {
           spawnFx(crest2, `duel-fx-flash duel-fx-flash-${out2.blocked ? 'blue' : 'red'}`, 500);
           shakeCrest(crest2);
@@ -2361,7 +2376,7 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
             `${esc(item.name)} lands on ${esc(second.name)} as well.`, '');
           spawnFx(crest2, 'duel-fx-tally duel-fx-tally-dmg', 2200, `−${out2.damage}`);
           await delay(DUEL2_TALLY_HOLD_MS);
-          if (!rootEl) return;
+          if (aborted()) return;   // second already landed — only ceremony remains
           const defCard2 = crest2 ? crest2.closest('.duel-side') : null;
           if (defCard2 && !reduced) {
             defCard2.classList.remove('duel-card-hit'); void defCard2.offsetWidth;
@@ -2370,13 +2385,15 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
           }
           animatePoints('defender', before2, store.getTotal(second.id, 'term'), DUEL2_DRAIN_MS);
           await delay(DUEL2_DRAIN_MS + 200);
-          if (!rootEl) return;
+          if (aborted()) return;
         }
       }
     }
     await delay(pointsRolled ? DUEL2_OUTCOME_HOLD_MS - 900 : DUEL2_OUTCOME_HOLD_MS);
   }
-  if (!rootEl) return;
+  // Cancelled here means End Battle already painted the landing screen — the
+  // strike (and any second house) is fully landed, so just stay off the stage.
+  if (aborted()) return;
 
   // Final beat — resolving flips false HERE, before the redraw, so
   // renderDuel() (guarded by `resolving`, like every render in this file)
@@ -2445,6 +2462,7 @@ async function strikeDuel(itemId) {
   // Gate the strike, not the ceremony — same convention as strikeHp: picking
   // the item is free, nothing is spent or struck until the teacher approves.
   resolving = true;
+  strikeCancelled = false;   // a stale flag from an earlier End Battle must not kill this strike
   const ok = await lock.requireUnlock('use this item');
   if (!rootEl) { resolving = false; return; }
   if (!ok) { resolving = false; return; }
@@ -2474,6 +2492,7 @@ async function strikeDuel(itemId) {
   } finally {
     closeDiceOverlay();
     resolving = false;         // idempotent — resolveDuelSequence already clears this on its normal path
+    strikeCancelled = false;   // the cancellation is spent with the strike it cancelled
   }
 }
 
@@ -2842,14 +2861,17 @@ function landHit(o, crest, reduced, tint = 'red') {
 function maybeAnnounceVictory(o) {
   if (!o.battleWon) return;
   later(() => {
-    if (!rootEl) return;
+    // view check: End Battle during the strike ceremony lands on the landing
+    // screen, and a delayed fanfare (or the renderDuel below) must not drag
+    // the class back into a duel that has already been ended.
+    if (!rootEl || view !== 'duel') return;
     ctxRef.audio.sfx('fanfare');
     screenVignettePulse();
     outcomeCard('victory', `🏆 ${esc(o.challenger.name).toUpperCase()} WINS THE DUEL!`,
       `${esc(o.target.name)} is defeated — but keeps every point it earned. No points were lost.`,
       `+${o.battleWon.prize} pts to ${esc(o.challenger.name)}`);
     later(() => {
-      if (!rootEl) return;
+      if (!rootEl || view !== 'duel') return;
       targetId = null;   // battle over — back to picking a new opponent
       renderDuel();
     }, OUTCOME_MS);
@@ -2913,6 +2935,14 @@ async function teacherScore(houseId, delta) {
 }
 
 function endBattle() {
+  // Pressed mid-strike, this used to race the suspended resolveDuelSequence —
+  // the strike still landed and the duel screen yanked itself back over the
+  // landing page. Now it CANCELS: the flag makes the sequence stand down at
+  // its next beat (a strike that has not applied yet is fully called off,
+  // nothing spent; one that has stays fully landed, second house included),
+  // and closeDiceOverlay resolves any in-flight roll with null so the
+  // sequence is never left awaiting physics that no longer exists.
+  if (resolving) strikeCancelled = true;
   closeMiniShop();
   closeDiceOverlay();
   clearFx();
@@ -2943,6 +2973,7 @@ export default {
     targetId = null;
     chooserOpen = false;
     resolving = false;
+    strikeCancelled = false;
     miniShopOpen = false;
     miniShopBuyerId = null;
     miniShopBuyInFlight = false;
@@ -2967,5 +2998,6 @@ export default {
     targetId = null;
     chooserOpen = false;
     resolving = false;
+    strikeCancelled = false;
   },
 };
