@@ -221,7 +221,7 @@ If HP mode is ever brought back into use, do these first:
   silences the destination's flyover until reload. This bug lives in the per-destination
   flyover block that 2.21 removes entirely; fix it only if 2.21 is postponed (by marking the
   URL `ownUrl: false` like `hydratePresentation`, admin.js:4166).
-- [ ] **2.21 (owner request, 2026-07-27): move flyover music out of the POTW editor into
+- [x] **2.21 (owner request, 2026-07-27): move flyover music out of the POTW editor into
   Admin → Background music.** Today the flyover track is chosen per destination inside the
   POTW editor (upload block + URL field, `flyoverBlockHTML` admin.js:4349-4371, staged via
   `stageFlyoverFile` 4497, stored as `potw:<key>:flyover` blobs / `profile.flyoverUrl`),
@@ -285,15 +285,15 @@ If HP mode is ever brought back into use, do these first:
 Grep-verified dead. Delete unless marked "decide".
 
 **Files/dirs**
-- [ ] 3.1 `backups/dice-ui-v1/` — tracked snapshot, superseded; git history preserves it.
-- [ ] 3.2 `gemini-site/` — local-only prototypes (gitignored); delete locally.
-- [ ] 3.3 `images/atlantis.jpg`, `camelot.jpg`, `rivendell.jpg`, `valhalla.jpg` — 6.3 MB of
+- [x] 3.1 `backups/dice-ui-v1/` — tracked snapshot, superseded; git history preserves it.
+- [x] 3.2 `gemini-site/` — local-only prototypes (gitignored); delete locally.
+- [x] 3.3 `images/atlantis.jpg`, `camelot.jpg`, `rivendell.jpg`, `valhalla.jpg` — 6.3 MB of
   retired tracked art (the .gitignore retirement only covered the .png twins). Delete;
   also delete the local retired `.png`s.
-- [ ] 3.4 **DECIDED (owner, 2026-07-27): keep.** `js/integrations/classroom.js` stays as
+- [x] 3.4 **DECIDED (owner, 2026-07-27): keep.** `js/integrations/classroom.js` stays as
   planned Google Classroom work. Fix its header comment (it falsely claims
   `initClassroomAuth()` runs at startup) but do not delete it.
-- [ ] 3.5 **DECIDED (owner, 2026-07-27): trim.** Delete the 6 unused `potw-songs/*.mp3`
+- [x] 3.5 **DECIDED (owner, 2026-07-27): trim.** Delete the 6 unused `potw-songs/*.mp3`
   (~8.9 MB). KEEP `potw-songs/place-of-the-week-rock-01.mp3` — it is `CONFIG.POTW_SONG`
   (config.js:16), the 37-second POTW theme, still played and separate from the two intro
   videos. Also delete the unwired `sfx/magic_chime.mp3` and `sfx/defensive_block-2.mp3`
@@ -305,20 +305,20 @@ Grep-verified dead. Delete unless marked "decide".
   case (5333-5337) and the change/drop tails (6071, 6175); `openHelpTopic` category branch
   (4866-4877); `data-action="shop-eff"` attributes (1512, 1624); stale `activeTab` comment
   (58).
-- [ ] 3.7 battle.js: `[data-open-chooser]` wiring (1409-1410, 1737-1738); `UTILITY_ITEM_IDS`
+- [x] 3.7 battle.js: `[data-open-chooser]` wiring (1409-1410, 1737-1738); `UTILITY_ITEM_IDS`
   (1466); `.duel-items-more`/`.duel-empty-broke` CSS (458, 465); comma-operator statement
   (2129); stale "≤900ms" comment (2542).
-- [ ] 3.8 dice/dice3d: unused roll history collection (dice.js:21-22, 328-329, 344-345, 654);
+- [x] 3.8 dice/dice3d: unused roll history collection (dice.js:21-22, 328-329, 344-345, 654);
   unused `registry` (dice.js:9, 546); `DIE_SIDES` export (geometry.js:302). Keep
   `getFateStats`/`auditRolls` if wanted as console dev tools — mark them as such.
-- [ ] 3.9 shop.js: `fmtRemainShort` (111-117), `stealFx` (1057-1061), `travelDot` (1041-1055)
+- [x] 3.9 shop.js: `fmtRemainShort` (111-117), `stealFx` (1057-1061), `travelDot` (1041-1055)
   + `.shop-fx-travel-dot` CSS (550-559), `sizeTreasuryToHeadings` (587-595).
   **DECIDED (owner, 2026-07-27): delete** the ~180-line unreachable attack/steal/pierce
   live-resolution path (694-712, 780-791, 1336-1402, 1462-1472) — git history preserves it.
   Note: bug 1.14's fix in `store.applyAttack` still applies regardless (battle.js consumes
   the same return value). Coordinate with 1.1: the shop's duel-mode purchases stockpile into
   the armoury, so nothing in the new shop flow needs this path.
-- [ ] 3.10 core/misc: `shell.js:446-449` `[data-help-btn]` branch; `CONFIG.HOME_CAMERA`
+- [x] 3.10 core/misc: `shell.js:446-449` `[data-help-btn]` branch; `CONFIG.HOME_CAMERA`
   (config.js:52); `backup.init()` (backup.js:226 — after 0.2 it's truly redundant);
   `firstrun.needsSetup` + aggregate export (firstrun.js:416-421, 472); help.js unused
   exports (`openSystemCheck`, `closeHelp`, `isHelpOpen`, `helpTopics`, `helpCategories`,
@@ -327,9 +327,9 @@ Grep-verified dead. Delete unless marked "decide".
   `fmtDateLong` (dashboard.js:103-105); council.js `_raf` field (344) and the no-op
   `cancelAnimationFrame` (635); carousel.js `onFocus` option (95, 128);
   `potw.js:295-297` typeof-fallback.
-- [ ] 3.11 theme.css dead rules: `.shell-icon-btn` block (175-191), `.shell-help-glyph`
+- [x] 3.11 theme.css dead rules: `.shell-icon-btn` block (175-191), `.shell-help-glyph`
   (193-199), `@keyframes float-up` (56-61), `@keyframes accent-sweep` (85-88).
-- [ ] 3.12 config.js:44-49: commented `AMBIENT_TRACKS` examples reference files that don't
+- [x] 3.12 config.js:44-49: commented `AMBIENT_TRACKS` examples reference files that don't
   exist — fix the comment to name a real file.
 
 **Consolidation (with the escaper from 1.20)**
@@ -342,7 +342,7 @@ Grep-verified dead. Delete unless marked "decide".
 - [ ] 3.15 Batch the N-emits-per-save paths: `syncCounterReciprocals` (admin.js:1964-1990) and
   the shop-del sweep (5029-5038) — one emit per save. Debounce volume-slider persistence
   (admin.js:6080-6118) to `change`.
-- [ ] 3.16 `media.js:71-80` `list()` N+1 → single readonly cursor; share the result across
+- [x] 3.16 `media.js:71-80` `list()` N+1 → single readonly cursor; share the result across
   potw.js's three calls per voyage open.
 
 ---
