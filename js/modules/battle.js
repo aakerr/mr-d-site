@@ -245,8 +245,15 @@ function injectStyles() {
      button, its heading, its hint — showed straight through the middle of the
      cinematic. An opaque layer sits under the gradient now, and the whole
      curtain fades up fast so the room reads it as a hard cut to black. */
+  /* Same field as the landing, but at dusk: the armies survive the cut only
+     as silhouettes under the war-glow. The near-black scrim sits between the
+     red vignette and the painting, so the cut still reads as a hard drop into
+     darkness — the room just remembers where it is. */
   .battle-cinematic{position:fixed;inset:0;z-index:60;overflow:hidden;
-    background:radial-gradient(ellipse at 50% 50%,rgba(127,29,29,.55),rgba(0,0,0,.97) 72%),#07090f;
+    background:
+      radial-gradient(ellipse at 50% 50%,rgba(127,29,29,.55),rgba(0,0,0,.92) 72%),
+      linear-gradient(180deg,rgba(4,5,10,.86),rgba(4,5,10,.8)),
+      url('images/four-armies.jpg') center 38%/cover no-repeat,#07090f;
     display:flex;align-items:center;justify-content:center;
     animation:battle-curtain .22s ease-out both;}
   @keyframes battle-curtain{from{opacity:0;}to{opacity:1;}}
