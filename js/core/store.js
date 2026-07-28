@@ -1792,7 +1792,16 @@ export const store = {
     return !!((state.revealed || {})[viewerId] || {})[targetId];
   },
   // Cleared when Battle Day ends, so next week's holdings are secret again.
-  clearReveals() { state.revealed = {}; emit(); },
+  // This is the store side of the Battle-Day teardown (battle.js endBattle
+  // calls it), so it also retires lastStrike: the Time Turner undoes the
+  // strike that JUST happened, and once the session is over there is no
+  // "just" left to undo. canTimeTurn's same-day check backstops the case
+  // where the app is closed without ever ending the battle.
+  clearReveals() { state.revealed = {}; state.lastStrike = {}; emit(); },
+
+  // The narrower teardown, for callers that want to retire the undo window
+  // without touching the reveals (e.g. an Admin correction tool).
+  clearLastStrike() { state.lastStrike = {}; emit(); },
 
   // Shroud of Secrecy: one week of immunity from the Stone. Spent on use.
   raiseShroud(houseId) {
@@ -1837,6 +1846,23 @@ export const store = {
     const last = store.lastStrikeOn(houseId);
     if (!last) {
       return { ok: false, reason: 'Nothing has hit that house yet — there is nothing to take back.' };
+    }
+    // A strike that took NOTHING (fully trimmed at the zero floor, or a steal
+    // on an empty house) leaves nothing to take back — but the Turner was
+    // still offered, and consumed, for undoing it. A 1500-point item spent on
+    // undoing zero is the kind of deal a class remembers. Require the strike
+    // to have actually written something, or frozen someone.
+    if (!((last.txIds || []).length || last.froze)) {
+      return { ok: false, reason: 'That strike took nothing — there is nothing to take back.' };
+    }
+    // And it has to be TODAY's strike. lastStrike is persisted with the rest
+    // of the state, so without this check next week's class could turn back
+    // last week's battle — long after the teacher has moved on and the totals
+    // have been read out. The Turner rewinds the moment, not the term.
+    // (recordStrike stamps ts; a strike without one predates the stamp and is
+    // by definition stale.)
+    if (!last.ts || ymd(new Date(last.ts)) !== todayStr()) {
+      return { ok: false, reason: 'That strike is from a past Battle Day — the moment to turn back time has gone.' };
     }
     return { ok: true, strike: last };
   },
