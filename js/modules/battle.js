@@ -754,6 +754,25 @@ function injectStyles() {
   .duel-def-frozen{background:rgba(30,64,175,.2);border:1px solid rgba(96,165,250,.55);color:#bfdbfe;
     justify-content:center;text-align:center;}
 
+  /* 7.5 shared frost language — this card already had the ONLY frozen
+     indicator in the app (the section-lbl text + the red slot reason
+     below); this is that indicator unified onto the same ice-blue as the
+     dashboard standings, Council's podium and Records' tabs, plus the
+     thaw-day label those screens show, rather than a second look unique to
+     Battle Day. .duel-def-frozen (just above) was that first, never-wired
+     colour guess — these reuse its exact rgba values. duel-side-frozen only
+     touches border-color/box-shadow (an inset wash, painted above the
+     background and below the card's own content, same trick the cloth-
+     weave overlays elsewhere in this app use) so a frozen card never
+     changes size next to its opponent — the two shields must stay mirror-
+     symmetric across the VS. */
+  .duel-side-frozen{border-color:rgba(96,165,250,.65) !important;
+    box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 30px -12px rgba(96,165,250,.5),inset 0 0 0 999px rgba(30,64,175,.16) !important;}
+  .duel-frost-badge{display:inline-flex;align-items:center;gap:.2rem;flex:0 0 auto;
+    font-size:.62rem;font-weight:800;padding:.05rem .5rem;border-radius:999px;white-space:nowrap;
+    background:rgba(96,165,250,.22);border:1px solid rgba(96,165,250,.55);color:#bfdbfe;}
+  .duel2-slot-reason-frozen{color:#bfdbfe;}
+
   /* the reveal — defender's held defense flips face-up over their crest at
      the moment of the strike, not before */
   .duel-reveal-card{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
@@ -1152,6 +1171,14 @@ function emberField(count = 14) {
 // DUEL VIEW — markup
 // =============================================================================
 
+// 7.5 — fail-soft freeze lookup. getFreezeInfo is brand new; if it is ever
+// missing or throws, callers get back null and the card renders with the
+// plain "frozen" wording it always had (store.isFrozen alone), never a
+// crash.
+function safeFrost(store, houseId) {
+  try { return store.getFreezeInfo ? store.getFreezeInfo(houseId) : null; } catch (e) { return null; }
+}
+
 // Points block that sits BELOW each crest (the teacher's layout: shield on
 // top, then points, then hit points).
 function pointsBlockHtml(store, house, side) {
@@ -1544,7 +1571,10 @@ function lockedSlotHtml(slotLabel) {
 
 // One attack-slot cell on the attacker's card: locked (no 2nd slot without
 // the Bag of Holding), empty, or holding an item ready to strike with.
-function attackSlotHtml(item, unlocked, target, frozen) {
+// `frostLabel` is the school-day countdown text (7.5) when frozen — falls
+// back to the plain word if getFreezeInfo didn't have one, so this still
+// reads fine on a store that predates it.
+function attackSlotHtml(item, unlocked, target, frozen, frostLabel) {
   if (!unlocked) return lockedSlotHtml('attack');
   if (!item) return `<div class="duel2-slot duel2-slot-empty"><span class="duel2-slot-empty-label">Empty attack slot</span></div>`;
   const kind = item.effect.kind;
@@ -1552,7 +1582,7 @@ function attackSlotHtml(item, unlocked, target, frozen) {
   const mult = Math.max(1, Number(item.effect.mult) || 1);
   const dmgText = kind === 'freeze' ? `${dice} days frozen` : mult > 1 ? `${dice} × ${mult}` : dice;
   const disabled = !target || frozen;
-  const reason = frozen ? '❄️ Frozen' : (!target ? '🎯 Choose an opponent' : '');
+  const reason = frozen ? `❄️ ${frostLabel || 'Frozen'}` : (!target ? '🎯 Choose an opponent' : '');
   return `
     <button type="button" class="duel2-slot duel2-slot-filled" data-strike-item="${esc(item.id)}" ${disabled ? 'disabled' : ''}
       title="${esc(item.desc || item.name)}">
@@ -1562,7 +1592,7 @@ function attackSlotHtml(item, unlocked, target, frozen) {
         <span class="duel2-slot-kind">${esc(kindTagDuel(kind))}</span>
         <span class="duel2-slot-dmg">${esc(dmgText)}</span>
       </span>
-      ${reason ? `<span class="duel2-slot-reason">${esc(reason)}</span>` : ''}
+      ${reason ? `<span class="duel2-slot-reason ${frozen ? 'duel2-slot-reason-frozen' : ''}">${esc(reason)}</span>` : ''}
     </button>`;
 }
 
@@ -1676,28 +1706,37 @@ function utilityRowHtml(store, houseId, stoneOpts) {
 // "head" of the card. Reuses the same points-block/crest/name partials as
 // HP mode so the two rulesets read as the same family, just laid out to its
 // own spec.
-function duelCardHeadHtml(store, house, side) {
-  return `${pointsBlockHtml(store, house, side)}${crestHtml(house, side)}<div class="duel-name">${esc(house.name)}</div>`;
+// 7.5 — `frostLabel` (school-day countdown or null) puts the shared ❄️
+// badge right next to the name, the same placement dashboard/council/houses
+// use for "every prominent house identity".
+function duelCardHeadHtml(store, house, side, frostLabel) {
+  const badge = frostLabel ? `<span class="duel-frost-badge">❄️ ${esc(frostLabel)}</span>` : '';
+  return `${pointsBlockHtml(store, house, side)}${crestHtml(house, side)}<div class="duel-name">${esc(house.name)}</div>${badge}`;
 }
 
 function attackerCardHtmlDuel(store, challenger, target) {
   const limits = store.duelSlotLimits(challenger.id);
   const held = heldSlotInstances(store, challenger.id, 'attack');
   const frozen = store.isFrozen(challenger.id);
-  const slots = [0, 1].map((i) => attackSlotHtml(held[i] || null, limits.attack >= i + 1, target, frozen)).join('');
+  // 7.5 — same ice-blue/badge/label everywhere else; frost stays null (and
+  // the card falls back to the plain "Frozen" wording) if getFreezeInfo is
+  // ever missing or throws.
+  const frost = frozen ? safeFrost(store, challenger.id) : null;
+  const frostLabel = frost && frost.frozen ? frost.label : null;
+  const slots = [0, 1].map((i) => attackSlotHtml(held[i] || null, limits.attack >= i + 1, target, frozen, frostLabel)).join('');
   const revealedAlready = !!target && (store.hasRevealed(challenger.id, target.id) || combatRevealed.has(pairKey(challenger.id, target.id)));
   const stoneEnabled = !!target && store.countOwned(challenger.id, 'stone') > 0 && !revealedAlready;
   const stoneTitle = !target ? 'Choose an opponent first'
     : revealedAlready ? `${target.name}'s defense is already revealed`
     : `Peek at ${target.name}'s held items`;
   return `
-    <section class="duel-side duel-side-attacker" style="--side-accent:${esc(challenger.accent)}">
+    <section class="duel-side duel-side-attacker ${frozen ? 'duel-side-frozen' : ''}" style="--side-accent:${esc(challenger.accent)}">
       <div class="duel2-top">
         <div class="duel-role">⚔️ Attacker</div>
-        ${duelCardHeadHtml(store, challenger, 'challenger')}
+        ${duelCardHeadHtml(store, challenger, 'challenger', frostLabel)}
       </div>
       <div class="duel2-bottom">
-        <div class="duel-section-lbl">Attack slots${frozen ? ' — ❄️ frozen' : ''}</div>
+        <div class="duel-section-lbl">Attack slots${frozen ? ` — ❄️ ${esc(frostLabel || 'frozen')}` : ''}</div>
         <div class="duel2-slots-row">${slots}</div>
         <div class="duel-section-lbl">Utility</div>
         ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle })}
@@ -1713,16 +1752,20 @@ function defenderCardHtmlDuel(store, target, challenger) {
   const limits = store.duelSlotLimits(target.id);
   const held = heldSlotInstances(store, target.id, 'defense');
   const frozen = store.isFrozen(target.id);
+  // 7.5 — see attackerCardHtmlDuel: null (and plain "frozen" wording) if
+  // getFreezeInfo is missing or throws.
+  const frost = frozen ? safeFrost(store, target.id) : null;
+  const frostLabel = frost && frost.frozen ? frost.label : null;
   const revealed = !!challenger && (store.hasRevealed(challenger.id, target.id) || combatRevealed.has(pairKey(challenger.id, target.id)));
   const slots = [0, 1].map((i) => defenseSlotHtml(held[i] || null, limits.defense >= i + 1, revealed)).join('');
   return `
-    <section class="duel-side duel-side-defender" style="--side-accent:${esc(target.accent)}">
+    <section class="duel-side duel-side-defender ${frozen ? 'duel-side-frozen' : ''}" style="--side-accent:${esc(target.accent)}">
       <div class="duel2-top">
         <div class="duel-role">🛡️ Defender</div>
-        ${duelCardHeadHtml(store, target, 'defender')}
+        ${duelCardHeadHtml(store, target, 'defender', frostLabel)}
       </div>
       <div class="duel2-bottom">
-        <div class="duel-section-lbl">Defense slots${frozen ? ' — ❄️ frozen' : ''}</div>
+        <div class="duel-section-lbl">Defense slots${frozen ? ` — ❄️ ${esc(frostLabel || 'frozen')}` : ''}</div>
         <div class="duel2-slots-row">${slots}</div>
         <div class="duel-section-lbl">Utility</div>
         ${utilityRowHtml(store, target.id)}
