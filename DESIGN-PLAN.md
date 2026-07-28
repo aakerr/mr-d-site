@@ -168,7 +168,7 @@ unless a dependency is called out. One item = one commit.
 
 ## Phase 8 — Structural (bigger, do deliberately)
 
-- [ ] **8.1 Shipped content becomes code; saved state holds only teacher overrides.**
+- [x] **8.1 Shipped content becomes code; saved state holds only teacher overrides.**
   The chronic disease behind three audit bugs (shop descriptions, dice prophecy text,
   intro-video list — each needed a bespoke revision-marker migration in store.js load()):
   default content is COPIED into localStorage on first run, so shipped fixes never reach
@@ -190,7 +190,7 @@ unless a dependency is called out. One item = one commit.
   do the merge), and verify with a backup file from before the change. After this,
   a wording fix in code reaches every install with no migration ever again.
 
-- [ ] **8.2 One economy scale constant.**
+- [x] **8.2 One economy scale constant.**
   Add `ECONOMY = { SCALE: 100 }` (js/config.js) with a comment defining the canon:
   "1 old point = 100 shipped points; a routine good deed ≈ 500-1,000; shop items ≈
   3,000-6,000." Derive shipped catalog prices and award presets (store.js:22, catalogs)
