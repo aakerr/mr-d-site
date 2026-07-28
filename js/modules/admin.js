@@ -2700,6 +2700,9 @@ function renderSettings() {
   const theme = s.theme || { mode: 'dark', seasonal: false };
   const mode = theme.mode === 'light' ? 'light' : 'dark';
   const seasonal = !!theme.seasonal;
+  // Quiet mode lands as a store contract from a sibling change — guard so this
+  // row simply no-ops (stays off, does nothing on click) if it hasn't landed yet.
+  const quietMode = typeof store.getQuietMode === 'function' ? !!store.getQuietMode() : false;
   const apiKey = s.mapsApiKeyOverride || '';
   const termEvents = store.getEvents({ type: 'term-start' })
     .concat(store.getEvents({ type: 'term-end' }))
@@ -2767,6 +2770,12 @@ function renderSettings() {
         <div class="admin-toggle-row">
           <button class="admin-toggle${seasonal ? ' on' : ''}" data-action="theme-seasonal" role="switch" aria-checked="${seasonal}"><span class="admin-toggle-knob"></span></button>
           <span class="admin-mini" style="margin:0">Adds automatic seasonal accents to the board — leaves in fall, snow in winter…</span>
+        </div>
+
+        <label class="admin-flabel">Quiet mode</label>
+        <div class="admin-toggle-row">
+          <button class="admin-toggle${quietMode ? ' on' : ''}" data-action="quiet-mode" role="switch" aria-checked="${quietMode}"><span class="admin-toggle-knob"></span></button>
+          <span class="admin-mini" style="margin:0">🤫 Quiet mode — mute sound effects and freeze animations (test days, quiet work)</span>
         </div>
 
         <label class="admin-flabel" for="admin-maps-key">Google Maps API key (optional)</label>
@@ -5182,6 +5191,15 @@ function onClick(e) {
       const cur = store.getSettings().theme || { mode: 'dark', seasonal: false };
       store.updateSettings({ theme: { ...cur, seasonal: !cur.seasonal } });
       renderBody(); toast(`Seasonal theming ${!cur.seasonal ? 'on' : 'off'}.`);
+      break;
+    }
+    case 'quiet-mode': {
+      // Same no-op guard as the render side — if the store hasn't grown this
+      // method yet, the switch just declines to move rather than throwing.
+      if (typeof store.setQuietMode !== 'function' || typeof store.getQuietMode !== 'function') break;
+      const next = !store.getQuietMode();
+      store.setQuietMode(next);
+      renderBody(); toast(`Quiet mode ${next ? 'on' : 'off'}.`);
       break;
     }
     case 'maps-key-save': {
