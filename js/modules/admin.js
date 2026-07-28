@@ -1820,9 +1820,10 @@ function syncHpShopFromDom() {
   shopForm.saveError = null;   // any edit clears the previous failure notice
 }
 
-// Reads the counter checkboxes BEFORE the kind is switched (see the
-// admin-eff change handler), so a kind change captures the counters that
-// were on screen for the kind that was active a moment ago.
+// Reads the modal's fields back into the staging object. The counter
+// checkboxes on screen belong to the kind that was staged when the modal
+// was last RENDERED — on a kind switch the radio's :checked flips before
+// its change handler runs, so the freshly-picked kind must not claim them.
 function syncDuelShopFromDom() {
   if (!shopForm) return;
   const f = shopForm;
@@ -1835,12 +1836,13 @@ function syncDuelShopFromDom() {
   if (el('admin-shop-mult')) f.mult = g('admin-shop-mult');
   if (el('admin-shop-targets')) f.targets = g('admin-shop-targets');
   if (el('admin-shop-anon')) f.anonymous = el('admin-shop-anon').checked;
+  const renderedKind = f.effectKind;   // the kind the checkboxes were drawn for
   const checked = rootEl.querySelector('input[name="admin-eff"]:checked');
   if (checked) f.effectKind = checked.value;
   const counterBoxes = rootEl.querySelectorAll('.admin-counter-check');
   if (counterBoxes.length) {
     const ids = Array.from(counterBoxes).filter((c) => c.checked).map((c) => c.dataset.counterId);
-    const slot = DUEL_SLOT_OF_KIND[f.effectKind] || 'utility';
+    const slot = DUEL_SLOT_OF_KIND[renderedKind] || 'utility';
     if (slot === 'attack') f.counteredBy = ids;
     else if (slot === 'defense') f.blocks = ids;
   }
@@ -2471,6 +2473,32 @@ function updateCombatPreview() {
 function updateCombatHpList() {
   const list = el('admin-combat-hp-list');
   if (list) list.innerHTML = combatHpRowsHTML();
+}
+
+// Battle-rule numbers save when the teacher LEAVES the field (change), never
+// per keystroke — saving on every input tick meant a field cleared mid-edit
+// instantly wrote the clamp floor into the store (hpBase 1, gapShare 0). A
+// field left empty saves nothing; the saved value is put back on blur.
+const COMBAT_NUMBER_FIELDS = {
+  'admin-combat-gapshare': { key: 'gapShare', parse: (v) => Math.max(0, Math.min(100, Number(v) || 0)), refresh: updateCombatPreview },
+  'admin-combat-percent': { key: 'prizePercent', parse: (v) => Math.max(0, Math.min(100, Number(v) || 0)), refresh: updateCombatPreview },
+  'admin-combat-flat': { key: 'prizeFlat', parse: (v) => Math.max(0, Number(v) || 0), refresh: updateCombatPreview },
+  'admin-combat-hpbase': { key: 'hpBase', parse: (v) => Math.max(1, Number(v) || 1), refresh: updateCombatHpList },
+  'admin-combat-hpper500': { key: 'hpPer500', parse: (v) => Math.max(0, Number(v) || 0), refresh: updateCombatHpList },
+  // No clamping here on purpose — updateCombat() owns the range. Clamping in
+  // the form as well is how prizeFlat ended up with a floor and no ceiling.
+  'admin-combat-teacher': { key: 'teacherScore', parse: (v) => v, refresh: null },
+};
+
+// Returns true when the input was one of the battle-rule fields above.
+function commitCombatField(input) {
+  const field = COMBAT_NUMBER_FIELDS[input.id];
+  if (!field) return false;
+  const store = ctxRef.store;
+  if (input.value.trim() !== '') store.updateCombat({ [field.key]: field.parse(input.value) });
+  input.value = store.getCombat()[field.key];   // show what is actually saved
+  if (field.refresh) field.refresh();
+  return true;
 }
 
 function renderBattleRulesCard() {
@@ -4095,11 +4123,11 @@ function askPdfIntent(key, file, rest) {
   pendingPdf = { key, file, rest };
   const m = el('admin-modal-root');
   m.innerHTML = `
-    <div class="admin-modal-bg" data-action="pdf-intent-resource"></div>
+    <div class="admin-modal-bg" data-action="pdf-intent-cancel"></div>
     <div class="admin-modal">
       <div class="admin-modal-head">
         <div class="admin-modal-title">📽️ Use this PDF as the lesson presentation?</div>
-        <button class="admin-btn admin-btn-icon" data-action="pdf-intent-resource" aria-label="Close">✕</button>
+        <button class="admin-btn admin-btn-icon" data-action="pdf-intent-cancel" aria-label="Close">✕</button>
       </div>
       <div class="admin-modal-body">
         <p class="admin-modal-lead"><b>${esc(file.name)}</b> (${humanSize(file.size)})</p>
@@ -5444,6 +5472,10 @@ function onClick(e) {
       if (p) storeAssets(p.key, [p.file, ...p.rest]);
       break;
     }
+    // The ✕ and the backdrop are a true cancel: the dropped files are simply
+    // let go, stored nowhere. "Keep as a resource file" is a choice the
+    // teacher makes with the labelled button, never by dismissing the question.
+    case 'pdf-intent-cancel': pendingPdf = null; closeModal(); break;
     case 'potw-src-add': syncPotwFromDom(); potwForm.sources.push({ emoji: '', name: '', desc: '' }); renderPotwModal(); break;
     case 'potw-src-del': syncPotwFromDom(); potwForm.sources.splice(Number(btn.dataset.i), 1); renderPotwModal(); break;
     case 'potw-quiz-add': syncPotwFromDom(); potwForm.quiz.push({ q: '', a: '' }); renderPotwModal(); break;
@@ -6120,6 +6152,7 @@ export default {
         updateCombatPreview();
         return;
       }
+      if (commitCombatField(e.target)) return;   // battle-rule numbers save on change, not per keystroke
       if (e.target.classList && e.target.classList.contains('admin-music-pick')) {
         const screen = e.target.dataset.screen;
         const val = e.target.value;
@@ -6169,32 +6202,9 @@ export default {
 
     // live plain-English preview in the shop editor as cost/amount are typed
     inputHandler = (e) => {
-      if (e.target.id === 'admin-combat-gapshare') {
-        ctxRef.store.updateCombat({ gapShare: Math.max(0, Math.min(100, Number(e.target.value) || 0)) });
-        updateCombatPreview();
-      }
-      else if (e.target.id === 'admin-combat-percent') {
-        ctxRef.store.updateCombat({ prizePercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) });
-        updateCombatPreview();
-      }
-      else if (e.target.id === 'admin-combat-flat') {
-        ctxRef.store.updateCombat({ prizeFlat: Math.max(0, Number(e.target.value) || 0) });
-        updateCombatPreview();
-      }
-      else if (e.target.id === 'admin-combat-hpbase') {
-        ctxRef.store.updateCombat({ hpBase: Math.max(1, Number(e.target.value) || 1) });
-        updateCombatHpList();
-      }
-      else if (e.target.id === 'admin-combat-hpper500') {
-        ctxRef.store.updateCombat({ hpPer500: Math.max(0, Number(e.target.value) || 0) });
-        updateCombatHpList();
-      }
-      // No clamping here on purpose — updateCombat() owns the range. Clamping in
-      // the form as well is how prizeFlat ended up with a floor and no ceiling.
-      else if (e.target.id === 'admin-combat-teacher') {
-        ctxRef.store.updateCombat({ teacherScore: e.target.value });
-      }
-      else if (e.target.id === 'admin-ambient-volume') {
+      // Battle-rule numbers are deliberately NOT here — they commit on
+      // change (see commitCombatField), so a half-typed field never saves.
+      if (e.target.id === 'admin-ambient-volume') {
         const pct = Number(e.target.value);
         const label = el('admin-ambient-vol-label');
         if (label) label.textContent = `${pct}%`;
@@ -6242,7 +6252,7 @@ export default {
       }
       else if (e.target.dataset && e.target.dataset.diceId) {
         // Prophecy table rows save straight to the store as the teacher types,
-        // same live-write pattern as the battle-rules and colour fields above.
+        // same live-write pattern as the colour fields above.
         // The store clamps/validates (saveDiceOutcome), so a stray keystroke
         // here can never save something the dice screen would choke on.
         ctxRef.store.saveDiceOutcome(e.target.dataset.diceId, { [e.target.dataset.diceField]: e.target.value });
