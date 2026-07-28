@@ -790,14 +790,25 @@ function modalHtml(store) {
     const q = store.getActiveQuest(m.core);
     if (!q) return '';
     const penalty = penaltyOf(q);
+    // The configured penalty and the deduction that will land are two
+    // different numbers: the store trims at the zero floor. Promising
+    // "−20" to a house holding 7 is a lie the scoreboard exposes.
+    const applied = Math.min(penalty, Math.max(0, store.getTotal(m.core, 'term')));
     icon = '✗';
     title = 'Give up this quest?';
     body = `<b>${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.`;
-    extra = `<div class="quest-modal-warn">⚠️ ${esc(house.name)} loses <b>${penalty} points</b>${penalty === 0 ? ' (no penalty set)' : ''},
+    const warn = penalty === 0
+      ? `⚠️ ${esc(house.name)} loses <b>0 points</b> (no penalty set),`
+      : applied === 0
+        ? `⚠️ ${esc(house.name)} is already on zero — there is nothing left to take —`
+        : applied < penalty
+          ? `⚠️ ${esc(house.name)} loses <b>${applied} points</b> — all they have, of the ${penalty}-point penalty —`
+          : `⚠️ ${esc(house.name)} loses <b>${penalty} points</b>,`;
+    extra = `<div class="quest-modal-warn">${warn}
       and the quest goes back on the board for another house to steal.</div>
       <div class="quest-modal-info">Accepted by mistake instead? Use “Clear without penalty” in
       Admin → Quests.</div>`;
-    go = penalty > 0 ? `✗ Give up — deduct ${penalty}` : '✗ Give up';
+    go = applied > 0 ? `✗ Give up — deduct ${applied}` : '✗ Give up';
     danger = true;
     color = '#ef4444';
     colorSoft = 'rgba(239,68,68,.35)';
@@ -1010,9 +1021,14 @@ async function confirmModal() {
     render();
     if (res) {
       ctxRef.audio?.sfx?.('thud');
-      toast(res.penalty > 0
-        ? `${house.name} gave up “${res.quest.title}” — ${res.penalty} points deducted. It's back on the board.`
-        : `${house.name} gave up “${res.quest.title}”. It's back on the board.`);
+      // appliedPenalty is what the store actually wrote — the configured
+      // penalty may have been trimmed to nothing at the zero floor, and
+      // announcing a deduction that never landed would contradict the totals.
+      toast(res.appliedPenalty > 0
+        ? `${house.name} gave up “${res.quest.title}” — ${res.appliedPenalty} points deducted. It's back on the board.`
+        : res.penalty > 0
+          ? `${house.name} gave up “${res.quest.title}” — they had nothing left to take. It's back on the board.`
+          : `${house.name} gave up “${res.quest.title}”. It's back on the board.`);
     }
     return;
   }

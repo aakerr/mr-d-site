@@ -977,6 +977,16 @@ function openQuestFailModal(core) {
   if (!q) { toast('No active quest for that core.'); return; }
   const house = store.HOUSES[core];
   const penalty = questPenalty(q);
+  // What will really land: the store trims the deduction at the zero floor,
+  // so the confirm promises the trimmed number, not the configured one.
+  const applied = Math.min(penalty, Math.max(0, store.getTotal(core, 'term')));
+  const warn = penalty === 0
+    ? `⚠️ ${esc(house.name)} loses <b>0 points</b> (no penalty set for this quest),`
+    : applied === 0
+      ? `⚠️ ${esc(house.name)} is already on zero — there is nothing left to take —`
+      : applied < penalty
+        ? `⚠️ ${esc(house.name)} loses <b>${applied} point${applied === 1 ? '' : 's'}</b> — all they have, of the ${penalty}-point penalty —`
+        : `⚠️ ${esc(house.name)} loses <b>${penalty} point${penalty === 1 ? '' : 's'}</b>,`;
   const m = el('admin-modal-root');
   m.innerHTML = `
     <div class="admin-modal-bg" data-action="modal-close"></div>
@@ -987,12 +997,12 @@ function openQuestFailModal(core) {
       </div>
       <div class="admin-modal-body">
         <p class="admin-modal-lead"><b class="admin-house-name-accent" style="color:${house.accent}">${esc(house.name)}</b> is giving up on <b>${esc(q.title)}</b>.</p>
-        <div class="admin-warn-line">⚠️ ${esc(house.name)} loses <b>${penalty} point${penalty === 1 ? '' : 's'}</b>${penalty === 0 ? ' (no penalty set for this quest)' : ''}, and the quest goes back on the board for another house to steal.</div>
+        <div class="admin-warn-line">${warn} and the quest goes back on the board for another house to steal.</div>
         <div class="admin-mini" style="margin-top:10px">Accepted by mistake instead? Close this and use <b>“Clear without penalty”</b>.</div>
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
-        <button class="admin-btn admin-btn-nuke admin-btn-lg" data-action="quest-fail-confirm" data-core="${core}">${penalty > 0 ? `Give up &amp; deduct ${penalty}` : 'Give up'}</button>
+        <button class="admin-btn admin-btn-nuke admin-btn-lg" data-action="quest-fail-confirm" data-core="${core}">${applied > 0 ? `Give up &amp; deduct ${applied}` : 'Give up'}</button>
       </div>
     </div>`;
 }
@@ -1004,9 +1014,13 @@ function confirmQuestFail(core) {
   closeModal();
   renderBody();
   if (res) {
-    toast(res.penalty > 0
-      ? `−${res.penalty} from ${house.name} — “${res.quest.title}” is back on the board.`
-      : `“${res.quest.title}” is back on the board.`);
+    // appliedPenalty is the deduction the store actually wrote; the
+    // configured penalty may have been trimmed to nothing at the zero floor.
+    toast(res.appliedPenalty > 0
+      ? `−${res.appliedPenalty} from ${house.name} — “${res.quest.title}” is back on the board.`
+      : res.penalty > 0
+        ? `${house.name} had nothing left to take — “${res.quest.title}” is back on the board.`
+        : `“${res.quest.title}” is back on the board.`);
     ctxRef.audio?.sfx?.('thud');
   }
 }
