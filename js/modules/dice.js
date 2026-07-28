@@ -14,6 +14,7 @@ let rollInProgress = false;
 let currentMode = '1d6';
 let celebrateTimer = null;
 let mounted = false;              // guards against a PIN pad resolving after unmount
+let mountToken = 0;               // bumped by every mount and unmount — see the await in mount()
 let awardedThisRoll = false;      // one award per roll; a new roll re-enables awarding
 let awardInFlight = false;        // an award is mid-PIN-check; blocks a second tap
 let relicClaimedThisRoll = false; // one Mythic relic per natural 20
@@ -581,8 +582,16 @@ export default {
     // Try to spin up the 3D physics sim; fall back gracefully on any failure.
     sim = null;
     sim3dFailed = false;
+    // mount() is async only for this import, and navigation does not wait for
+    // it: a quick Dice → Home hop unmounts while the physics module is still
+    // loading. The token is bumped by every mount and unmount, so if it has
+    // moved by the time the import lands, this mount is stale — bail before
+    // creating a WebGL context, wiring listeners, or subscribing to the store,
+    // all of which would outlive the dead DOM.
+    const token = ++mountToken;
     try {
       const { createDiceSim } = await import('./dice3d/sim.js');
+      if (token !== mountToken) return;
       sim = createDiceSim({ container: host, audio });
       // Tint the dice with the active house accent (null = All → defaults).
       sim.setHouse(store.getActiveHouse());
@@ -642,6 +651,7 @@ export default {
 
   unmount() {
     mounted = false;
+    mountToken++;   // invalidates a mount() still awaiting its sim import
     if (storeUnsub) { try { storeUnsub(); } catch (e) { console.error(e); } storeUnsub = null; }
     clearTimeout(celebrateTimer);
     celebrateTimer = null;
