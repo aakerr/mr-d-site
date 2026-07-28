@@ -56,6 +56,9 @@ let dropHandler = null;
 let inputHandler = null;
 const { timers, later, clearTimers } = makeTimerSet('admin');
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
+// Pending debounced volume commits, keyed so the master slider and each
+// per-screen slider debounce independently — see debounceVolumeCommit below.
+const volumeCommitTimers = new Map();
 
 let activeTab = 'planner';            // 'planner' | 'quests' | 'shop' | 'potw' | 'battle' | 'help' | 'settings'
 const cal = { year: 0, month: 0 };    // currently-viewed calendar month
@@ -1995,29 +1998,34 @@ async function saveDuelShopItem() {
 function syncCounterReciprocals(store, saved) {
   if (saved.slot !== 'attack' && saved.slot !== 'defense') return;
   const catalog = store.getShopItems();
-  if (saved.slot === 'attack') {
-    const wanted = new Set(saved.counteredBy || []);
-    catalog.filter((x) => x.id !== saved.id && x.slot === 'defense').forEach((def) => {
-      const has = (def.blocks || []).includes(saved.id);
-      const should = wanted.has(def.id);
-      if (has === should) return;
-      const nextBlocks = should
-        ? [...(def.blocks || []), saved.id]
-        : (def.blocks || []).filter((id) => id !== saved.id);
-      store.saveShopItem({ ...def, blocks: nextBlocks });
-    });
-  } else {
-    const wanted = new Set(saved.blocks || []);
-    catalog.filter((x) => x.id !== saved.id && x.slot === 'attack').forEach((atk) => {
-      const has = (atk.counteredBy || []).includes(saved.id);
-      const should = wanted.has(atk.id);
-      if (has === should) return;
-      const nextCountered = should
-        ? [...(atk.counteredBy || []), saved.id]
-        : (atk.counteredBy || []).filter((id) => id !== saved.id);
-      store.saveShopItem({ ...atk, counteredBy: nextCountered });
-    });
-  }
+  // One teacher-visible edit can touch several other items' counter lists —
+  // batch them into a single emit/persist/backup-poke instead of one per
+  // affected item.
+  store.batch(() => {
+    if (saved.slot === 'attack') {
+      const wanted = new Set(saved.counteredBy || []);
+      catalog.filter((x) => x.id !== saved.id && x.slot === 'defense').forEach((def) => {
+        const has = (def.blocks || []).includes(saved.id);
+        const should = wanted.has(def.id);
+        if (has === should) return;
+        const nextBlocks = should
+          ? [...(def.blocks || []), saved.id]
+          : (def.blocks || []).filter((id) => id !== saved.id);
+        store.saveShopItem({ ...def, blocks: nextBlocks });
+      });
+    } else {
+      const wanted = new Set(saved.blocks || []);
+      catalog.filter((x) => x.id !== saved.id && x.slot === 'attack').forEach((atk) => {
+        const has = (atk.counteredBy || []).includes(saved.id);
+        const should = wanted.has(atk.id);
+        if (has === should) return;
+        const nextCountered = should
+          ? [...(atk.counteredBy || []), saved.id]
+          : (atk.counteredBy || []).filter((id) => id !== saved.id);
+        store.saveShopItem({ ...atk, counteredBy: nextCountered });
+      });
+    }
+  });
 }
 
 function revokeShopUrls() { shopUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); shopUrls.clear(); }
@@ -2941,6 +2949,20 @@ function setScreenVolume(screen, pct) {
   if (!entry.src) return;
   const tracks = { ...ambient.tracks, [screen]: { src: entry.src, volume: Math.min(1, Math.max(0, Number(pct) / 100)) } };
   store.updateAmbient({ tracks });
+}
+
+// Coalesces a run of slider drag ticks into one committed write. Dragging a
+// volume slider used to call store.updateAmbient() on every 'input' tick —
+// one localStorage write and one folder-backup poke per pixel of drag. The
+// percentage label still updates on every tick (see the callers), so the
+// number on screen tracks the pointer instantly; `fn` — the actual store
+// write, and the live audio retune that rides on it — fires once the
+// slider has sat still for `ms`, so a full drag now persists once instead
+// of dozens of times.
+function debounceVolumeCommit(key, fn, ms = 200) {
+  const prev = volumeCommitTimers.get(key);
+  if (prev) clearTimeout(prev);
+  volumeCommitTimers.set(key, later(() => { volumeCommitTimers.delete(key); fn(); }, ms));
 }
 
 function applySuggestedMusicSetup() {
@@ -5114,19 +5136,23 @@ function onClick(e) {
         : 'This removes it from the shop catalog.';
       openConfirm(`Delete item “${it ? it.name : ''}”?`, body, () => {
         if (it?.image?.startsWith('media:')) media.delete(it.image.slice('media:'.length));
-        store.deleteShopItem(id);
-        // Strip any dangling reference to the deleted item from every other
-        // item's counter lists, so an old id never lingers as a broken link.
-        if (duel) {
-          store.getShopItems().forEach((x) => {
-            if (Array.isArray(x.counteredBy) && x.counteredBy.includes(id)) {
-              store.saveShopItem({ ...x, counteredBy: x.counteredBy.filter((c) => c !== id) });
-            }
-            if (Array.isArray(x.blocks) && x.blocks.includes(id)) {
-              store.saveShopItem({ ...x, blocks: x.blocks.filter((c) => c !== id) });
-            }
-          });
-        }
+        // One delete can dirty several other items' counter lists below —
+        // batch the whole cleanup into a single emit/persist/backup-poke.
+        store.batch(() => {
+          store.deleteShopItem(id);
+          // Strip any dangling reference to the deleted item from every other
+          // item's counter lists, so an old id never lingers as a broken link.
+          if (duel) {
+            store.getShopItems().forEach((x) => {
+              if (Array.isArray(x.counteredBy) && x.counteredBy.includes(id)) {
+                store.saveShopItem({ ...x, counteredBy: x.counteredBy.filter((c) => c !== id) });
+              }
+              if (Array.isArray(x.blocks) && x.blocks.includes(id)) {
+                store.saveShopItem({ ...x, blocks: x.blocks.filter((c) => c !== id) });
+              }
+            });
+          }
+        });
         renderBody(); toast('Item deleted.');
       });
       break;
@@ -6175,17 +6201,21 @@ export default {
         const pct = Number(e.target.value);
         const label = el('admin-ambient-vol-label');
         if (label) label.textContent = `${pct}%`;
-        // Applies immediately — ambient.js re-reads settings on every store
-        // change, so this alone re-tunes whatever is currently playing.
-        ctxRef.store.updateAmbient({ volume: Math.min(1, Math.max(0, pct / 100)) });
+        // ambient.js re-reads settings on every store change, so the commit
+        // below re-tunes whatever is currently playing — debounced so a drag
+        // doesn't write to localStorage on every pixel (see
+        // debounceVolumeCommit).
+        debounceVolumeCommit('ambient', () => {
+          ctxRef.store.updateAmbient({ volume: Math.min(1, Math.max(0, pct / 100)) });
+        });
       }
       else if (e.target.classList && e.target.classList.contains('admin-music-screen-volume')) {
         const screen = e.target.dataset.screen;
         const pct = Number(e.target.value);
         const label = el(`admin-music-vol-num-${screen}`);
         if (label) label.textContent = `${pct}%`;
-        // Applies immediately, same as the master slider above.
-        setScreenVolume(screen, pct);
+        // Debounced, same as the master slider above.
+        debounceVolumeCommit(`screen:${screen}`, () => setScreenVolume(screen, pct));
       }
       else if (e.target.id === 'admin-shop-cost' || e.target.id === 'admin-shop-amount'
         || e.target.id === 'admin-shop-dice' || e.target.id === 'admin-shop-mult' || e.target.id === 'admin-shop-targets') updateShopPreview();

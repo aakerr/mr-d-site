@@ -1111,7 +1111,22 @@ function cached(key, compute) {
   return value;
 }
 
-function emit() { persist(); listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } }); }
+// Batching support for callers that make several store writes as one logical
+// change (e.g. admin.js re-syncing a handful of shop items' counter lists).
+// Without this, each write's own emit() persists to localStorage, pokes the
+// folder backup and re-renders every mounted screen — once PER item instead
+// of once for the whole edit. batchDepth nests safely: an emit() that fires
+// while any batch is open just marks the state dirty instead of emitting;
+// the outermost batch.() call is the one that actually emits, once, after
+// its function returns.
+let batchDepth = 0;
+let batchDirty = false;
+
+function emit() {
+  if (batchDepth > 0) { batchDirty = true; return; }
+  persist();
+  listeners.forEach((fn) => { try { fn(state); } catch (e) { console.error(e); } });
+}
 
 function startOfWeek(d = new Date()) {
   const x = new Date(d); const day = (x.getDay() + 6) % 7; // Monday=0
@@ -1412,6 +1427,24 @@ export const store = {
   questIcon(q) { return (q && q.icon) || store.questType(q).icon; },
   getState: () => state,
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+
+  // Runs `fn` with emit() suppressed, then emits (persist + notify) at most
+  // once when the outermost batch finishes — see the comment on emit() above.
+  // Use this around any loop of several store-mutating calls that together
+  // form one teacher-visible action (e.g. syncing counter reciprocals across
+  // a handful of shop items after one save).
+  batch(fn) {
+    batchDepth++;
+    try {
+      fn();
+    } finally {
+      batchDepth--;
+      if (batchDepth === 0 && batchDirty) {
+        batchDirty = false;
+        emit();
+      }
+    }
+  },
 
   setActiveCore(core) {
     state.activeCore = core === 'all' ? 'all' : Number(core);
