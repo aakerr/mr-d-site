@@ -4,7 +4,8 @@
   "description": "Schema for the app state stored in localStorage under key 'mrd-classroom-os-v1'. Mirrors the complete structure written by js/core/store.js defaultState().",
   "type": "object",
   "required": [
-    "version", "activeCore", "settings", "inventory", "hp", "quests", "shop",
+    "version", "activeCore", "settings", "inventory", "frozen", "shrouded",
+    "revealed", "hp", "quests", "shop",
     "planner", "potwBounties", "transactions", "shields", "defenses",
     "itineraries", "homework", "potw"
   ],
@@ -23,8 +24,8 @@
     },
     "settings": {
       "type": "object",
-      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings). A handful of sub-objects here (moduleThemes, layouts, combat, sfx, introVideos) ship as null in a brand-new state and are only filled in with real objects the first time store.js's load() function runs its migration over a saved state — see each field's own description below for exactly what it is seeded with.",
-      "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride", "soundEnabled", "ambient", "lock", "awardPresets", "houses"],
+      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings). A fresh install seeds every sub-object below (moduleThemes, layouts, combat, sfx, introVideos, diceProphecy) with real, non-null objects straight from store.js's defaultState() — a null value only ever shows up in an OLDER SAVED state that predates one of these settings, and store.js's load() migration fills it in with the shipped default the next time that save is loaded, without disturbing anything the teacher already customised. See each field's own description below.",
+      "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride", "soundEnabled", "ambient", "lock", "combatMode", "combat", "awardPresets", "houses"],
       "properties": {
         "termStart": {
           "type": "string",
@@ -84,7 +85,7 @@
             },
             "tracks": {
               "type": ["object", "null"],
-              "description": "moduleId -> audio source for that screen's loop. null/missing falls back to CONFIG.AMBIENT_TRACKS' shipped defaults.",
+              "description": "moduleId -> audio source for that screen's loop. null/missing falls back to CONFIG.AMBIENT_TRACKS' shipped defaults. Also holds one PSEUDO-SCREEN key, 'flyover' (see js/core/store.js's FLYOVER_TRACK_KEY): the music that plays under Place of the Week's Google Maps 3D flight. It rides in this same map so the teacher assigns it in Admin → Settings → Background music next to every other screen's track, but it is deliberately NOT a real module id — js/core/ambient.js only looks up tracks by the id of the module actually mounted, and no module is called 'flyover', so nothing plays it as an ordinary background loop by accident. js/modules/potw.js reads it directly instead. Flight music used to be set per POTW destination; it is now one global choice.",
               "additionalProperties": { "type": "string" }
             }
           }
@@ -143,10 +144,17 @@
             "shop": { "type": "string", "enum": ["grid", "carousel"], "default": "grid" }
           }
         },
+        "combatMode": {
+          "type": "string",
+          "enum": ["duel", "hp"],
+          "default": "duel",
+          "description": "Which of the TWO complete Battle Day rule sets is active (see store.js's COMBAT_MODES). 'duel' — \"Mr. D's own rules\" and the shipped default — is a dice-and-counters game: each house holds at most one attack item and one defense item at a time (see 'shop.catalog' items' 'slot'/'counteredBy'/'blocks'), an attack reveals the defender's held item and either is cancelled outright or rolls real dice on screen, and the total comes straight off the DEFENDER'S POINTS (never HP). 'hp' is the earlier hit-points model, kept fully working as an alternative: strikes remove hit points (top-level 'hp' key) rather than points, and only a battle's winner is paid a points prize (see 'combat' below) when the loser's HP reaches zero — the loser's points are never touched either way. store.setCombatMode() is the only way this is written; switching modes swaps 'shop.catalog' for the other mode's catalog (see 'shop.parked') and clears the top-level 'inventory' and 'hp' keys, because an item bought under one rule set means nothing under the other. It does NOT touch points, the transaction log, quests, the planner, or any other setting.",
+          "example": "duel"
+        },
         "combat": {
-          "type": ["object", "null"],
-          "description": "Battle Day combat tuning (Admin → Combat). null in a brand-new, never-yet-saved state; store.js load() merges it over store.defaultCombat()'s defaults the first time a saved state is loaded. store.updateCombat() is the ONLY way the app writes this object, and it clamps every numeric field on save (see each field's min/max below) so a stray keystroke in Admin can never save an unpayable prize or an unreachable HP value.",
-          "required": ["prizeRule", "gapShare", "prizePercent", "prizeFlat", "punchingDown", "hpBase", "hpPer500"],
+          "type": "object",
+          "description": "Battle Day combat tuning (Admin → ⚔️ Battle Day / ⚙️ Settings → ⚔️ Battle rules). Seeded with real values by store.js's defaultState() on a brand-new install — it is never null there. A null/missing value only ever turns up in an OLDER SAVED state from before this setting existed; store.js load() merges that over store.defaultCombat()'s defaults the next time it loads. store.updateCombat() is the ONLY way the app writes this object, and it clamps every numeric field on save (see each field's min/max below) so a stray keystroke in Admin can never save an unpayable prize or an unreachable HP value. Some fields below apply only under one combatMode — see each field's own description.",
+          "required": ["prizeRule", "gapShare", "prizePercent", "prizeFlat", "punchingDown", "duelPunchDown", "hpBase", "hpPer500", "teacherScore"],
           "properties": {
             "prizeRule": {
               "type": "string",
@@ -178,35 +186,74 @@
             "punchingDown": {
               "type": "boolean",
               "default": false,
-              "description": "Whether a house is allowed to attack another house that currently holds FEWER term points than it does. Off by default: without this guard, the leading house could farm the last-place house every Battle Day, which is the failure mode a classroom would regret most."
+              "description": "HIT-POINTS MODE ONLY (combatMode 'hp'). Whether a house is allowed to attack another house that currently holds FEWER term points than it does. Off by default: without this guard, the leading house could farm the last-place house every Battle Day, which is the failure mode a classroom would regret most. The duel mode's own punching-down flag is 'duelPunchDown' below — the two are independent so switching combatMode does not silently change the other mode's rule."
+            },
+            "duelPunchDown": {
+              "type": "boolean",
+              "default": true,
+              "description": "MR. D'S RULES ONLY (combatMode 'duel'). Whether a house may throw an attack (including choosing the Catapult's second target) at a house holding fewer points than itself. Defaults to true — the OPPOSITE default from the hit-points mode's 'punchingDown' above — because Mr. D's own game is played by every core each week and blocking the leader from attacking would take the class in front most often out of Battle Day altogether."
             },
             "hpBase": {
               "type": "integer",
               "minimum": 1,
               "maximum": 10000,
               "default": 100,
-              "description": "Base max HP every house starts a Battle Day cycle with, before any points-based bonus is added. Clamped to 1-10000 by store.updateCombat()."
+              "description": "HIT-POINTS MODE ONLY. Base max HP every house starts a Battle Day cycle with, before any points-based bonus is added. Clamped to 1-10000 by store.updateCombat()."
             },
             "hpPer500": {
               "type": "integer",
               "minimum": 0,
               "maximum": 10000,
               "default": 10,
-              "description": "Extra max HP granted per 500 TERM points a house currently holds — maxHp = hpBase + hpPer500 * floor(points / 500), see store.getMaxHp(). A mild brake on everyone piling onto the current point leader every week: the richer a house gets, the tougher it is to finish off in combat. Clamped to 0-10000 by store.updateCombat()."
+              "description": "HIT-POINTS MODE ONLY. Extra max HP granted per 500 TERM points a house currently holds — maxHp = hpBase + hpPer500 * floor(points / 500), see store.getMaxHp(). A mild brake on everyone piling onto the current point leader every week: the richer a house gets, the tougher it is to finish off in combat. Clamped to 0-10000 by store.updateCombat()."
+            },
+            "teacherScore": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 10,
+              "description": "The +/- amount on the always-visible 'Teacher scoring' row inside the Battle Day arena (both rule sets) — a manual award/deduction that spends no item and rolls no dice. Used to be hardcoded to 10 in battle.js; now teacher-editable."
             }
           }
         },
         "sfx": {
-          "type": ["object", "null"],
-          "description": "Teacher-recorded sound replacements per effect slot (Admin → Sound). null in a state that has never been through store.js load()'s migration; once loaded, it is always an object with EVERY slot below present, each holding either '' (use the built-in synth tone, or — for 'battlecry' — true silence) or a path under /sfx pointing at the teacher's own recording. An unassigned slot never leaves the app silent, except 'battlecry' on purpose: it is a spoken voice line ('It's Battle Day. Attack!'), and a synthesized beep would be worse than nothing, so it just stays quiet until the teacher records one.",
+          "type": "object",
+          "description": "Teacher-recorded sound replacements per effect slot (Admin → ⚙️ Settings → Sound). Seeded with real values (the shipped /sfx file paths) by store.js's defaultState() on a brand-new install — it is never null there. A null/missing value only ever turns up in an OLDER SAVED state that predates this setting or one of its slots; store.js load() rebuilds it on every load with EVERY slot below present, each holding either '' (use the built-in synth tone, or — for 'battlecry' — true silence) or a path under /sfx pointing at the teacher's own recording. An unassigned slot never leaves the app silent, except 'battlecry' on purpose: it is a spoken voice line ('It's Battle Day. Attack!'), and a synthesized beep would be worse than nothing, so it just stays quiet until the teacher records one. audio.sfx(name) always tries the teacher's assigned file first and falls back to the built-in WebAudio-synthesized tone only if the slot is blank or the file fails to load/play.",
           "properties": {
             "battlecry": { "type": "string", "default": "sfx/battle_day.mp3", "description": "Battle Day war-cry line, played as the Battle Day cinematic slams in. No synth fallback — blank means silence, not a beep." },
             "sword": { "type": "string", "default": "sfx/swords_clashing.mp3", "description": "A strike landing on another house." },
             "thud": { "type": "string", "default": "sfx/defensive_block-1.mp3", "description": "A shield holding, or points/HP coming off." },
             "coin": { "type": "string", "default": "sfx/points_awarded.mp3", "description": "The reward chime when a house scores. This one fires often." },
             "fanfare": { "type": "string", "default": "sfx/mythical_relic.mp3", "description": "Played when a Mythic relic is claimed on a natural 20." },
-            "roll": { "type": "string", "default": "", "description": "The Die of Destiny tumbling. Ships blank on purpose — the built-in synthesized rattle already covers it." }
+            "roll": { "type": "string", "default": "", "description": "The Die of Destiny tumbling. Ships blank on purpose — the built-in synthesized rattle already covers it." },
+            "diceland": { "type": "string", "default": "", "description": "The Die of Destiny settling right after the roll (a short, quiet tap — deliberately its own slot rather than sharing 'thud', which is a much heavier combat sound and used to land out of time with the tumble). Ships blank on purpose — the built-in tap already covers it." }
           }
+        },
+        "diceProphecy": {
+          "type": "array",
+          "description": "The Die of Destiny's d20 outcome table (Admin → ⚙️ Settings → Dice prophecy). Seeded with real values by store.js's defaultState() on a brand-new install. Only 'points', 'title', 'desc' and 'emoji' are teacher-editable per row (store.saveDiceOutcome) — 'min'/'max'/'hasButton'/'mythic' always come from the shipped table so every one of the 20 faces maps to exactly one outcome with no gaps.",
+          "items": {
+            "type": "object",
+            "required": ["id", "min", "max", "emoji", "title", "desc", "points", "hasButton"],
+            "properties": {
+              "id": { "type": "string", "description": "Stable key an edit is keyed to, e.g. 'catastrophe', 'mythic'. Never changes even if the wording does." },
+              "min": { "type": "integer", "minimum": 1, "maximum": 20 },
+              "max": { "type": "integer", "minimum": 1, "maximum": 20 },
+              "emoji": { "type": "string" },
+              "title": { "type": "string" },
+              "desc": { "type": "string" },
+              "points": { "type": "integer", "description": "Points awarded (may be negative, e.g. Catastrophe's -10)." },
+              "hasButton": { "type": "boolean", "description": "Whether the outcome plaque shows a tap-to-award button (false for outcomes that award nothing, like Misfortune or Fate is Neutral)." },
+              "mythic": { "type": "boolean", "default": false, "description": "True only for the natural-20 row — offers a Mythic Relic pick (any shop item flagged mythicOnly) after the +20 is awarded, if any such item exists." }
+            }
+          },
+          "example": [
+            { "id": "catastrophe", "min": 1, "max": 1, "emoji": "💀", "title": "CATASTROPHE", "desc": "House loses 10 points", "points": -10, "hasButton": true }
+          ]
+        },
+        "backupDownload": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for the once-a-school-day safety-net download (see js/core/backup.js's maybeDailyDownload) that saves mrd-backup-YYYY-MM-DD.json to the browser's normal Downloads folder. Absent/missing is treated as true (store.getSettings().backupDownload !== false) — this key is only ever written when the teacher explicitly toggles it off in Admin → ⚙️ Settings → Backup & Restore, so a fresh install has no key at all rather than an explicit true."
         },
         "awardPresets": {
           "type": "array",
@@ -260,7 +307,7 @@
     },
     "inventory": {
       "type": "object",
-      "description": "Stockpiled Magic Shop weapons a house has bought but not yet spent — its armoury. Keyed by houseId (1-4); each value is itemId -> count still held. Only shop items whose effect.kind is 'attack', 'steal', or 'pierce' are stockpiled this way (see store.STOCKPILE_KINDS) — buying one banks it here instead of firing it on the spot, so a house can buy on Friday and strike the following week. When the item is actually used (in Battle Day combat, via store.consumeFromInventory()), one copy is removed from here and it deals damage to the target's HIT POINTS, not this armoury. Shields, damage-reduction relics ('shield'/'reduce' kinds), and wildcards ('wild') are deliberately NOT stockpiled — they are timed protection that starts the moment they're bought, or (for wildcards) a gamble that resolves immediately at purchase — so they never appear in this object.",
+      "description": "What each house currently holds, bought but not yet spent — its armoury. Keyed by houseId (1-4); each value is itemId -> count still held. Read/written by store.getInventory()/addToInventory()/consumeFromInventory(), shared by BOTH Battle Day rule sets (settings.combatMode), which use it very differently, and it is emptied ({}) every time combatMode is switched — an item bought under one rule set means nothing under the other. Cleared entries are removed from the object entirely once their count drops to zero.\n\nUnder combatMode 'hp': only shop items whose effect.kind is 'attack', 'steal', or 'pierce' are stockpiled this way (see store.STOCKPILE_KINDS) — buying one banks it here instead of firing it on the spot. Using it (store.consumeFromInventory()) removes one copy and deals damage to the target's top-level 'hp', never touching this object again beyond the removal. Shields, damage-reduction relics ('shield'/'reduce'), and wildcards ('wild') are deliberately NOT stockpiled here — they are timed protection that starts the moment they're bought, or (wildcards) a gamble that resolves immediately at purchase.\n\nUnder combatMode 'duel' (Mr. D's rules): EVERY duel item a house owns lives here, including defenses, the Stone of Seeing, the Shroud of Secrecy, the Time Turner and the Bag of Holding — not just attacks. A house may hold at most one 'attack'-slot item and one 'defense'-slot item at a time (two of each if it owns 'bagofholding', which is never itself consumed); 'utility'-slot items (stone/shroud/timeturner/bagofholding) don't count against that limit. An attack item is always consumed when thrown, whether or not it was countered; a defense item is only consumed when it actually blocks something.",
       "additionalProperties": {
         "type": "object",
         "description": "itemId -> count of that item currently banked, unused, by this house.",
@@ -272,9 +319,37 @@
       },
       "example": { "1": { "catapult": 2, "cloak": 1 } }
     },
+    "frozen": {
+      "type": "object",
+      "description": "MR. D'S RULES ONLY (settings.combatMode 'duel'). houseId -> epoch ms until which that house cannot earn ANY points from anywhere — the ±/quick-points panel, quests, the Die of Destiny, POTW bounties, all of it — caused by an uncountered Legendary Ice Axe (see the duel shop catalog's 'iceaxe' item). Stored as an EXPIRY, not a countdown, so it survives a reload and needs nothing ticking to stay correct after a weekend with the laptop shut. store.js load() prunes any entry whose expiry has already passed on every load. A house may still be attacked and still lose points normally while frozen; only earning is blocked. Admin → ⚔️ Battle Day → House status & holdings lists every frozen house with an Un-freeze button.",
+      "additionalProperties": {
+        "type": "integer",
+        "description": "Expiry timestamp in milliseconds; if > Date.now(), the house is frozen and cannot earn points."
+      },
+      "example": { "2": 1719964800000 }
+    },
+    "shrouded": {
+      "type": "object",
+      "description": "MR. D'S RULES ONLY. houseId -> epoch ms until which a Shroud of Secrecy hides that house's held items from a Stone of Seeing — a Stone spent against a shrouded house is still consumed but reveals nothing. Expiry-based like 'frozen' above, and pruned on every load by store.js. Does NOT block attacks or hide the house from being targeted; it only blinds the Stone of Seeing.",
+      "additionalProperties": {
+        "type": "integer",
+        "description": "Expiry timestamp in milliseconds; if > Date.now(), a Stone of Seeing used on this house reveals nothing."
+      },
+      "example": { "3": 1719964800000 }
+    },
+    "revealed": {
+      "type": "object",
+      "description": "MR. D'S RULES ONLY. viewerHouseId -> { targetHouseId: ts } — records which houses have used a Stone of Seeing (or landed a strike, which also reveals) to see which other houses' held items, so the Battle Day screen can keep showing that information face-up for the rest of the session instead of flashing it once. Cleared entirely when Battle Day ends (🏳️ End Battle), so next session's holdings start secret again for everyone.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "targetHouseId -> timestamp (ms) the viewer last saw that house's held items.",
+        "additionalProperties": { "type": "integer" }
+      },
+      "example": { "1": { "3": 1719705600000 } }
+    },
     "hp": {
       "type": "object",
-      "description": "houseId -> DAMAGE TAKEN so far in the current Battle Day cycle — this is NOT current hit points, which is a deliberate design choice. Storing 'current HP' looked right until a house won a battle: the prize pushed its point total over a 500-point boundary (see settings.combat.hpPer500), its maximum HP rose as a result, and its untouched 'current' HP suddenly read something like 120/130 — it LOOKED wounded purely for having gotten richer. Storing damage taken instead is invariant to the maximum moving: a house's actual remaining HP is always computed on the fly as store.getMaxHp(houseId) - hp[houseId] (see store.getHp()). Cleared back to {} at the start of every Battle Day session (store.resetAllHp()), so no house arrives already half-beaten from a prior week.",
+      "description": "HIT-POINTS MODE ONLY (settings.combatMode 'hp') — cleared to {} the moment combatMode switches to 'duel', since Mr. D's rules deal damage straight to points and have no HP concept at all. houseId -> DAMAGE TAKEN so far in the current Battle Day cycle — this is NOT current hit points, which is a deliberate design choice. Storing 'current HP' looked right until a house won a battle: the prize pushed its point total over a 500-point boundary (see settings.combat.hpPer500), its maximum HP rose as a result, and its untouched 'current' HP suddenly read something like 120/130 — it LOOKED wounded purely for having gotten richer. Storing damage taken instead is invariant to the maximum moving: a house's actual remaining HP is always computed on the fly as store.getMaxHp(houseId) - hp[houseId] (see store.getHp()). Cleared back to {} at the start of every Battle Day session (store.resetAllHp()), so no house arrives already half-beaten from a prior week.",
       "additionalProperties": {
         "type": "integer",
         "minimum": 0,
@@ -406,100 +481,62 @@
     },
     "shop": {
       "type": "object",
-      "description": "Magic Shop catalog (teacher-edited in Admin → 🔮 Shop).",
+      "description": "Magic Shop catalogs (teacher-edited in Admin → 🔮 Shop). There are really TWO catalogs, one per settings.combatMode ('duel' = Mr. D's rules, 'hp' = hit points) — see COMBAT_MODES in store.js. 'catalog' below is always whichever mode is CURRENTLY active; 'parked' holds the other mode's catalog untouched while it waits its turn, so switching combatMode swaps the whole shop and switching back finds the teacher's edits exactly as left. Each mode also tracks its own 'seeded' item-id list, independently, so a newly-shipped default item reaches a saved catalog exactly once per mode without resurrecting an item the teacher deliberately deleted.",
       "required": ["catalog"],
       "properties": {
         "catalog": {
           "type": "array",
-          "description": "Purchasable items (houses spend TERM points).",
-          "items": {
-            "type": "object",
-            "required": ["id", "name", "cost", "effect"],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "Unique item ID (auto-generated or teacher-set)."
-              },
-              "name": {
-                "type": "string",
-                "description": "Item name (e.g., 'Trojan Horse')."
-              },
-              "emoji": {
-                "type": "string",
-                "description": "Visual emoji (e.g., '🐴').",
-                "default": "✨"
-              },
-              "image": {
-                "type": "string",
-                "description": "Optional custom image (media key or empty for emoji-only).",
-                "default": ""
-              },
-              "cost": {
-                "type": "integer",
-                "description": "TERM points required to purchase. Forced to 0 for mythicOnly items — they cannot be bought at all, only granted (see 'mythicOnly').",
-                "minimum": 0
-              },
-              "desc": {
-                "type": "string",
-                "description": "Item description and effect summary.",
-                "default": ""
-              },
-              "mythicOnly": {
-                "type": "boolean",
-                "default": false,
-                "description": "If true, this item can never be purchased in the Magic Shop (its cost is forced to 0) — it is granted automatically as a Mythic Triumph reward when a house rolls a natural 20 on the Die of Destiny (see store.getMythicRewards() / store.grantMythicItem()). The three shipped mythic items (Spy Network, Lookout Tower, Oracle of Delphi) are all 'reduce' kind."
-              },
-              "effect": {
-                "type": "object",
-                "description": "What the item does. NOTE the current combat model: 'attack', 'steal', and 'pierce' items are STOCKPILED on purchase (see the top-level 'inventory' key) rather than firing immediately — they only do damage when actually struck during Battle Day combat, and what they remove is the target's HIT POINTS, never its points directly. The house that loses a Battle Day battle never loses any points at all; only the winner's points move, via a prize (see settings.combat). 'shield', 'reduce', and 'wild' items are NOT stockpiled: buying one takes effect immediately.",
-                "required": ["kind", "amount"],
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": ["attack", "steal", "pierce", "shield", "reduce", "wild"],
-                    "description": "'attack' — stockpiled; when struck on Battle Day, removes 'amount' HIT POINTS from a house the attacker chooses. 'steal' — stockpiled, same HP-damage mechanic as attack, but the target is always whichever house currently leads the standings (not chosen); the attacker additionally gains POINTS equal to whatever HP damage actually landed (the 'loot'), while the target's own points never move. 'pierce' — stockpiled, identical to attack except the strike ignores BOTH a full shield and a damage-reduction relic on the target. 'shield' — NOT stockpiled; buying it immediately blocks all incoming attacks against this house for 'amount' hours. 'reduce' — NOT stockpiled; buying it (or receiving it as a Mythic reward) immediately halves all incoming, non-piercing damage against this house for 'amount' hours. 'wild' — NOT stockpiled; resolves immediately at purchase as a random points swing of up to ±'amount', for or against the buyer — the gamble IS the purchase, so there is nothing left to strike later."
-                  },
-                  "amount": {
-                    "type": "integer",
-                    "description": "Effect magnitude. For 'attack'/'steal'/'pierce': hit points removed when the stockpiled item is struck on Battle Day. For 'shield'/'reduce': hours the protection lasts from the moment it's bought or granted. For 'wild': the ceiling on the random ± point swing resolved at purchase.",
-                    "minimum": 1
-                  }
-                }
-              }
-            }
-          },
+          "description": "Purchasable items in the CURRENTLY ACTIVE combat mode's shop (houses spend TERM points). Item shape differs by mode — see the 'effect.kind' enum below and the 'slot'/'counteredBy'/'blocks' fields, which apply to the duel catalog only.",
+          "items": { "$ref": "#/definitions/shopItem" },
           "example": [
             {
-              "id": "trojan",
-              "name": "Trojan Horse",
-              "emoji": "🐴",
-              "image": "",
-              "cost": 50,
-              "desc": "A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.",
-              "mythicOnly": false,
-              "effect": { "kind": "steal", "amount": 25 }
+              "id": "sword",
+              "name": "The Sword of Destiny",
+              "emoji": "🗡️",
+              "image": "images/shop/sword-of-destiny.png",
+              "cost": 450,
+              "slot": "attack",
+              "desc": "Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.",
+              "effect": { "kind": "damage", "dice": "2d6", "mult": 100 },
+              "counteredBy": ["shield"]
             },
             {
-              "id": "aegis",
-              "name": "Aegis Shield",
-              "emoji": "⚡",
-              "image": "",
-              "cost": 30,
-              "desc": "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.",
-              "mythicOnly": false,
-              "effect": { "kind": "shield", "amount": 24 }
-            },
-            {
-              "id": "oracle",
-              "name": "Oracle of Delphi",
-              "emoji": "🔮",
-              "image": "",
-              "cost": 0,
-              "desc": "The Pythia foretells the coming blow. Incoming damage is HALVED for 72 hours.",
-              "mythicOnly": true,
-              "effect": { "kind": "reduce", "amount": 72 }
+              "id": "shield",
+              "name": "The Shield of Protection",
+              "emoji": "🛡️",
+              "image": "images/shop/shield-of-protection.png",
+              "cost": 500,
+              "slot": "defense",
+              "desc": "Stops the Sword of Destiny or the Legendary Ice Axe for one Battle Day.",
+              "effect": { "kind": "block" },
+              "blocks": ["sword", "iceaxe"]
             }
           ]
+        },
+        "seeded": {
+          "type": "object",
+          "description": "Which shipped default item ids this browser has already been shown, PER combat mode, so store.js load() can append a genuinely new default item exactly once while an item the teacher deliberately deleted stays deleted. An older saved state from before combat modes existed stored this as a flat array (the whole thing WAS the hit-points catalog then); load() converts it into the 'hp' side of this object on first load under the new shape and starts the 'duel' side fresh.",
+          "properties": {
+            "duel": { "type": "array", "items": { "type": "string" }, "description": "Default duel-catalog item ids already introduced to this browser's 'duel' shop." },
+            "hp": { "type": "array", "items": { "type": "string" }, "description": "Default hit-points-catalog item ids already introduced to this browser's 'hp' shop." }
+          },
+          "example": { "duel": ["sword", "net", "iceaxe"], "hp": ["catapult", "greekfire"] }
+        },
+        "parked": {
+          "type": "object",
+          "description": "The combat mode that is NOT currently active keeps its whole catalog here, untouched, while it waits its turn — 'catalog' above is always the active mode's list. Switching settings.combatMode (store.setCombatMode) swaps these: the outgoing mode's live catalog is moved into 'parked[outgoingMode]' and 'parked[incomingMode]' is promoted to 'catalog'. A mode that has never been active on this browser holds null here until its first activation, at which point it is seeded from the shipped default catalog for that mode.",
+          "properties": {
+            "duel": { "oneOf": [{ "type": "array", "items": { "$ref": "#/definitions/shopItem" } }, { "type": "null" }] },
+            "hp": { "oneOf": [{ "type": "array", "items": { "$ref": "#/definitions/shopItem" } }, { "type": "null" }] }
+          }
+        },
+        "descRev": {
+          "type": "integer",
+          "description": "One-time revision marker for the hit-points catalog's shipped item descriptions (SHOP_DESC_REV in store.js). The shop catalog is SAVED STATE, so a wording fix in store.js does not reach a browser that has already saved its own copy — this marker lets load() replace a description exactly once, ONLY if it still exactly matches a previous shipped wording (never a description the teacher edited themselves), then stamps this field so the same browser is never touched again."
+        },
+        "artRev": {
+          "type": "integer",
+          "description": "One-time revision marker for the duel catalog's shipped item artwork (SHOP_ART_REV in store.js). Backfills the 'image' path by id into a saved duel item that has none — an Admin upload or any image path the teacher set by hand is never touched — then stamps this field so art the teacher deliberately removes afterwards stays removed instead of reappearing on reload."
         }
       }
     },
@@ -700,6 +737,81 @@
     }
   },
   "definitions": {
+    "shopItem": {
+      "type": "object",
+      "description": "One Magic Shop item. Shape overlaps between the two combat modes (id/name/emoji/image/cost/desc/effect are common to both) but 'slot'/'counteredBy'/'blocks' apply ONLY to the duel ('duel' combatMode) catalog, and 'mythicOnly' applies only to the hit-points ('hp') catalog — Mr. D's rules ship no mythic-only items out of the box, though a teacher could still flag one.",
+      "required": ["id", "name", "cost", "effect"],
+      "properties": {
+        "id": { "type": "string", "description": "Unique item ID within its catalog (auto-generated or teacher-set). The 'duel' and 'hp' catalogs are independent id namespaces — 'catapult' and 'cloak' each name a completely different item in the two catalogs; nothing ever merges them." },
+        "name": { "type": "string", "description": "Item name (e.g., 'The Sword of Destiny')." },
+        "emoji": { "type": "string", "default": "✨", "description": "Visual emoji (e.g., '🗡️')." },
+        "image": { "type": "string", "default": "", "description": "Item artwork: a static repo path under images/shop/ (every shipped duel item ships one, like the house shields — no upload needed), a 'media:…' IndexedDB key from an Admin upload (which always wins over a shipped path), or '' for emoji-only." },
+        "cost": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "TERM points required to purchase. Forced to 0 for 'mythicOnly' items (hit-points catalog) — they cannot be bought at all, only granted."
+        },
+        "desc": { "type": "string", "default": "", "description": "Item description and effect summary shown on its shop card. Clamped to roughly 3 lines on the card; longer text is silently cut off." },
+        "mythicOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "HIT-POINTS CATALOG. If true, this item can never be purchased in the Magic Shop (its cost is forced to 0) — it is granted automatically as a Mythic Triumph reward when a house rolls a natural 20 on the Die of Destiny (store.getMythicRewards()/grantMythicItem()). The three shipped mythic items (Spy Network, Lookout Tower, Oracle of Delphi) are all 'reduce' kind. The shipped duel catalog has none of these; a natural 20 under Mr. D's rules simply awards its points with no relic unless the teacher adds a mythicOnly duel item themselves."
+        },
+        "slot": {
+          "type": "string",
+          "enum": ["attack", "defense", "utility"],
+          "description": "DUEL CATALOG ONLY. A house may hold at most one 'attack' item and one 'defense' item at a time (two of each if it owns the Bag of Holding, a 'utility' item); 'utility' items never count against that limit. See the top-level 'inventory' key."
+        },
+        "counteredBy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DUEL CATALOG, attack items. Ids of the 'defense'-slot items that cancel this attack outright when the defender is holding one at the moment it lands. Empty array (e.g. The Catapult) means nothing in the shop counters it."
+        },
+        "blocks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DUEL CATALOG, defense items. Ids of the 'attack'-slot items this defense stops. The inverse of 'counteredBy' on the matching attack item(s)."
+        },
+        "effect": {
+          "type": "object",
+          "description": "What the item does when used. The 'kind' enum spans BOTH catalogs — a kind from one mode never appears in the other's shipped items, though nothing stops a teacher typing one in Admin.",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["attack", "steal", "pierce", "shield", "reduce", "wild", "damage", "freeze", "block", "reveal", "hide", "timeturn", "extraslot"],
+              "description": "HIT-POINTS CATALOG — 'attack': stockpiled (top-level 'inventory'); struck on Battle Day it removes 'amount' HIT POINTS from a chosen house. 'steal': stockpiled, same HP-damage mechanic, but the target is always whichever house currently leads; the attacker additionally gains POINTS equal to the HP damage that actually landed. 'pierce': stockpiled, like 'attack' but ignores shields AND damage-reduction. 'shield': NOT stockpiled — buying it immediately blocks incoming attacks for 'amount' hours. 'reduce': NOT stockpiled — immediately halves incoming non-piercing damage for 'amount' hours. 'wild': NOT stockpiled — resolves immediately at purchase as a random points swing of up to ±'amount'.\n\nDUEL CATALOG (Mr. D's rules) — 'damage': on a Battle Day throw (see the duel flow), if not countered by the defender's held item, the app rolls 'dice' on screen, multiplies by 'mult', and removes that many POINTS (never HP) from the target, floored at 0 (it can never go negative). 'steal': identical roll/counter mechanic, but whatever amount actually lands is ALSO credited to the attacker's points ('anonymous' true suppresses the attacker's name on the victim's ledger line only — everything else about the throw still names them). 'freeze': rolls 'dice' (no 'mult') for a number of SCHOOL days the target house cannot earn any points at all from anywhere; ends early via Admin → ⚔️ Battle Day → House status & holdings. 'block': a defense-slot item with no roll of its own — see the matching attack's 'counteredBy'. 'reveal' (Stone of Seeing): turns another chosen house's held items face-up on screen for the rest of that Battle Day session; consumed even if it reveals nothing (the target is shrouded). 'hide' (Shroud of Secrecy): makes this house's held items unreadable to a Stone of Seeing for one week (see top-level 'shrouded'). 'timeturn' (Time Turner): deletes the log entries for the most recent strike that hit this house, as though it never happened, and lifts a freeze if that was the strike undone. 'extraslot' (Bag of Holding): never consumed; permanently raises this house's attack/defense holding limit from one to two."
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "HIT-POINTS CATALOG. Effect magnitude: hit points removed (attack/steal/pierce), hours of protection (shield/reduce), or the ceiling on a wildcard's random ± point swing. Not used by duel-catalog items, which use 'dice'/'mult' instead."
+            },
+            "dice": {
+              "type": "string",
+              "description": "DUEL CATALOG. Dice notation rolled on screen for this effect, e.g. '2d6', '1d6', '3d6'. Used by 'damage', 'steal' and 'freeze' kinds.",
+              "example": "2d6"
+            },
+            "mult": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "DUEL CATALOG, 'damage'/'steal' only. The roll total is multiplied by this before being applied to points — e.g. 2d6 × 100. Not used by 'freeze', which applies the raw roll as a day count."
+            },
+            "targets": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "DUEL CATALOG. Number of houses this attack strikes with a single roll. Only The Catapult ships with 2 — the app asks who the second target is before anything is spent, and the same single roll is applied to both houses in turn."
+            },
+            "anonymous": {
+              "type": "boolean",
+              "default": false,
+              "description": "DUEL CATALOG, 'steal' only. If true (only the Cloak of Invisibility ships this way), the victim's own ledger line omits the attacker's name. Nothing else about the throw is hidden — the Battle Day screen and the attacker's own ledger line still name them."
+            }
+          }
+        }
+      }
+    },
     "house": {
       "type": "object",
       "description": "A house/core representation (canonical, do not edit directly).",

@@ -15,12 +15,19 @@ blocks a class that's already sitting down. You can run it again any time from
 🗝️ Admin → ❓ Help → "Run the setup wizard again." The steps below are the same
 things, done by hand if you'd rather (or need to redo one later):
 
-1. **Connect Auto-Backup** (if you have a modern browser on Windows/Mac/Linux — Chrome, Edge, Safari 16+)
+1. **Connect Auto-Backup (optional, but worth doing)** — even if you skip this, a
+   safety net already runs on its own: the first time you actually change
+   anything each school day, the app downloads a dated backup file to your
+   normal Downloads folder. That works in **every** browser and needs no
+   setup, but it only fires once a day. Connecting a folder saves within
+   seconds of every change instead — turn both on for the best protection:
    - Tap the 🗝️ Admin glyph (far right of the top bar)
-   - Go to ⚙️ Settings
-   - Under "Automatic Backup," tap "Connect Folder"
+   - Go to ⚙️ Settings → Backup & Restore
+   - Under "🔄 Continuous folder backup," tap "Connect Folder" (**Chrome or
+     Edge only** — Safari and Firefox don't support the folder-picker API
+     this uses; the daily download above still covers them)
    - Pick a folder on your computer (e.g., a shared Google Drive or OneDrive folder)
-   - The app will now save automatically every 2 seconds to `mrd-live-backup.json` + daily snapshots
+   - The app will now save automatically every ~2 seconds to `mrd-live-backup.json`, plus one `mrd-backup-YYYY-MM-DD.json` snapshot per calendar day
    - **Important:** Backups save state (points, calendar, quests, settings) as JSON, but NOT media (videos, PDFs, images). Media lives in the browser's IndexedDB only. If you restore on a new machine, you'll need to re-upload media files.
 
 2. **Set Your Term Dates**
@@ -54,7 +61,7 @@ python3 -m http.server 8000
 Open **http://localhost:8000**. The app loads immediately and works fully offline except for:
 - **Tailwind CSS** (styling) — bundled locally in `vendor/`, so the board still looks right with no internet
 - **Google Maps 3D** (Place of the Week 3D explorer)
-- **YouTube embeds** (intro videos)
+- **Place of the Week intro videos** ship as local files in `/videos` and play with no internet at all — the only way this needs a connection is if a teacher pastes their own **YouTube** link into an individual destination instead of using a bundled file
 - **PDF.js** (presentation decks) — bundled locally in `vendor/`, works offline
 - **Dice/Globe** have offline fallbacks (simple animations instead of 3D)
 
@@ -62,7 +69,7 @@ Open **http://localhost:8000**. The app loads immediately and works fully offlin
 
 ## Teacher's Admin Panel (🗝️ glyph, top-right)
 
-The admin panel has six tabs. Click the key icon to open it anytime. If you've
+The admin panel has seven tabs. Click the key icon to open it anytime. If you've
 turned on the Teacher PIN, opening Admin is the one thing that always asks for
 it, no matter which tab you're headed to.
 
@@ -92,28 +99,71 @@ it, no matter which tab you're headed to.
 - Pre-seeded with 20 quests; add/edit your own for your class
 
 ### 🔮 Shop (Magic Shop Editor)
-- **Item Catalog**: All items students can buy with accumulated TERM points,
-  grouped as Offensive / Defensive / Wildcard
+Battle Day runs under one of **two rule sets** (Admin → ⚔️ Battle Day; see
+that section below), and each keeps its **own, completely separate**
+catalog — editing here only touches whichever one is active right now,
+and switching rule sets swaps the whole shop over (your edits to the
+inactive one are kept exactly as you left them, waiting for its turn).
+- **Item Catalog**: All items students can buy with accumulated TERM points.
 - **Create items**:
   - **Name** & **Emoji** (visual identity)
-  - **Cost** (in house points) — or flag it **"Mythic reward only"** so it
-    can't be bought at all, only granted from a natural 20 on the Die of Destiny
-  - **Effect Type** (six kinds — each has a live plain-English preview as you edit):
-    - **⚔️ Attack**: Deduct points from a chosen target house
-    - **🐴 Steal**: Take points from the current leading house
-    - **🫥 Pierce**: An attack that ignores shields AND damage-reduction relics
-    - **🛡️ Defend (Shield)**: Block ALL incoming attacks for N hours (default 24h)
-    - **🕵️ Halve damage**: Incoming damage cut in half for N hours (usually a Mythic reward)
-    - **🎲 Wildcard**: Random points swing, for or against the buyer
-  - **Optional**: Upload a custom image (displays as a thumbnail)
-- **Pre-seeded items**: Trojan Horse (steal 25, cost 50), Catapult (attack 20, cost 35), Aegis Shield (block 24h, cost 30)
+  - **Cost** (in house points)
+  - **Optional**: Upload a custom image (displays as a thumbnail) — every
+    shipped item already ships with its own hand-drawn art, so this is only
+    for replacing one
+
+**Under Mr. D's rules** (the default) items are grouped **Attack / Defense /
+Utility**. A house may hold at most one attack and one defense item at a
+time (**The Bag of Holding** adds a single extra slot, not two — see
+**Battle Day** below). Nearly every attack names one specific defense
+**Countered by** that cancels it outright; the app rolls its damage dice
+(e.g. `2d6 × 100`) on screen when an uncountered attack lands, and the
+total comes straight off the target's **points** — never Hit Points.
+Pre-seeded items (prices are Mr. D's own document with three deliberately
+re-priced — see the in-app Help for why):
+
+| Item | Slot | Cost | Effect |
+|---|---|---|---|
+| 🗡️ The Sword of Destiny | Attack | 450 | 2d6 × 100 dmg — countered by Shield of Protection |
+| 🕸️ Net of Entrapment | Attack | 600 | Steal 2d6 × 100 — countered by Gauntlet of Defense |
+| 🪓 The Legendary Ice Axe | Attack | 500 | Freeze target 1d6 school days — countered by Shield of Protection |
+| 🫥 Cloak of Invisibility | Attack | 400 | Steal 1d6 × 100, anonymous — countered by Bow of Seeking |
+| 🪨 The Catapult | Attack | 1000 | 3d6 × 100 dmg to **two** houses — nothing counters it |
+| ☀️ The Staff of Ra | Attack | 700 | 3d6 × 100 dmg — countered by Eye of Horus |
+| 🐎 Warhorse | Attack | 700 | 3d6 × 100 dmg — countered by Bow of Seeking |
+| 🛡️ The Shield of Protection | Defense | 500 | Stops the Sword or the Ice Axe |
+| 🧤 Gauntlet of Defense | Defense | 400 | Stops the Net of Entrapment |
+| 🏹 Bow of Seeking | Defense | 400 | Stops the Cloak or the Warhorse |
+| 👁️ The Eye of Horus | Defense | 500 | Stops the Staff of Ra |
+| 🔮 The Stone of Seeing | Utility | 1000 | Reveals what another house is holding |
+| 🌫️ The Shroud of Secrecy | Utility | 500 | Hides your holdings from the Stone for a week |
+| ⏳ The Time Turner | Utility | 1000 | Undoes the last strike that hit you |
+| 🎒 The Bag of Holding | Utility | 500 | One extra attack-or-defense slot, forever |
+
+**Under Hit points** (the earlier model, still fully working as an
+alternative) items are grouped **Offensive / Defensive / Wildcard**, with
+six effect kinds (each has a live plain-English preview as you edit):
+  - **⚔️ Attack**: removes Hit Points from a chosen target house on Battle Day
+  - **🐴 Steal**: removes Hit Points from the current leading house and
+    credits the attacker points equal to whatever damage actually landed
+  - **🫥 Pierce**: an attack that ignores shields AND damage-reduction relics
+  - **🛡️ Defend (Shield)**: block ALL incoming attacks for N hours (default 24h)
+  - **🕵️ Halve damage**: incoming damage cut in half for N hours (usually a Mythic reward)
+  - **🎲 Wildcard**: random points swing, for or against the buyer, resolved at purchase
+  - Any item can also be flagged **"Mythic reward only"** so it can't be
+    bought at all, only granted from a natural 20 on the Die of Destiny
+  - Pre-seeded items include Trojan Horse (steal, 2500 HP, cost 5000),
+    Catapult Volley (attack, 2000 HP, cost 3500), and Aegis Shield (block
+    24h, cost 3000) — see `js/core/store.js`'s `defaultHpCatalog()` for the full list
 - Changes take effect immediately on the shop module and on Battle Day (both read the same catalog)
 
 ### 🌍 Place of the Week
 - **Add/Edit Destinations**:
   - **Paste a Google Maps link** (or manually enter lat/lng)
   - **Title & Subtitle** (e.g., "Ancient Mesopotamia • Modern Day Iraq")
-  - **Intro Video**: Pick "Rock" or "Classic" (preset YouTube videos), or paste your own YouTube link
+  - **Intro Video**: Pick "Intro 1" or "Intro 2" — local video files bundled
+    in `/videos` that play with no internet — or paste your own YouTube link
+    for this destination instead
   - **Quick Facts**: 3–5 bullet points about the place
   - **Primary Sources**: Key artifacts/documents (emoji + name + description)
   - **Quiz**: 2–3 short questions (teacher can review student answers on the dashboard)
@@ -126,10 +176,26 @@ it, no matter which tab you're headed to.
   from the editor, so you can check a destination's camera framing without
   running the full cinematic in front of the class
 - **Video Playback**: 
-  - YouTube intros play for ~3 min
+  - The intro video plays (a bundled local file by default, or a pasted YouTube link if you chose one for this destination)
   - After the intro, the map flies to the destination and orbits slowly
   - The reveal card pops with quick facts + primary sources
   - The presentation (PDF or Slides) launches full-screen after landing
+
+### ⚔️ Battle Day
+- **Combat mode switch**: choose which rule set is running — **Mr. D's
+  rules** (the default) or **Hit points** — see **Battle Day** under Core
+  Features above for what each one means. Switching swaps the Magic Shop's
+  catalog over and empties every house's current holdings in both
+  directions; points, the ledger, quests, the planner and every other
+  setting are untouched
+- **Battle rules gate**: the prize/HP settings (Hit points mode) or the
+  combat-tuning fields relevant to whichever mode is active
+- **House status & holdings**: whichever mode is active gets its own panel
+  here for undoing what only Battle Day itself can do —
+  under **Mr. D's rules**: un-freeze a house the Legendary Ice Axe landed
+  on, lower a raised Shroud of Secrecy early, or take back an item a house
+  bought by mistake (this does not refund the points spent on it); under
+  **Hit points**: clear an active shield or damage-reduction relic by hand
 
 ### ❓ Help
 The in-app teacher's handbook — searchable, with topics grouped under Quick
@@ -148,7 +214,9 @@ re-run the first-run setup wizard.
   **Per-screen colours** under Known Limitations — only these three screens
   are affected)
 - **Quick award buttons**: edit the one-tap presets shown on Records → Award Routines
-- **⚔️ Battle rules**: how Battle Day decides who wins what. Hit points (HP)
+- **⚔️ Battle rules** *(Hit points mode only — Mr. D's rules keep their own
+  settings in Admin → ⚔️ Battle Day instead, alongside the combat-mode
+  switch itself)*: how Battle Day decides who wins what. Hit points (HP)
   are separate from points — points are the currency, HP is just what a
   strike removes during a fight. When a house's HP hits zero, the fight is
   over and the winner takes a prize *in points*, decided by the rule below.
@@ -188,11 +256,18 @@ re-run the first-run setup wizard.
 - **Theme**: Dark mode (light mode not implemented yet); optional seasonal
   ambient particles (falling leaves/snow/etc., based on the calendar date)
 - **Maps API Key**: Leave blank to use the bundled key; paste your own if you prefer
-- **Background music**: assign a quiet looping track (drop files in `/music`)
-  to any screen except Place of the Week and Battle Day, which make their own
-  noise; a master volume slider and the global mute (`M` key, or the speaker
-  icon in the top bar) sit alongside it
-- **Automatic Backup**: Connect/disconnect your backup folder (Chrome/Edge/Safari 16+)
+- **Background music**: one card assigns a quiet looping track (drop files in
+  `/music`) to any screen except Place of the Week and Battle Day, which make
+  their own noise, **plus a Flyover slot** — the music that plays under Place
+  of the Week's Google Maps 3D flight. Flyover music is a single, global
+  choice here, not set per destination the way it used to be. A master
+  volume slider and the global mute (`M` key, or the speaker icon in the
+  top bar) sit alongside all of it
+- **Backup & Restore**: connect/disconnect a continuous auto-backup folder
+  (Chrome/Edge only — see **Automatic Backup** below), toggle the once-a-day
+  Downloads safety net, export/import a backup file by hand, and (when one
+  exists) **↩ Undo last restore** — puts back exactly what was on this
+  computer before the most recent restore or sample-data load
 - **🔒 Teacher PIN**: off by default — see **Teacher PIN (Lock)** under Core Features
 - **Danger Zone**: Hard reset the app
   - Type `RESET` to confirm
@@ -315,20 +390,45 @@ A cinematic, multi-stage geography voyage.
 - A **repeatable** quest returns to the board after someone finishes it; a
   **one-time** quest leaves the board for good once completed
 
-> **Prototype, not a feature yet**: the Quest Board has a "◗ Try carousel"
-> toggle that swaps the grid of quest cards for an experimental
-> swipeable-carousel layout. It's there to compare against the real board
-> before a decision is made — it isn't saved anywhere, and it may be removed
-> (or become the only layout) in a future update.
+> **Grid or carousel**: the Quest Board can show its cards as the normal
+> scrolling **grid** (the default) or as a one-card-at-a-time **carousel**
+> with prev/next arrows — better at a smartboard, where scrolling up and
+> down with a mouse isn't really an option. This is a teacher setting, not a
+> per-visit toggle: pick it once in **Admin → ⚙️ Settings → 🗂️ Screen
+> layout**, and it's saved and shared with every device viewing the board.
+> The Magic Shop offers the same choice, independently, in the same place.
 
 ### Battle Day (⚔️)
-A cinematic house-vs-house duel arena. Points and hit points are two separate
-things here: **points** are the currency and scoreboard used everywhere else
-in the app; **hit points (HP)** are a Battle-Day-only meter that a strike
-removes. A house is beaten when its HP hits zero — and only then does
-anything happen to anyone's points. **The loser of a fight never loses a
-single point**, whatever else happens.
+A cinematic house-vs-house duel arena. Battle Day runs under **one of two
+complete rule sets**, chosen in **Admin → ⚔️ Battle Day** — only one is ever
+active, and switching swaps the Magic Shop's catalog over too (each mode
+keeps its own items and edits, untouched, while the other is active):
 
+- **Mr. D's rules (the default)**: a house holds at most one attack item and
+  one defense item at a time, chosen in secret from the Magic Shop. When an
+  attack is thrown, the defender's held item is revealed on the spot — the
+  right defense cancels the attack outright; otherwise the app rolls the
+  damage dice **on screen**, in front of the class, and the total comes
+  straight off the target's **points**. Utility items add a wrinkle each:
+  the Stone of Seeing reveals another house's holdings, the Shroud of
+  Secrecy blinds the Stone against you for a week, the Time Turner undoes
+  the last strike that hit you, and the Bag of Holding grants one extra
+  attack-or-defense slot. This is Mr. D's own game, transcribed from his own
+  document — see **🗝️ Admin → ❓ Help → Battle Day** for the full weapon
+  list, every counter, and a step-by-step walkthrough of a throw.
+- **Hit points (the earlier model, kept fully working as an alternative)**:
+  described in detail below. Points and hit points are two separate things
+  here: **points** are the currency and scoreboard used everywhere else in
+  the app; **hit points (HP)** are a Battle-Day-only meter that a strike
+  removes. A house is beaten when its HP hits zero — and only then does
+  anything happen to anyone's points. **The loser of a fight never loses a
+  single point**, whatever else happens.
+
+Switching rule sets **empties every house's holdings** in both directions
+(an item bought under one rule set means nothing under the other) but never
+touches points, the ledger, quests, the planner, or any other setting.
+
+#### Hit points mode
 **Landing Page** (inside the app window):
 - Red, pulsing "IGNITE BATTLE" button
 - Tapping it refills **every house's HP to full** for the session, so nobody
@@ -375,6 +475,22 @@ single point**, whatever else happens.
   sound effects and screen shake on each strike
 
 ### Magic Shop (🔮)
+The shop is **open every day of the week, in both Battle Day rule sets** —
+there is no Friday-only restriction. It works on the same screen either way;
+what changes is which catalog it's showing and what buying an item actually
+does (see **Battle Day** above for which rule set is currently active).
+
+**Under Mr. D's rules (the default)**: every item — attacks, defenses, and
+the four utility items (Stone of Seeing, Shroud of Secrecy, Time Turner, Bag
+of Holding) — is bought now and used later, never fired at purchase. A house
+may hold at most one attack and one defense item at a time (two of each with
+the Bag of Holding); trying to buy a second of a slot that's already full is
+refused until the first is used or spent. All 15 duel items ship with their
+own hand-drawn artwork under `images/shop/`, so a fresh install needs no
+uploads. See **Battle Day** above, or **🗝️ Admin → ❓ Help → Battle Day**,
+for exactly what each item does and how a throw plays out.
+
+**Under Hit points**, the purchase flow works as described below:
 - **Item Catalog**: Browse teacher-editable items (updated live from Admin),
   grouped as Offensive / Defensive / Wildcard
 - **Purchase Flow**:
@@ -424,7 +540,7 @@ single point**, whatever else happens.
 Classroom d20 roller with a 3D physics simulation and outcome table.
 
 **Rolling**:
-- **Choose Dice**: 1d6, 2d6, 1d12, or d20
+- **Choose Dice**: 1d6, 2d6, or d20 (there is no 1d12 mode)
 - **Roll**: Tap the "Roll" button (or tap the die to re-roll)
 - **Result**: The d20 shows the physical roll result (3D fall + tumble)
 - **Fallback**: If WebGL is unavailable, a simple number appears with a spin animation
@@ -518,7 +634,7 @@ images/icon-points.png (Records)
 ### Edit Term Dates & POTW Profiles
 - **Term Dates**: Admin → ⚙️ Settings
 - **POTW Destinations**: Admin → 🌍 Place of the Week (full editor UI with Google Maps link picker)
-- **Intro Videos**: Pick "Rock" or "Classic" (preset YouTube videos), or paste your own YouTube link
+- **Intro Videos**: Pick "Intro 1" or "Intro 2" (local files bundled in `/videos`), or paste your own YouTube link for that destination
 
 ### Add a New Module
 The app uses a simple plugin architecture.
@@ -555,21 +671,33 @@ The app uses a simple plugin architecture.
 ### Storage Structure
 All state lives in localStorage under the key `mrd-classroom-os-v1`. This includes:
 - Transaction log (all point changes)
-- House shields and damage-reduction relics (active protections)
-- **Hit points** — each house's current Battle Day damage taken. Refills
-  (clears) to full at the start of every Battle Day session; unrelated to
-  points day-to-day
-- **Armoury** — each house's stockpile of Magic Shop weapons (Attack, Steal,
-  Pierce) that have been bought but not yet thrown in a duel
+- Which **Battle Day rule set** is active (Mr. D's rules or Hit points — see
+  **Battle Day** above), plus **two separate Magic Shop catalogs**, one per
+  rule set, so switching keeps both intact
+- House shields and damage-reduction relics *(Hit points mode)* — active protections
+- **Hit points** *(Hit points mode)* — each house's current Battle Day damage
+  taken. Refills (clears) to full at the start of every Battle Day session;
+  unrelated to points day-to-day
+- **Armoury** — under Hit points mode, each house's stockpile of Magic Shop
+  weapons (Attack, Steal, Pierce) bought but not yet thrown; under Mr. D's
+  rules, everything a house currently holds — attack/defense items plus the
+  Stone of Seeing, Shroud of Secrecy, Time Turner and Bag of Holding
+- **Frozen / shrouded / revealed** *(Mr. D's rules)* — which houses can't
+  currently earn points (Legendary Ice Axe), which have a Shroud of Secrecy
+  up, and what each house has already seen of another's holdings this
+  Battle Day session
 - Quests (catalog, active, completed, per-quest type/icon/give-up penalty)
-- Magic Shop catalog (teacher edits)
 - Planner events
 - POTW profiles & scheduling
 - Settings — term dates, theme (incl. seasonal effects), backup folder handle,
   Teacher PIN (hashed, plus the plain-text recovery code), per-screen accent
-  colours, quick award presets, per-screen ambient music assignments, and the
-  **⚔️ Battle rules** (prize rule and its number, punching down, starting HP
-  and bonus HP per 500 points)
+  colours, per-screen grid/carousel layout, quick award presets, per-screen
+  ambient music assignments (including the global Place of the Week flyover
+  track), the Die of Destiny's editable prophecy table, and the
+  **⚔️ Battle rules** (Hit points mode's prize rule and its number, punching
+  down, starting HP and bonus HP per 500 points — Mr. D's rules keep their
+  own punching-down flag and teacher-scoring amount alongside the rule-set
+  switch itself)
 - Student quiz responses
 
 ### Media (Videos, PDFs, Images)
@@ -577,13 +705,53 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
 - Survives page reloads but NOT browser cache clears
 - **Backup:** Backups do NOT include media. You must re-upload media files after restoring on a new machine
 
-### Automatic Backup
-- **Enabled in Settings** → "Connect Folder" (File System Access API — Chrome/Edge/Safari 16+)
+### Daily Safety-Net Download
+Runs automatically **in every browser**, no setup and no permission prompt
+required — this is the floor under everything else. The first time you
+actually change something on a given school day (a point award, a planner
+edit, a completed quest — not points specifically), the app downloads
+`mrd-backup-YYYY-MM-DD.json` to your browser's normal Downloads folder. It
+won't hand you an empty file on a day nothing happened, and it only ever
+tries once per day. Turn it off in ⚙️ Settings → Backup & Restore if you'd
+rather not have a file land in Downloads every day.
+
+### Automatic Backup (Continuous Folder Backup)
+- **Enabled in Settings → Backup & Restore** → "Connect Folder" (File System
+  Access API — **Chrome or Edge only**; Safari and Firefox don't support
+  this API, so they rely on the daily download above instead)
 - **Saves**:
   - `mrd-live-backup.json` (updated every ~2 seconds)
   - `mrd-backup-YYYY-MM-DD.json` (one per calendar day, write-once)
 - **Does NOT save**: Media (videos, PDFs)
-- **Restore**: Settings → "Restore Latest" (reads `mrd-live-backup.json` from your backup folder and applies it)
+- **Restore**: Settings → "Restore Latest" — reads `mrd-live-backup.json`
+  first, then falls back through your folder's dated `mrd-backup-*.json`
+  snapshots, newest first, if the live file is missing or unreadable
+
+### Data Safety Net (what happens when something goes wrong)
+- **A save that won't parse is never overwritten.** If the app can't read
+  what's in localStorage on boot (a truncated write, a bad character), it
+  sets the damaged text aside under a timestamped key
+  (`mrd-classroom-os-v1-corrupt-<timestamp>`) instead of erasing it, boots
+  to a clean state so class can continue, and shows an on-screen banner
+  telling you to restore your most recent backup — the old data may still
+  be recoverable by hand from that quarantined key.
+- **Every restore or sample-data load snapshots first.** Importing a
+  backup, restoring from a connected folder, or loading sample data all
+  save exactly what was on the computer beforehand under a `-prev` key
+  before replacing anything. Admin → ⚙️ Settings → Backup & Restore shows
+  an **↩ Undo last restore** button whenever that snapshot exists — it puts
+  everything back exactly as it was and reloads. Available until the next
+  restore or sample-data load overwrites it.
+- **Two windows open on the same computer can't both keep score.** If this
+  app is open in two tabs or windows at once, the second one to write finds
+  out, shows a banner, and **stops saving** — better to lose nothing silently
+  than to have two windows quietly overwrite each other's points. Close the
+  stale window, or reload it to pick up where the other one left off.
+- **The browser is asked to keep this data around.** At boot, the app calls
+  `navigator.storage.persist()` so the browser treats a term of points as
+  the last thing to evict under storage pressure, not the first — silently
+  ignored on browsers that don't support it, and a refusal changes nothing
+  you can act on either way.
 
 ### Reset All Data
 ⚙️ Settings → "Danger Zone" → Type `RESET` to confirm
@@ -602,15 +770,15 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
   - Both entries remain in the log, but the net effect is correct
 
 ### Schema Reference
-See `data/schema.json` for the JSON Schema documenting the persisted state.
-**Caveat**: this schema file has not kept pace with every feature below —
-the Teacher PIN, per-screen colours, ambient music, the quests' type/icon/
-give-up-penalty fields, **hit points** (`state.hp`), each house's **armoury**
-(`state.inventory`), the **⚔️ Battle rules** combat settings
-(`settings.combat` — prize rule, punching down, starting/bonus HP), the
-Magic Shop's `pierce`/`reduce`/`wild` effect kinds, and the `attack`/`battle`
-transaction tags are all missing from it — `js/core/store.js` is the
-authoritative source for the current shape of saved state.
+See `data/schema.json` for the JSON Schema documenting the persisted state,
+including both Battle Day rule sets' shop catalogs, the
+Mr.-D's-rules-only `frozen`/`shrouded`/`revealed` keys, the Teacher PIN,
+per-screen colours, per-screen grid/carousel layout, ambient music (including
+the global flyover track), the quests' type/icon/give-up-penalty fields,
+**hit points** (`state.hp`), each house's **armoury** (`state.inventory`),
+and the **⚔️ Battle rules** combat settings (`settings.combat`). If a field
+you're reading in a saved backup isn't there, `js/core/store.js` remains the
+final authority — the schema is kept in sync by hand and code moves first.
 
 ---
 
@@ -618,7 +786,10 @@ authoritative source for the current shape of saved state.
 
 - **Tailwind CSS** (styling): bundled locally in `vendor/tailwind.js` — no internet needed
 - **Google Maps 3D**: Used in Place of the Week; falls back to a flat image if unavailable
-- **YouTube Embeds**: Intro videos; falls back to a bundled audio file if unavailable
+- **Intro videos**: bundled local files in `/videos` by default — no internet
+  needed; only needs internet if a teacher pastes a custom **YouTube** link
+  for an individual destination instead, and even then falls back to a
+  bundled audio file if that video fails to load
 - **Google Slides Embeds**: Only used if you choose a Slides link (instead of a PDF) for a Place of the Week presentation; needs internet, same as Maps
 - **PDF.js**: Presentation decks — bundled in `vendor/pdf.min.mjs`, so decks render with no internet
 - **Dice 3D**: WebGL simulation; falls back to simple number + spin animation
@@ -672,9 +843,6 @@ what's genuinely unresolved:
   colour instead of following the active house. Magic Shop, Battle Day, Die
   of Destiny, Council of Four, and Place of the Week each have their own
   built-in palette and are not affected by that setting.
-- **The Quests board's carousel layout is an undecided prototype**, sitting
-  behind a "Try carousel" toggle next to the normal grid. It isn't saved
-  anywhere and may not survive to the next version in its current form.
 - **Google Slides presentations**: this app cannot drive slide navigation
   inside a Google Slides embed (Google doesn't expose that control to outside
   pages) — it can only hand keyboard focus to Google's own player. **Audio
@@ -687,7 +855,9 @@ what's genuinely unresolved:
 - **Media (videos, PDFs, images) never travels with a backup file.** Backups
   restore points, quests, the shop, the planner and settings perfectly; any
   uploaded media has to be re-added by hand on a new computer.
-- **`data/schema.json` lags the real state shape** — see Schema Reference above.
+- **The continuous folder backup only works in Chrome or Edge** (File System
+  Access API). Safari and Firefox rely on the once-a-day Downloads safety
+  net instead — see **Data Safety Net** above.
 
 ---
 
@@ -703,10 +873,13 @@ what's genuinely unresolved:
 - Verify `CONFIG.MAPS_API_KEY` in `js/config.js` is not empty
 - Modern browser required (Chrome, Edge, Safari 16+)
 
-### YouTube intro fails to play
-- Check your internet connection
-- YouTube embeds require no authentication but may be region-blocked
-- The app falls back to the bundled audio file if the video fails
+### Intro video fails to play
+- The shipped intros are local files in `/videos` and need no internet —
+  check that the files weren't moved or deleted
+- If a destination uses a **custom YouTube link** instead, check your
+  internet connection (YouTube embeds require no authentication but may be
+  region-blocked)
+- Either way, the app falls back to a bundled audio file if the video fails
 
 ### 3D Dice/Globe not rendering
 - Check browser console for errors (F12)
@@ -745,9 +918,9 @@ what's genuinely unresolved:
 - `js/core/ambient.js` — Per-screen background music + crossfade
 - `js/core/firstrun.js` — First-run setup wizard
 - `js/core/health.js` — "System check" diagnostics (rendered inside Help)
-- `js/core/backup.js` — File System Access API auto-backup to a chosen folder
+- `js/core/backup.js` — File System Access API auto-backup to a chosen folder (Chrome/Edge), plus the once-a-day Downloads safety net that works in every browser
 - `js/core/media.js` — IndexedDB-backed media store (videos, PDFs, images)
-- `js/modules/admin.js` — The Teacher's Admin panel (all six tabs)
+- `js/modules/admin.js` — The Teacher's Admin panel (all seven tabs)
 - `js/modules/quests.js` / `js/modules/council.js` — Quest Board / Council of Four screens
 - `js/main.js` — Boot and module registration
 - `data/schema.json` — JSON Schema documenting the persisted state (lags current fields — see Schema Reference)

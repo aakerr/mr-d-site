@@ -25,28 +25,43 @@ js/core/masthead.js    — pure layout helper: centers/fits the Quests & Shop ma
 js/core/firstrun.js    — first-run setup wizard (#firstrun-root), re-runnable from Help
 js/core/health.js      — "System check" diagnostics, data-only (help.js renders it)
 js/core/help.js        — in-app Help Wiki (NOT owned by any module agent — do not edit)
-js/core/backup.js      — File System Access auto-backup to a chosen folder
+js/core/backup.js      — File System Access auto-backup to a chosen folder, plus a
+                          once-a-day Downloads safety-net that works in every browser
 js/core/media.js       — IndexedDB-backed media store (videos, PDFs, images)
+js/core/carousel.js    — shared horizontal card-strip engine (strip/arrows/counter/
+                          focus-card), used by both Quests and Magic Shop when the
+                          teacher picks "carousel" over "grid" (Admin → Settings →
+                          Screen layout); each screen owns only its own card markup
+js/core/sampledata.js  — builds one realistic sample term (ledger, quests, planner)
+                          for Admin's "Load sample data" — reads the live catalog/
+                          settings so it respects whatever combat mode is active
+js/core/escape.js      — the one shared HTML escaper (escapeHtml/escapeAttr), used
+                          by every module that interpolates teacher-typed text
+js/core/util.js        — shared small helpers used across modules (see the file
+                          itself for its current export list — this module is newer
+                          than the rest of this contract and grows as duplicated
+                          logic gets pulled out of individual modules)
 js/modules/dashboard.js   js/modules/houses.js    js/modules/potw.js
 js/modules/dice.js        js/modules/battle.js    js/modules/shop.js
 js/modules/quests.js      js/modules/council.js   js/modules/admin.js
 js/integrations/classroom.js   — Google Classroom scaffold, UNWIRED (see below)
-data/schema.json       — JSON Schema for persisted state. STALE as of this doc: it
-                          predates settings.lock, settings.moduleThemes,
-                          settings.ambient, the quest catalog's type/icon/penalty
-                          fields, shop.seeded, state.hp (per-house Battle Day
-                          damage taken), state.inventory (per-house armoury of
-                          bought-but-unthrown weapons), settings.combat (prize
-                          rule, punching-down, hpBase/hpPer500 — see
-                          defaultCombat() in store.js), the shop catalog's
-                          pierce/reduce/wild effect.kind values, and the
-                          attack/battle transaction tags. Treat store.js as the
-                          source of truth, not this file.
+tools/hero-tuner.js     — dev-only overlay: live sliders over the dashboard hero's
+                          CSS variables (name/motto/"WELCOME" size, gaps). Nothing it
+                          changes is saved — a reload discards it. Two ways in: the
+                          hidden hotspot in the hero's bottom-left corner, or
+                          `import('/tools/hero-tuner.js').then(m => m.openHeroTuner())`
+                          from the console. Not part of the shipped module contract.
+data/schema.json       — JSON Schema for persisted state, kept in sync by hand
+                          against store.js's defaultState()/load() — see store.js
+                          itself if a field here ever looks wrong or missing.
 images/{camelot,atlantis,valhalla,rivendell}-shield.png   — house crests
 images/header-{camelot,atlantis,valhalla,rivendell}.jpg   — house hero banners
 images/class-shield.png                                    — class crest (topbar brand)
 images/icon-{quest,market,potw,battle,dice,points}.png     — per-screen topbar/tab icons
-music/*.mp3, potw-songs/*.mp3, videos/*.mp4                — bundled audio/video assets
+images/shop/*.png                                          — hand-drawn art for every
+                          shipped Mr.-D's-rules (duel) shop item — static repo files,
+                          like the house shields, so a fresh install needs no uploads
+music/*.mp3, potw-songs/*.mp3, videos/*.mp4, sfx/*.mp3      — bundled audio/video assets
 ```
 
 Modules actually registered, in boot order (`js/main.js`):
@@ -188,6 +203,57 @@ taken* rather than current HP.
 - `store.STOCKPILE_KINDS` → the `Set(['attack', 'steal', 'pierce'])` used by
   `isStockpiled`.
 
+Everything above this line is the **hit-points** rule set's API. That is one
+of TWO complete rule sets — see below.
+
+#### Combat modes (`settings.combatMode`) and Mr. D's rules (`'duel'`) API
+- `store.COMBAT_MODES` → `{ duel: {label, blurb}, hp: {label, blurb} }`.
+  `store.getCombatMode()` reads `settings.combatMode` (`'duel' | 'hp'`,
+  default `'duel'`); `store.setCombatMode(mode)` is the only way it's
+  written. Switching mode swaps `shop.catalog` for the other mode's parked
+  catalog (`shop.parked`) and clears the top-level `inventory` and `hp`
+  keys — an item bought under one rule set means nothing under the other.
+  Points, the transaction log, quests, the planner and every other setting
+  are untouched by a mode switch.
+- `store.duelSlotLimits(houseId)` / `store.duelHeld(houseId, slot)` /
+  `store.duelCanBuy(houseId, itemId)` — enforce the one-attack/one-defense
+  holding limit (two of each with the Bag of Holding); reuses the same
+  top-level `inventory` key as the hit-points armoury, just interpreted by
+  slot (`'attack' | 'defense' | 'utility'`) instead of by
+  `STOCKPILE_KINDS`.
+- `store.parseDice(spec)` → rolls dice notation like `'2d6'`.
+  `store.previewDuelAttack(attackerId, targetId, itemId)` → whether the
+  defender's held item counters this attack, without spending anything.
+  `store.applyDuelAttack({ attackerId, targetId, itemId, rolled, consume })`
+  — the central duel resolver: reveals the defender's held item, cancels
+  the attack outright if it's a counter, otherwise applies the rolled
+  total × the item's `mult` straight to the DEFENDER'S POINTS (never HP),
+  floored at 0, crediting the attacker too for `'steal'`-kind items. Always
+  consumes the attack item; only consumes the defense item if it actually
+  blocked.
+- `store.freezeHouse(houseId, days)` / `store.thawHouse(houseId)` — the
+  Legendary Ice Axe's effect: the target can't earn any points from
+  anywhere until the freeze lifts (top-level `state.frozen`, an expiry
+  timestamp, pruned by `load()` on every load like `shields`/`defenses`).
+- `store.peekHouse(viewerId, targetId)` / `store.hasRevealed(viewerId,
+  targetId)` — the Stone of Seeing: reveals `targetId`'s held items to
+  `viewerId` for the rest of the Battle Day session (top-level
+  `state.revealed`), consumed even if the target is shrouded.
+  `store.raiseShroud(houseId)` / `store.lowerShroud(houseId)` — the Shroud
+  of Secrecy: blinds a Stone of Seeing used against `houseId` for one week
+  (top-level `state.shrouded`).
+- `store.canTimeTurn(houseId)` / `store.useTimeTurner(houseId)` — deletes
+  the ledger entries for the most recent strike that hit `houseId` (via
+  `store.recordStrike`'s per-house strike history), as though it never
+  happened, and lifts a freeze if that was the strike undone.
+- `store.getShopItems()` / `store.shopKindsForMode(mode)` /
+  `store.saveShopItem(item)` / `store.deleteShopItem(id)` — catalog CRUD
+  that operates on whichever mode is currently active; use
+  `shopKindsForMode` rather than hardcoding an effect-kind list, since the
+  two modes' kinds don't overlap (`'attack'/'steal'/'pierce'/'shield'/
+  'reduce'/'wild'` for hit points vs. `'damage'/'steal'/'freeze'/'block'/
+  'reveal'/'hide'/'timeturn'/'extraslot'` for duel).
+
 - `store.getMythicRewards()` / `grantMythicItem(houseId, itemId)` — Nat-20 free
   item grants on the Die of Destiny.
 - `store.getTermInfo()` → `{ week, totalWeeks, label }` e.g. "Week 4 of 9-Week Term"
@@ -240,6 +306,16 @@ reads the shell's global `--accent` — see "The accent system" below.
   `MODULE_THEMES` (returns `false`).
 - `store.resetModuleTheme(moduleId)` — restores the shipped default.
 
+#### Per-screen grid/carousel layout (`LAYOUT_SCREENS`)
+- `store.LAYOUT_SCREENS` → `{ quests: {label}, shop: {label} }` — the only
+  two screens that offer this choice.
+- `store.getLayout(screenId)` → `'grid' | 'carousel'` (default `'grid'`);
+  unknown ids always resolve to the default rather than throwing.
+- `store.setLayout(screenId, layout)` — the only way `settings.layouts` is
+  written; rejects an id not in `LAYOUT_SCREENS`. See `js/core/carousel.js`
+  below for the shared rendering engine both screens use when set to
+  `'carousel'`.
+
 #### POTW API (subset)
 - `store.getPotwProfiles()` / `savePotwProfile(key, profile)` /
   `deletePotwProfile(key)`
@@ -275,8 +351,19 @@ version bump alone will trigger any migration path; it won't.
 
 ### `audio` (js/core/audio.js)
 - `audio.play(src)` → HTMLAudioElement (returns even on failure; never throws)
-- `audio.sfx(name)` — WebAudio-synthesized effects: 'sword', 'fanfare', 'thud',
-  'coin', 'roll' (no asset files needed)
+- `audio.sfx(name)` — plays the teacher's assigned recording FIRST
+  (`store.getSettings().sfx[name]`, a path under `/sfx` set in Admin →
+  Settings → Sound), and only falls back to a built-in WebAudio-synthesized
+  tone if that slot is blank or the file fails to load/play. The synth
+  covers six slots: `'sword'`, `'fanfare'`, `'thud'`, `'coin'`, `'roll'`,
+  and `'diceland'` (the Die of Destiny settling — deliberately its own
+  short, quiet slot rather than sharing `'thud'`, which reads too heavy and
+  lands out of time with the tumble). A seventh slot, `'battlecry'` (the
+  Battle Day war-cry line), has **no synth fallback at all** — it is a
+  spoken voice line, ships silent by default, and simply stays quiet until
+  the teacher records one, since a synthesized beep would be worse than
+  nothing. Deliberately NOT cached as one element per sound: two strikes
+  landing close together need to overlap, not cut each other off.
 - `audio.say(text)` — speechSynthesis voice line, safe no-op if unsupported
 - `audio.stopAll()`
 
@@ -332,6 +419,16 @@ suggestion — it is never applied automatically.
   (`store.getSettings().ambient.tracks`, falling back to `CONFIG.AMBIENT_TRACKS`).
   A screen with no assigned track is silent by design — POTW and Battle Day
   make their own noise and are excluded from the assignable list.
+- That same `ambient.tracks` map also holds one PSEUDO-SCREEN key,
+  `'flyover'` (`FLYOVER_TRACK_KEY` in store.js) — the music that plays under
+  Place of the Week's Google Maps 3D flight, shown on the same Admin card as
+  every other screen's track so the teacher only has one place to look. It
+  is deliberately NOT a real module id: `ambient.js` only looks up a track by
+  the id of the module actually mounted, and no module is called `'flyover'`,
+  so nothing plays it as an ordinary background loop by accident.
+  `js/modules/potw.js` reads `store.getSettings().ambient.tracks.flyover`
+  directly instead, falling back to `CONFIG.POTW_FLYOVER_DEFAULT`. Flight
+  music used to be set per POTW destination; it is now one global choice.
 - One `<audio>` element at a time; screen changes crossfade over 900ms.
   Obeys both its own `ambient.enabled`/`volume` settings AND the master
   `settings.soundEnabled` switch.
@@ -465,14 +562,15 @@ module's own colour win over the house colour. Out of the box that means:
    that pattern — query fresh after any `await`, don't cache before it.
 
 4. **`scroll-snap-type: x mandatory` swallows programmatic smooth scrolls
-   entirely.** Discovered in the quest carousel prototype (below): `scrollBy`,
-   `scrollIntoView({behavior:'smooth'})`, and `scrollTo({behavior:'smooth'})`
-   are all silently absorbed by the snap engine on a mandatory-snap container
-   — measured, not assumed (smooth left `scrollLeft` at 0; the identical
-   *plain* assignment reached the correct position). The working fix is a
-   **plain** `el.scrollLeft = targetOffset` assignment — no `behavior:
-   'smooth'` anywhere near it. If you add snap-scrolling anywhere else, budget
-   for instant (not animated) programmatic jumps, or don't use `mandatory`.
+   entirely.** Discovered building the shared carousel engine (`js/core/carousel.js`,
+   below): `scrollBy`, `scrollIntoView({behavior:'smooth'})`, and
+   `scrollTo({behavior:'smooth'})` are all silently absorbed by the snap
+   engine on a mandatory-snap container — measured, not assumed (smooth left
+   `scrollLeft` at 0; the identical *plain* assignment reached the correct
+   position). The working fix is a **plain** `el.scrollLeft = targetOffset`
+   assignment — no `behavior: 'smooth'` anywhere near it. If you add
+   snap-scrolling anywhere else, budget for instant (not animated)
+   programmatic jumps, or don't use `mandatory`.
 
 5. **`registry.navigate()` doesn't await `mount()` and doesn't catch
    `unmount()`'s async failures** — see the module contract section above.
@@ -554,15 +652,26 @@ course name to a house core. None of it does anything until CLIENT_ID is set
 and something actually calls `initClassroomAuth()` from the boot path — that
 wiring does not currently exist.
 
-## Quests board — carousel prototype (undecided, not shipped)
-`js/modules/quests.js` renders its available-quests list as a `.quest-grid`
-by default, but has a second, fully-built `.quest-carousel` layout
-(scroll-snap based, centre card scaled up, count/prev/next controls) behind a
-"◗ Try carousel" toggle in the board header. This is explicitly marked in the
-source as an A/B prototype meant to be judged against the real board at
-1280×720, **not a shipped feature** — "whichever loses gets deleted." The
-toggle is transient, per-mount UI state only (`ui.layout`, reset to `'grid'`
-on every `mount()`); it is never written to the store or `localStorage`. If
-you pick a winner, delete the losing layout's markup/CSS/click-handlers
-(`case 'layout'`, `case 'carousel-prev'/'carousel-next'`, `wireCarousel()`,
-and the `.quest-carousel*` CSS block) rather than leaving both in place.
+## Grid/carousel layout — shared, persisted, Admin-configured (Quests + Shop)
+`js/core/carousel.js` is the ONE horizontal card-strip implementation,
+shared by every screen that offers a carousel instead of a scrolling grid.
+It grew out of a quest-board prototype that forked from the grid, and every
+round of polish on the grid then had to be hand-copied into the fork — three
+separate divergences (a missing gap, a crushed description, a mismatched
+button height) came out of that before it was pulled into its own module.
+The caller owns the CARD markup; `carousel.js` owns the strip, the arrows,
+the counter, and which card is centred (`injectCarouselStyles()` /
+`carouselHtml(cardsHtml, {label})` / `wireCarousel(root, {restoreLeft})` /
+`carouselScrollLeft(root)`). Card sizing is by CSS variable
+(`--carousel-card-w`, `--carousel-card-maxh`) so each screen sets its own
+width without forking the file.
+
+Both `js/modules/quests.js` and `js/modules/shop.js` import this module and
+choose grid vs. carousel per-render via `store.getLayout('quests')` /
+`store.getLayout('shop')` — **not** a per-mount UI toggle. This is a
+persisted, teacher-set preference (Admin → ⚙️ Settings → 🗂️ Screen layout,
+`renderScreenLayoutCard()` in admin.js), saved via `store.setLayout(id,
+layout)` into `settings.layouts` (see `LAYOUT_SCREENS` / `DEFAULT_LAYOUT` in
+store.js — grid is the default) and shared by every device that loads the
+same saved state. Neither screen has any UI-only "try it" toggle any more —
+whatever the teacher picked in Admin is exactly what renders.

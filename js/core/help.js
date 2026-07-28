@@ -1000,7 +1000,7 @@ const TOPICS = [
         : '<p class="help-warn"><b>No PIN is set.</b> Anyone who walks up to the board can award points or open Admin.</p>';
       return `
         ${status}
-        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. Four to twelve digits, something you will still remember on a Monday morning. The boxes come pre-filled with <b>0314</b> to save you thinking of one — type over it if you would rather have your own.</p>
+        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. 4 to 8 digits, something you will still remember on a Monday morning. The boxes start <b>empty</b> on purpose — a PIN the app shipped with would be a PIN anyone could look up — so pick your own.</p>
         <p><b>The PIN ships switched off.</b> Nothing in the app asks for it until you turn it on, so you can try everything out first and add the lock when you are ready.</p>
 
         <h4>What it asks for a PIN</h4>
