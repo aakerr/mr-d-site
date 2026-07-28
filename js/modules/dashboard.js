@@ -396,6 +396,12 @@ export default {
       const btn = e.target.closest('[data-nav]');
       if (!btn) return;
       const id = btn.getAttribute('data-nav');
+      // 6.4 REVISED (owner spec, 2026-07-27): the Records tile — trophy art,
+      // "Records" title, unchanged — is the drill-down DOOR to the standings,
+      // not Records itself. Tapping it opens the Council of Four podium; the
+      // podium is the one that goes on to send a tapped house into Records
+      // (council.js's job, not this file's). No new tile, no new module id.
+      if (id === 'houses') { ctx.registry.navigate('council'); return; }
       ctx.registry.navigate(id);
     };
     el.addEventListener('click', this._clickHandler);
