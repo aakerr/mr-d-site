@@ -693,7 +693,7 @@ function boardHtml(store, core) {
             : `<div class="quest-card-note">${isAll ? 'Pick a core to accept' : '🔒 Finish your current quest first'}</div>`}
         </div>
       </div>`;
-  }).join('') : `<div class="quest-empty">Every quest is taken or retired. Mr. D can add more in Admin → Quests.</div>`;
+  }).join('') : `<div class="quest-empty">Every quest is taken or retired — new ones will appear soon.</div>`;
 
   // Teacher-chosen layout (Admin), not a per-visit toggle. The shared engine
   // (js/core/carousel.js) owns the strip/arrows/counter/focus; this file only
@@ -822,8 +822,7 @@ function modalHtml(store) {
           : `⚠️ ${esc(house.name)} loses <b>${penalty} points</b>,`;
     extra = `<div class="quest-modal-warn">${warn}
       and the quest goes back on the board for another house to steal.</div>
-      <div class="quest-modal-info">Accepted by mistake instead? Use “Clear without penalty” in
-      Admin → Quests.</div>`;
+      <div class="quest-modal-info">Accepted by mistake? Ask to have it cleared without penalty.</div>`;
     go = applied > 0 ? `✗ Give up — deduct ${applied}` : '✗ Give up';
     danger = true;
     color = '#ef4444';

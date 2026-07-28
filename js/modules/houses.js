@@ -823,7 +823,7 @@ function renderAwardModal(store, s) {
               <span class="truncate">${escapeHtml(p.label)}</span>
               <span class="shrink-0 font-extrabold${up ? ' acc-text' : ''}" style="${up ? `--acc:${accent}` : 'color:#f87171'}">${signed(p.points)}${allMode ? ' ea' : ''}</span>
             </button>`;
-          }).join('') : '<div class="hse-sub">No presets yet — add them in Admin → Settings.</div>'}
+          }).join('') : '<div class="hse-sub">No presets yet.</div>'}
         </div>
         <div class="hse-award-custom">
           <div class="hse-eyebrow" style="margin-bottom:8px;">Custom amount</div>
