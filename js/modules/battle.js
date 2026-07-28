@@ -253,9 +253,9 @@ function injectStyles() {
   .battle-stamp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(2rem,6vw,4.5rem);color:#fca5a5;
-    text-shadow:0 0 30px rgba(239,68,68,.8),0 4px 10px rgba(0,0,0,.8);}
+    text-shadow:0 0 26px rgba(239,68,68,.6),0 4px 10px rgba(0,0,0,.8);}
   .battle-stamp span{display:inline-block;opacity:0;animation:battle-letter-stamp .35s ease both;
-    background:linear-gradient(180deg,#f9fafb 0%,#dbe2ec 30%,#93a1b4 48%,#5d6b7e 53%,#b4bfce 72%,#eef2f7 100%);
+    background:linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
     -webkit-text-stroke:1px rgba(15,23,42,.35);}
   /* One light glint sweeps the title just after the swords land — a bright
