@@ -105,10 +105,6 @@ function ensureStyle() {
   document.head.appendChild(s);
 }
 
-function fmtDateLong() {
-  return new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-}
-
 // Portrait, transparent-bg house shield — always contain-fit, never cropped.
 function houseImg(house, cls, extraAttrs = '') {
   return `<img src="${escapeAttr(house.image)}" alt="${escapeAttr(house.name)} crest" class="${cls}" ${extraAttrs}

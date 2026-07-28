@@ -134,21 +134,6 @@ export function stopAmbient() {
   [...retiring].forEach(killAudio);
 }
 
-// What's playing right now — for diagnostics (Help → System check) and tests.
-export function ambientStatus() {
-  const { enabled, volume, soundOn, tracks } = settings();
-  return {
-    enabled, soundOn, configuredVolume: volume,
-    assignedScreens: Object.keys(tracks),
-    playing: current ? {
-      screen: current.moduleId,
-      src: current.el.currentSrc || current.el.src,
-      volume: +current.el.volume.toFixed(3),
-      paused: current.el.paused,
-    } : null,
-  };
-}
-
 // Self-wire: follow screen changes and setting changes.
 export function initAmbient() {
   window.addEventListener('module:navigate', (e) => ambientFor(e.detail?.id));

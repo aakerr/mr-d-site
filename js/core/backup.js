@@ -247,10 +247,6 @@ boot();
 
 // ---- public API ------------------------------------------------------------
 export const backup = {
-  // Idempotent; the module already self-inits. Accepts an optional store for the
-  // documented signature, but the imported singleton is the source of truth.
-  init() { boot(); ensureSubscribed(); return backup.status(); },
-
   async connectFolder() {
     if (!supported()) { lastError = 'unsupported'; return false; }
     try {

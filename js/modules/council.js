@@ -339,7 +339,6 @@ export default {
   _scope: 'term',
   _cols: null,           // houseId -> { refs… }
   _prevRank: null,       // houseId -> rank, for the drop/rise reaction
-  _raf: 0,
   _timers: [],
   _ribbonTimer: 0,
   _ribbonPage: 0,
@@ -642,7 +641,6 @@ export default {
     if (this._ribbonTimer) { clearInterval(this._ribbonTimer); this._ribbonTimer = 0; }
     this._timers.forEach((t) => clearTimeout(t));
     this._timers = [];
-    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; }
     if (this._el && this._clickHandler) this._el.removeEventListener('click', this._clickHandler);
     const ribbon = this._el && this._el.querySelector('[data-ribbon]');
     if (ribbon) {

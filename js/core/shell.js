@@ -12,7 +12,6 @@
 // earlier bottom-right floating action button, which the teacher reported
 // as overlapping module content.
 
-import { openHelp } from './help.js';
 import { maybeRunFirstRun } from './firstrun.js';
 import { health } from './health.js';
 import { lock } from './lock.js';
@@ -440,11 +439,6 @@ export function initShell(ctx) {
       if (adminLongPressFired) { adminLongPressFired = false; return; } // the press already acted
       if (e.shiftKey && lock.isEnabled() && lock.isUnlocked()) { lock.lockNow(); return; }
       if (await lock.requireUnlock('open the Teacher Admin panel')) registry.navigate('admin');
-      return;
-    }
-
-    if (e.target.closest('[data-help-btn]')) {
-      try { openHelp(); } catch (err) { console.warn('shell: help failed to open', err); }
       return;
     }
 

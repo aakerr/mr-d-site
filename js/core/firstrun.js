@@ -13,7 +13,7 @@
 // wizard comes back on a later launch — resuming where it left off, with a
 // short line owning the fact that it's back — instead of quietly vanishing
 // for good. It only truly closes for good when setup is finished, or when a
-// backup folder turns out to be connected by any route (see needsSetup()).
+// backup folder turns out to be connected by any route (see maybeRunFirstRun()).
 //
 // Owns exactly one element (#firstrun-root), removed completely on close.
 import { store } from './store.js';
@@ -424,16 +424,6 @@ function openWizard(atStep = 0, returning = false) {
  *  back in, unaffected by the deferral count below. */
 export function startSetup() { openWizard(0); }
 
-/** True when setup still has unfinished business: not finished, and no
- *  backup folder connected either (that alone counts as "done" — see
- *  maybeRunFirstRun()). */
-export function needsSetup() {
-  try {
-    const s = store.getSettings();
-    return !s.setupDone && !backupConnected();
-  } catch (e) { return false; }
-}
-
 /**
  * Called once at boot from shell.js. Wrapped so a failure here can never
  * stop the app from starting.
@@ -482,5 +472,3 @@ export function maybeRunFirstRun() {
     return false;
   }
 }
-
-export const firstrun = { start: startSetup, needsSetup, maybeRun: maybeRunFirstRun };

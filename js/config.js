@@ -49,7 +49,5 @@ export const CONFIG = {
     // dice:      'music/dice.mp3',
   },
 
-  HOME_CAMERA: { lat: 40.8653, lng: -81.8604, altitude: 500 }, // Smithville, OH
-
   STORAGE_KEY: 'mrd-classroom-os-v1',
 };

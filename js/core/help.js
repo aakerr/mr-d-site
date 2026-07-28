@@ -1768,25 +1768,3 @@ export function openHelpAt(categoryId) {
   const first = TOPICS.find((t) => t.cat === categoryId);
   open(categoryId === 'check' ? 'system-check' : (first ? first.id : undefined));
 }
-
-/** Open straight to the live diagnostics. */
-export function openSystemCheck() { open('system-check'); }
-
-export function closeHelp() { close(); }
-export function isHelpOpen() { return isOpen(); }
-
-/** Topic/category metadata, for anything that wants to build its own links. */
-export function helpTopics() {
-  return TOPICS.map((t) => ({ id: t.id, cat: t.cat, title: t.title }));
-}
-export function helpCategories() { return CATEGORIES.map((c) => ({ ...c })); }
-
-export const help = {
-  open: openHelp,
-  openAt: openHelpAt,
-  openSystemCheck,
-  close: closeHelp,
-  isOpen: isHelpOpen,
-  topics: helpTopics,
-  categories: helpCategories,
-};

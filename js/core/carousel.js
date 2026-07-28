@@ -94,7 +94,7 @@ export function carouselHtml(cardsHtml, { label = 'items' } = {}) {
  * captured scroll position (screens re-render often; without this the strip
  * jumps back to the first card).
  */
-export function wireCarousel(root, { restoreLeft = 0, onFocus = null } = {}) {
+export function wireCarousel(root, { restoreLeft = 0 } = {}) {
   // Self-cleaning: screens re-render constantly and the click listener lives on
   // `root`, which SURVIVES those re-renders. A caller that forgets to tear down
   // would stack a listener per render and fire an arrow N times per tap. Undo
@@ -127,7 +127,6 @@ export function wireCarousel(root, { restoreLeft = 0, onFocus = null } = {}) {
     if (counter) counter.textContent = `${best + 1} of ${cards.length}`;
     if (prev) prev.disabled = best === 0;
     if (next) next.disabled = best === cards.length - 1;
-    if (onFocus) { try { onFocus(best, cards[best]); } catch (e) { /* never break scrolling */ } }
   };
 
   const go = (dir) => {
