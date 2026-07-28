@@ -32,6 +32,8 @@ let presState = null;         // { type, count, idx, url, pdfKey, imgCache, pdfj
 let presKeyHandler = null;    // keydown handler while presenting
 let presResizeHandler = null; // debounced resize -> re-render at new viewport size
 let presIdleTimer = null;     // hides the nav chrome after PRES_IDLE_MS
+let chromeWakeHandler = null; // capture-phase tap-to-wake while the chrome is faded
+let voyageKeyHandler = null;  // Escape leaves the voyage at any stage
 let gsClickHandler = null;    // gslides only: returns focus to Google's player
 let flyMusicEl = null;        // flyover background track (element returned by ctx.audio.play)
 let flyFadeTimer = null;      // interval id ramping flyMusicEl.volume down to 0
@@ -359,6 +361,8 @@ async function openOverlay() {
   // Overlay chrome (header + presentation bar) fades when idle, returns on input.
   ['mousemove', 'pointerdown', 'touchstart'].forEach((evt) =>
     overlayEl.addEventListener(evt, pokeChrome, { passive: true }));
+  armChromeWake();   // a faded header must be tappable back, not tapped through
+  armVoyageEscape(); // ...and Escape leaves from anywhere, chrome or no chrome
 
   // --- resolve the intro source, in priority order --------------------------
   // 1) teacher-dropped blob  2) profile.videoUrl (YouTube embed -> iframe, else
@@ -1331,6 +1335,78 @@ function pokeChrome() {
   }, PRES_IDLE_MS);
 }
 
+// ---- tap-to-wake: the first touch on a faded stage buys the chrome back ----
+// A mouse has hover, so a faded header comes back on the way to it. The
+// classroom smartboard has no hover at all: the teacher taps where "✕ End
+// Voyage" used to be, the faded header is pointer-events:none, and the tap
+// lands on <gmp-map-3d>, which cheerfully zooms the map in front of the class.
+// So while the chrome is faded, a tap on the map (or on the slide stage, or on
+// empty black) is spent entirely on waking the chrome: swallowed in the CAPTURE
+// phase, before the map element or Google's player ever hears about it. The
+// whole gesture goes, not just its opening pointerdown, or the trailing
+// mouse/click compatibility events would sail through on their own.
+//
+// Taps that land on a real control are NOT swallowed — "🚀 Fly to…", Skip, the
+// lesson card and its bounty buttons all sit above the map and were aimed at
+// deliberately. Making those two-tap would trade one classroom stumble for a
+// worse one. Faded chrome can never be the target (pointer-events:none), so a
+// button under the pointer is always a live one.
+const WAKE_LIVE_CONTROLS = 'button,a,input,select,textarea,[role="button"],.potw-lesson';
+const WAKE_GESTURE_MS = 700;   // swallow the tail of the swallowed tap this long
+
+function chromeIsFaded() {
+  if (!overlayEl || !overlayEl.classList.contains('idle')) return false;
+  // Nothing to recover before the header appears at the reveal (during the
+  // intro the only control is Skip, which must stay one tap).
+  return !!(presLayerEl || overlayEl.querySelector('.potw-head.show'));
+}
+
+function armChromeWake() {
+  if (!overlayEl || chromeWakeHandler) return;
+  let swallowUntil = 0;
+  chromeWakeHandler = (e) => {
+    if (e.type !== 'pointerdown') {
+      if (Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
+    // A tap that is allowed through also ends any swallow still in flight —
+    // otherwise a quick second tap loses its click to the first tap's window.
+    if (!chromeIsFaded()) { swallowUntil = 0; return; }  // chrome is up: ordinary tap
+    const t = e.target;
+    if (t && t.closest && t.closest(WAKE_LIVE_CONTROLS)) { swallowUntil = 0; pokeChrome(); return; }
+    swallowUntil = Date.now() + WAKE_GESTURE_MS;
+    e.preventDefault();
+    e.stopPropagation();
+    pokeChrome();
+  };
+  ['pointerdown', 'mousedown', 'mouseup', 'click', 'touchstart', 'touchend'].forEach((evt) =>
+    overlayEl.addEventListener(evt, chromeWakeHandler, { capture: true, passive: false }));
+}
+
+// ---- Escape: the exit that is never faded, never mis-aimed ----
+// Every other way out of a voyage is a button that the idle fade can hide, and
+// a wireless keyboard or presenter remote is usually the nearest thing to the
+// teacher's hand. Escape leaves by the same door as 🏠 Main Screen. A deck owns
+// Escape while it is open (presKeyHandler closes the slides first), and so does
+// an open lightbox — this is the last resort, not a hijack.
+function armVoyageEscape() {
+  if (voyageKeyHandler) return;
+  voyageKeyHandler = (e) => {
+    if (e.key !== 'Escape' || !overlayEl || presLayerEl) return;
+    const lb = overlayEl.querySelector('.potw-lightbox');
+    if (lb) { try { lb.remove(); } catch (err) {} return; }
+    e.preventDefault();
+    goHome();
+  };
+  window.addEventListener('keydown', voyageKeyHandler);
+}
+
+function disarmVoyageEscape() {
+  if (!voyageKeyHandler) return;
+  try { window.removeEventListener('keydown', voyageKeyHandler); } catch (e) {}
+  voyageKeyHandler = null;
+}
+
 // "Your presenter remote works" hint — shown until the teacher dismisses it once.
 const REMOTE_HINT_KEY = 'mrd:potw:remote-hint';
 function remoteHintDismissed() {
@@ -1676,6 +1752,8 @@ function toggleLessonCard() {
 function closeOverlay() {
   clearTimers();
   destroyPresentation();
+  disarmVoyageEscape();
+  chromeWakeHandler = null;   // its listeners leave with overlayEl below
   stopFlyoverMusic();
   try { ctxRef && ctxRef.audio.stopAll(); } catch (e) {}
   if (videoEl) { try { videoEl.pause(); } catch (e) {} }
@@ -2190,6 +2268,8 @@ export default {
     clearTimers();
     disposeGlobe();
     destroyPresentation();
+    disarmVoyageEscape();
+    chromeWakeHandler = null;
     stopFlyoverMusic();
     if (previewKeyHandler) {
       try { window.removeEventListener('keydown', previewKeyHandler); } catch (e) {}
