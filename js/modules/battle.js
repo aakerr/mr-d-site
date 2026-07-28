@@ -16,6 +16,7 @@ import { createDiceSim } from './dice3d/sim.js';
 // never distinguished content from attribute positions — escapeHtml covers
 // both, aliased to the `esc` name its ~90 call sites already use.
 import { escapeHtml as esc } from '../core/escape.js';
+import { prefersReducedMotion, makeTimerSet } from '../core/util.js';
 
 const STYLE_ID = 'battle-styles';
 
@@ -66,7 +67,7 @@ const CINEMATIC_MAX_MS = 8000;   // backstop if the recording never fires 'ended
 let chooserOpen = false;      // "change attacker" picker showing
 let resolving = false;        // suspends subscribe re-renders mid-strike
 let strikeCancelled = false;  // End Battle pressed mid-strike — the sequence stands down at its next beat
-const timers = new Set();
+const { timers, later, clearTimers } = makeTimerSet('battle');
 const fxNodes = new Set();    // transient combat-effect DOM nodes, force-cleaned on unmount
 
 // ---- Mr. D's duel rules — mini shop + dice overlay state -------------------
@@ -86,21 +87,11 @@ let diceOverlayEl = null;     // dice roll overlay, mounted in #overlay-root
 const combatRevealed = new Set();
 function pairKey(attackerId, targetId) { return `${attackerId}:${targetId}`; }
 
-function later(fn, ms) {
-  const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('battle:', e); } }, ms);
-  timers.add(id);
-  return id;
-}
-function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
 // A timer-based Promise, tracked in `timers` like every other delay in this
 // file, so an unmount mid-sequence sweeps it up instead of leaving a dangling
 // resolve.
 function delay(ms) { return new Promise((resolve) => { later(resolve, ms); }); }
-
-function prefersReducedMotion() {
-  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
 
 // Spawns a transient fx node inside `parent`, auto-removed after `ttl`ms and
 // force-removed on unmount via `fxNodes`.

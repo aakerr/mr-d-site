@@ -11,6 +11,7 @@ import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 import { buildSampleState } from '../core/sampledata.js';  // ⚙️ Settings → "Load sample data"
 import { escapeHtml as esc } from '../core/escape.js';
+import { ymd, todayStr, makeTimerSet } from '../core/util.js';
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
@@ -53,7 +54,7 @@ let dragOverHandler = null;
 let dragLeaveHandler = null;
 let dropHandler = null;
 let inputHandler = null;
-const timers = new Set();
+const { timers, later, clearTimers } = makeTimerSet('admin');
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
 
 let activeTab = 'planner';            // 'planner' | 'quests' | 'shop' | 'potw' | 'battle' | 'help' | 'settings'
@@ -107,10 +108,10 @@ const FORM_TYPES = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'note',
 // ---------------------------------------------------------------------------
 // Tiny helpers
 // ---------------------------------------------------------------------------
-function pad(n) { return String(n).padStart(2, '0'); }
-function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function todayStr() { return ymd(new Date()); }
 function parseYMD(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+// NOTE: this addDays takes/returns a Date — store.js also has an addDays that
+// takes/returns a 'YYYY-MM-DD' string. Same name, different contract; see the
+// warning in js/core/util.js. Do not unify these.
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 // Calendar display is Sunday-first (does not touch the store's week math).
 function sundayOf(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); x.setHours(0, 0, 0, 0); return x; }
@@ -129,8 +130,6 @@ function hexNorm(s) { const v = String(s || '').trim(); return v && !v.startsWit
 function isHex(s) { return /^#[0-9a-f]{6}$/i.test(String(s || '')); }
 
 function el(id) { return document.getElementById(id); }
-function later(fn, ms) { const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('admin:', e); } }, ms); timers.add(id); return id; }
-function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 
 function toast(msg) {
   if (!rootEl) return;

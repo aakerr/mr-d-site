@@ -13,6 +13,7 @@ import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
 import { lock } from '../core/lock.js';
 import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
+import { makeTimerSet } from '../core/util.js';
 
 const STYLE_ID = 'shop-styles';
 const PURPLE = '#a78bfa';
@@ -51,7 +52,7 @@ let carouselTeardown = null; // teardown fn from wireCarousel — torn down befo
 // mid-animation — often the very toast explaining the change. Created on
 // mount, removed (children and all) on unmount.
 let toastHost = null;
-const timers = new Set();
+const { timers, later, clearTimers } = makeTimerSet('shop');
 const fxNodes = new Set();  // transient combat-effect DOM nodes, force-cleaned on unmount
 
 // ---- pressed-pointer render deferral ---------------------------------------
@@ -116,12 +117,6 @@ function initState() {
   };
 }
 
-function later(fn, ms) {
-  const id = setTimeout(() => { timers.delete(id); try { fn(); } catch (e) { console.warn('shop:', e); } }, ms);
-  timers.add(id);
-  return id;
-}
-function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
 
 function houseImg(house, cls) {

@@ -15,6 +15,7 @@
 // (Admin's Settings tab) is the one that actually writes it to localStorage
 // and reloads — this file only builds the data.
 import { store } from './store.js';
+import { ymd } from './util.js';
 
 // ---- small helpers ----------------------------------------------------------
 function rand(min, max) { return Math.round(min + Math.random() * (max - min)); }
@@ -100,9 +101,6 @@ const PLANNER_TEMPLATE = [
   { offset: 21,  type: 'note',     core: 'all', title: 'House Cup Standings Update' },
 ];
 
-function ymd(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 function dateFor(offsetDays) {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);

@@ -1,6 +1,7 @@
 // State store — single source of truth, localStorage-persisted.
 // All point changes flow through addPoints() so every change is a logged transaction.
 import { CONFIG } from '../config.js';
+import { ymd, todayStr } from './util.js';
 
 // image = shield crest (used everywhere a house image appears);
 // heroImage = wide banner art for hero headers.
@@ -1117,17 +1118,9 @@ function startOfWeek(d = new Date()) {
   x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - day); return x;
 }
 
-// 'YYYY-MM-DD' in LOCAL time. Deliberately not toISOString(), which converts to
-// UTC first and so reports the wrong day either side of midnight for anyone
-// west of Greenwich — this app deals in school days, not instants.
-function ymd(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function todayStr() {
-  return ymd(new Date());
-}
-
+// NOTE: this addDays takes/returns a 'YYYY-MM-DD' string — admin.js also has
+// an addDays that takes/returns a Date. Same name, different contract; see
+// the warning in js/core/util.js. Do not unify these.
 function addDays(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + n);
