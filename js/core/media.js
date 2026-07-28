@@ -83,15 +83,28 @@ export const media = {
     } catch (e) { return false; }
   },
 
-  // [{key, name, type, size}] for keys starting with prefix.
+  // [{key, name, type, size, ts}] for keys starting with prefix. One readonly
+  // cursor pass over the store — this used to open a fresh DB connection per
+  // matching key (getAllKeys(), then media.info() in a loop), which turns
+  // into a lot of IndexedDB opens once a term's worth of media piles up.
   async list(prefix = '') {
     try {
-      const keys = await run('readonly', (s) => s.getAllKeys());
-      const out = [];
-      for (const k of keys) {
-        if (typeof k === 'string' && k.startsWith(prefix)) out.push(await media.info(k));
-      }
-      return out.filter(Boolean);
+      const results = [];
+      await run('readonly', (s) => {
+        const req = s.openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return; // done — transaction completes, run() resolves
+          const k = cursor.key;
+          if (typeof k === 'string' && k.startsWith(prefix)) {
+            const rec = cursor.value;
+            results.push({ key: k, name: rec.name, type: rec.type, size: rec.size, ts: rec.ts });
+          }
+          cursor.continue();
+        };
+        return req;
+      });
+      return results;
     } catch (e) { return []; }
   },
 };
