@@ -87,6 +87,7 @@ let dangerOpen = false;               // danger-zone accordion state
 const shopUrls = new Set();           // object URLs we own for shop image previews
 let backupStatusTimer = null;         // interval that keeps the auto-backup "last saved" line live
 let shopGuideOpen = false;            // "How magic items work" accordion state
+let videoPresetsOpen = false;         // 🎬 Intro Video Presets accordion state (Place of the Week tab)
 let questGuideOpen = false;           // "How quests work" accordion state
 let questForm = null;                 // in-progress quest editor
 let houseForm = null;                 // in-progress house editor (Term & World tab)
@@ -3934,12 +3935,22 @@ function renderVideoPresetsCard() {
       </div>
     </div>`).join('');
 
+  // Folded shut, and last on the tab. This is a list of dropdown options the
+  // teacher sets up once a year; it used to sit ABOVE the destinations — the
+  // actual object of the screen — so every visit began by scrolling past the
+  // config to reach the thing. Same collapsible pattern as the shop and quest
+  // guides, and it stays open once opened, for as long as Admin is up.
+  const count = videos.length;
   return `
     <div class="admin-card">
-      <div class="admin-card-title">🎬 Intro Video Presets</div>
-      <div class="admin-mini">These are the choices offered in every destination's <b>“Which intro video?”</b> step below. Add as many as you like — each destination then picks its own.</div>
-      <div class="admin-q-list" style="margin-top:10px">${rows || '<div class="admin-empty admin-empty-sm">No videos yet.</div>'}</div>
-      <button class="admin-btn admin-btn-primary" style="margin-top:12px" data-action="video-new">+ Add a video</button>
+      <details class="admin-details admin-guide" ${videoPresetsOpen ? 'open' : ''}>
+        <summary data-action="video-presets-toggle">🎬 Intro Video Presets <span class="admin-faint">— ${count} to choose from</span></summary>
+        <div class="admin-guide-body">
+          <div class="admin-mini">These are the choices offered in every destination's <b>“Which intro video?”</b> step. Add as many as you like — each destination then picks its own.</div>
+          <div class="admin-q-list" style="margin-top:10px">${rows || '<div class="admin-empty admin-empty-sm">No videos yet.</div>'}</div>
+          <button class="admin-btn admin-btn-primary" style="margin-top:12px" data-action="video-new">+ Add a video</button>
+        </div>
+      </details>
     </div>`;
 }
 
@@ -4046,8 +4057,6 @@ function renderPotw() {
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-new">+ Add a Place of the Week</button>
       </div>
 
-      ${renderVideoPresetsCard()}
-
       <div class="admin-potw-list">
         ${keys.length ? keys
           .slice()
@@ -4111,6 +4120,8 @@ function renderPotw() {
           </div>`;
         }).join('') : '<div class="admin-empty">No places yet. Add your first one to get started.</div>'}
       </div>
+
+      ${renderVideoPresetsCard()}
 
       <div class="admin-card admin-files">
         <div class="admin-card-title">How the weekly switch works</div>
@@ -4572,7 +4583,7 @@ function renderPotwModal() {
           <div class="admin-step-hint">Plays before the flight.</div>
           <select id="admin-p-video" class="admin-input" style="max-width:240px">${vidOptions}</select>
           ${legacyNote}
-          <div class="admin-mini" style="margin-top:6px">Want a different option here? Add, edit, or remove presets in the <b>🎬 Intro Video Presets</b> list at the top of the Place of the Week screen.</div>
+          <div class="admin-mini" style="margin-top:6px">Want a different option here? Add, edit, or remove presets in the <b>🎬 Intro Video Presets</b> card at the bottom of the Place of the Week screen.</div>
         </div>
 
         <div class="admin-step">
@@ -5225,6 +5236,7 @@ function onClick(e) {
     case 'quest-fail-confirm': confirmQuestFail(Number(btn.dataset.core)); break;
 
     // shop
+    case 'video-presets-toggle': later(() => { const d = rootEl.querySelector('.admin-potw .admin-guide'); if (d) videoPresetsOpen = d.open; }, 0); break;
     case 'shop-guide-toggle': later(() => { const d = rootEl.querySelector('.admin-guide'); if (d) shopGuideOpen = d.open; }, 0); break;
     case 'shop-new': openShopForm(null); break;
     case 'shop-edit': openShopForm(btn.dataset.id); break;
