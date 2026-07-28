@@ -5309,9 +5309,13 @@ function onClick(e) {
       openConfirm(`Take back ${item ? item.name : 'this item'} from ${house ? house.name : 'this house'}?`,
         'One of them is removed from that house\u2019s holdings. The points they paid are NOT refunded — if you meant to undo the purchase completely, give the points back with the ± button too.',
         () => {
-          store.consumeFromInventory(hid, itemId);
+          // consumeFromInventory returns false when the house no longer holds
+          // one (spent mid-confirm, or a stale row) — say so instead of
+          // announcing a take-back that never happened.
+          const taken = store.consumeFromInventory(hid, itemId);
           renderBody({ force: true });
-          toast(`${item ? item.name : 'Item'} taken back from ${house.name}.`);
+          if (taken) toast(`${item ? item.name : 'Item'} taken back from ${house.name}.`);
+          else toast(`${house ? house.name : 'That house'} doesn’t hold ${item ? item.name : 'that item'} any more — nothing was taken.`);
         }, { yesLabel: 'Take it back' });
       break;
     }
