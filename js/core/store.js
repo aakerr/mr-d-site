@@ -1642,6 +1642,13 @@ export const store = {
     if (store.isFrozen(attackerId)) {
       return { ok: false, reason: `${HOUSES[attackerId]?.name || 'That house'} is frozen and cannot attack.` };
     }
+    // The punching-down rule. canAttack is where duelPunchDown lives, and duel
+    // mode never used to consult it — the Admin toggle was a switch wired to
+    // nothing. Gating the PREVIEW gates everything: applyDuelAttack re-runs
+    // this preview and passes any refusal straight through, so a forbidden
+    // strike can neither be shown nor landed.
+    const rule = store.canAttack(Number(attackerId), Number(targetId));
+    if (!rule.ok) return { ok: false, reason: rule.reason, ruleRefusal: true };
     // The defender's held defense — hidden until this moment, by design.
     const defense = store.getInventory(targetId)
       .map(({ item: it }) => cat.find((c) => c.id === it.id) || it)
