@@ -2,6 +2,7 @@
 // Owned module. Follows ARCHITECTURE.md contract.
 
 import { escapeHtml, escapeAttr } from '../core/escape.js';
+import { prefersReducedMotion } from '../core/util.js';
 
 const STYLE_ID = 'dash-styles';
 const STYLE = `
@@ -86,6 +87,59 @@ html[data-mode="light"] .dash-hw-badge {
 @media (min-width: 768px) {
   .dash-tiles-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
 }
+
+/* 7.3 — bell-ringer countdown, in the Daily Itinerary panel header. Ephemeral
+   module-scope state (see bellDeadline etc. below), not the store — nothing
+   here is worth persisting or logging. */
+.dash-bell-root { position: relative; display: flex; align-items: center; flex-shrink: 0; }
+.dash-bell-chip {
+  display: flex; align-items: center; gap: 0.3rem; min-height: 30px;
+  padding: 0.25rem 0.6rem; border-radius: 999px; border: 1px solid var(--color-line, #374151);
+  background: var(--color-card2, #1f2937); color: #9ca3af; font-size: 0.72rem; font-weight: 700;
+  cursor: pointer; transition: color 150ms ease, border-color 150ms ease, transform 150ms ease;
+  touch-action: manipulation; white-space: nowrap;
+}
+.dash-bell-chip:hover { color: var(--accent, #f59e0b); border-color: var(--accent, #f59e0b); }
+.dash-bell-chip:active { transform: scale(0.94); }
+.dash-bell-picker {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 172px;
+  display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem;
+  background: var(--color-card, #111827); border: 1px solid var(--color-line, #374151);
+  border-radius: 0.75rem; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+}
+.dash-bell-picker-row { display: flex; gap: 0.4rem; }
+.dash-bell-preset-btn {
+  flex: 1; min-height: 34px; padding: 0.3rem 0.4rem; border-radius: 0.5rem;
+  border: 1px solid var(--color-line, #374151); background: var(--color-card2, #1f2937);
+  color: var(--color-text, #f9fafb); font-size: 0.76rem; font-weight: 700; cursor: pointer;
+  touch-action: manipulation;
+}
+.dash-bell-preset-btn:hover { border-color: var(--accent, #f59e0b); }
+.dash-bell-preset-btn:active { transform: scale(0.95); }
+.dash-bell-picker-custom { display: flex; gap: 0.4rem; }
+.dash-bell-custom-input {
+  width: 0; flex: 1; min-width: 0; min-height: 34px; padding: 0.3rem 0.5rem; border-radius: 0.5rem;
+  border: 1px solid var(--color-line, #374151); background: var(--color-card2, #1f2937);
+  color: var(--color-text, #f9fafb); font-size: 0.8rem;
+}
+.dash-bell-running { display: flex; align-items: center; gap: 0.5rem; }
+.dash-bell-time {
+  font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0.02em;
+  font-size: clamp(1.3rem, 3.4vh, 2.3rem); color: var(--accent, #f59e0b); line-height: 1;
+  text-shadow: 0 0 14px rgba(245,158,11,0.35);
+}
+.dash-bell-time.dash-bell-done { color: #fbbf24; }
+.dash-bell-cancel {
+  width: 26px; height: 26px; min-width: 26px; border-radius: 999px;
+  border: 1px solid var(--color-line, #374151); background: var(--color-card2, #1f2937);
+  color: #9ca3af; font-size: 0.8rem; cursor: pointer; touch-action: manipulation; flex-shrink: 0;
+}
+.dash-bell-cancel:active { transform: scale(0.92); }
+.dash-bell-pulse { animation: dash-bell-pulse 1s ease-in-out infinite; }
+@keyframes dash-bell-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) {
+  .dash-bell-pulse { animation: none; }
+}
 `;
 
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
@@ -110,6 +164,140 @@ const MODULE_SUBTITLE_MAP = {
   dice: 'Test your luck',
   wheel: 'Spin for a house',
 };
+
+// ---- 7.3 bell-ringer countdown timer ---------------------------------------
+// Module-scoped, NOT in `state` — the store has nothing to say about a bell
+// timer and never should (no undo history for "5 more minutes on the map
+// quiz"). This screen rebuilds its whole DOM from a string on every store
+// change (dash-in fade-ins and all), so a timer living in the render() closure
+// would forget itself the moment a point got awarded anywhere in the app.
+// Living up here instead, it survives that — and survives navigating away and
+// back too, on purpose: the deadline is a wall-clock TIMESTAMP, never a tick
+// count, so time spent on another screen is accounted for automatically
+// rather than the countdown silently pausing while unmounted.
+let bellDeadline = null;     // ms epoch the timer reaches zero, or null when idle
+let bellDoneUntil = null;    // ms epoch the "TIME!" beat clears itself, or null
+let bellPickerOpen = false;  // preset/custom picker popover open
+let bellTickId = null;       // the one 1s interval — only alive while a timer is actually running
+let bellDoneTimeoutId = null; // clears the "TIME!" beat back to idle
+
+const BELL_DONE_MS = 3000;     // how long "TIME!" holds before auto-clearing
+const BELL_PRESETS = [2, 5, 10]; // minutes
+
+function bellRemainingLabel(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Renders whichever of the four bell states applies right now — idle chip,
+// open picker, running countdown, or the "TIME!" beat — always inside the
+// same data-bell-root wrapper so a targeted repaint (see repaintBell) can
+// swap just this subtree without touching the rest of the dashboard.
+function bellChipHtml() {
+  if (bellDoneUntil != null) {
+    const reduced = prefersReducedMotion();
+    return `<div data-bell-root class="dash-bell-root">
+      <div class="dash-bell-time dash-bell-done${reduced ? '' : ' dash-bell-pulse'}">TIME!</div>
+    </div>`;
+  }
+  if (bellDeadline != null) {
+    const remaining = bellDeadline - Date.now();
+    return `<div data-bell-root class="dash-bell-root">
+      <div class="dash-bell-running">
+        <span class="dash-bell-time">${bellRemainingLabel(remaining)}</span>
+        <button type="button" data-bell-cancel class="dash-bell-cancel" aria-label="Cancel timer">✕</button>
+      </div>
+    </div>`;
+  }
+  if (bellPickerOpen) {
+    return `<div data-bell-root class="dash-bell-root">
+      <button type="button" data-bell-toggle class="dash-bell-chip" aria-label="Bell-ringer timer">⏱ Timer</button>
+      <div class="dash-bell-picker">
+        <div class="dash-bell-picker-row">
+          ${BELL_PRESETS.map((m) => `<button type="button" data-bell-preset="${m}" class="dash-bell-preset-btn">${m} min</button>`).join('')}
+        </div>
+        <div class="dash-bell-picker-custom">
+          <input type="number" inputmode="numeric" min="1" max="180" step="1" placeholder="Custom min" data-bell-custom-input class="dash-bell-custom-input" />
+          <button type="button" data-bell-custom-start class="dash-bell-preset-btn">Start</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return `<div data-bell-root class="dash-bell-root">
+    <button type="button" data-bell-toggle class="dash-bell-chip" aria-label="Bell-ringer timer">⏱ Timer</button>
+  </div>`;
+}
+
+// The header row shared by all three renderItinerary() branches — same
+// sectionHeader() icon+label, plus the bell chip riding along on the right.
+function itineraryHeaderHtml() {
+  return `<div class="flex items-center justify-between gap-2 mb-1.5">
+    <div class="flex items-center gap-2 text-gray-400 text-sm font-semibold uppercase tracking-wide">${icon('calendar')}<span>Daily Itinerary</span></div>
+    ${bellChipHtml()}
+  </div>`;
+}
+
+// Swaps just the bell subtree for a fresh one — used by the 1s tick and by
+// the picker/cancel actions, so a running countdown updates every second
+// without re-rendering (and re-fading-in) the entire dashboard around it.
+function repaintBell(el) {
+  if (!el || !el.isConnected) return;
+  const root = el.querySelector('[data-bell-root]');
+  if (!root) return;
+  root.outerHTML = bellChipHtml();
+}
+
+function stopBellInterval() {
+  if (bellTickId) { clearInterval(bellTickId); bellTickId = null; }
+}
+
+function startBellInterval(el, ctx) {
+  stopBellInterval();
+  bellTickId = setInterval(() => tickBell(el, ctx), 1000);
+}
+
+function tickBell(el, ctx) {
+  if (!el || !el.isConnected) { stopBellInterval(); return; }
+  if (bellDeadline != null && Date.now() >= bellDeadline) {
+    // Time's up: stop counting, ring the existing points-awarded chime (the
+    // "gentle chime" 7.3 asks for IS this one — SFX_SLOTS' 'coin' slot, the
+    // same cue every point award already plays), hold "TIME!" a beat, then
+    // clear itself back to idle. No store write anywhere in this path.
+    bellDeadline = null;
+    stopBellInterval();
+    bellDoneUntil = Date.now() + BELL_DONE_MS;
+    ctx.audio?.sfx?.('coin');
+    repaintBell(el);
+    clearTimeout(bellDoneTimeoutId);
+    bellDoneTimeoutId = setTimeout(() => { bellDoneUntil = null; bellDoneTimeoutId = null; repaintBell(el); }, BELL_DONE_MS);
+    return;
+  }
+  repaintBell(el);
+}
+
+function startBellTimer(minutes, el, ctx) {
+  const ms = Math.round(Number(minutes) * 60000);
+  if (!(ms > 0)) return;
+  bellDeadline = Date.now() + ms;
+  bellDoneUntil = null;
+  bellPickerOpen = false;
+  clearTimeout(bellDoneTimeoutId);
+  bellDoneTimeoutId = null;
+  startBellInterval(el, ctx);
+  repaintBell(el);
+}
+
+function cancelBellTimer(el) {
+  bellDeadline = null;
+  bellDoneUntil = null;
+  bellPickerOpen = false;
+  stopBellInterval();
+  clearTimeout(bellDoneTimeoutId);
+  bellDoneTimeoutId = null;
+  repaintBell(el);
+}
 
 function ensureStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -347,7 +535,7 @@ function renderItinerary(state, store) {
     if (!next) {
       return `
         <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
-          ${sectionHeader('calendar', 'Daily Itinerary')}
+          ${itineraryHeaderHtml()}
           <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
             Pick a house core to see today's schedule.
           </div>
@@ -356,7 +544,7 @@ function renderItinerary(state, store) {
     const info = store.getItineraryInfo(next.core);
     return `
       <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
-        ${sectionHeader('calendar', 'Daily Itinerary')}
+        ${itineraryHeaderHtml()}
         ${upNextHeaderHtml(store, next)}
         ${info.sample ? sampleCaption() : ''}
         <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${itineraryItemsHtml(info.items)}</div>
@@ -365,7 +553,7 @@ function renderItinerary(state, store) {
   const info = store.getItineraryInfo();
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
-      ${sectionHeader('calendar', 'Daily Itinerary')}
+      ${itineraryHeaderHtml()}
       ${info.sample ? sampleCaption() : ''}
       <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${itineraryItemsHtml(info.items)}</div>
     </div>`;
@@ -467,6 +655,15 @@ export default {
 
   mount(el, ctx) {
     ensureStyle();
+    // The bell timer's own state (bellDeadline/bellDoneUntil) is module-scope
+    // and outlives navigating away from this screen — see the comment above
+    // its declaration. A "TIME!" beat that finished while the teacher was on
+    // another screen should not still be showing when they come back.
+    if (bellDoneUntil != null && Date.now() >= bellDoneUntil) {
+      bellDoneUntil = null;
+    } else if (bellDoneUntil != null) {
+      bellDoneTimeoutId = setTimeout(() => { bellDoneUntil = null; bellDoneTimeoutId = null; repaintBell(el); }, bellDoneUntil - Date.now());
+    }
     render(el, ctx);
 
     this._clickHandler = (e) => {
@@ -479,6 +676,20 @@ export default {
           .catch((err) => console.warn('hero tuner unavailable:', err?.message || err));
         return;
       }
+
+      // 7.3 — bell-ringer timer chip/picker/cancel. No store writes anywhere
+      // in this branch; see the bell* functions above render().
+      if (e.target.closest('[data-bell-toggle]')) { bellPickerOpen = !bellPickerOpen; repaintBell(el); return; }
+      const presetBtn = e.target.closest('[data-bell-preset]');
+      if (presetBtn) { startBellTimer(Number(presetBtn.dataset.bellPreset), el, ctx); return; }
+      if (e.target.closest('[data-bell-custom-start]')) {
+        const input = el.querySelector('[data-bell-custom-input]');
+        const mins = input ? Number(input.value) : NaN;
+        if (Number.isFinite(mins) && mins > 0 && mins <= 180) startBellTimer(mins, el, ctx);
+        return;
+      }
+      if (e.target.closest('[data-bell-cancel]')) { cancelBellTimer(el); return; }
+
       // 6.5 — All-Cores mode's itinerary/homework panels preview whichever
       // core's day starts next; tapping either one switches the board to it,
       // the same store call the top-bar core switcher uses.
@@ -501,9 +712,16 @@ export default {
     this._unsub = ctx.store.subscribe(() => render(el, ctx));
     this._el = el;
     this._ctx = ctx;
+
+    // A timer already running (from before this mount, e.g. a quick trip to
+    // Battle Day and back) resumes ticking against its same wall-clock
+    // deadline — nothing to recompute, just start painting it again.
+    if (bellDeadline != null) startBellInterval(el, ctx);
   },
 
   unmount() {
+    stopBellInterval();
+    if (bellDoneTimeoutId) { clearTimeout(bellDoneTimeoutId); bellDoneTimeoutId = null; }
     if (this._unsub) { this._unsub(); this._unsub = null; }
     if (this._el && this._clickHandler) this._el.removeEventListener('click', this._clickHandler);
     this._el = null;
