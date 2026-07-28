@@ -2,6 +2,13 @@
 // into the app (a static site can't write real files). Blobs persist in the
 // browser alongside localStorage state.
 // Key convention: 'potw:<profileKey>:video' | 'potw:<profileKey>:song'
+//
+// THE CHANGE EVENT. Every successful put() or delete() fires
+//   window CustomEvent 'mrd:media-changed', detail: { key }
+// This is the one signal that any object URL previously handed out for that
+// key is now revoked and stale. Modules that keep their own URL caches
+// (shop.js's art cache) listen for exactly this event name — change it in
+// both places or not at all.
 const DB_NAME = 'mrd-media';
 const STORE = 'files';
 
@@ -28,6 +35,13 @@ function run(mode, op) {
 
 const urlCache = new Map(); // key -> objectURL
 
+// See "THE CHANGE EVENT" above — fired after every successful put/delete so
+// consumers holding a cached URL for this key know to drop it.
+function announceChange(key) {
+  try { window.dispatchEvent(new CustomEvent('mrd:media-changed', { detail: { key } })); }
+  catch (e) { /* an event that cannot fire must never fail the write it follows */ }
+}
+
 export const media = {
   // Store a File/Blob under key. Returns record metadata or null on failure.
   async put(key, file) {
@@ -35,6 +49,7 @@ export const media = {
       const rec = { blob: file, name: file.name || key, type: file.type || '', size: file.size || 0, ts: Date.now() };
       await run('readwrite', (s) => s.put(rec, key));
       if (urlCache.has(key)) { URL.revokeObjectURL(urlCache.get(key)); urlCache.delete(key); }
+      announceChange(key);
       return { key, name: rec.name, type: rec.type, size: rec.size };
     } catch (e) { console.warn('media.put failed', key, e); return null; }
   },
@@ -63,6 +78,7 @@ export const media = {
     try {
       await run('readwrite', (s) => s.delete(key));
       if (urlCache.has(key)) { URL.revokeObjectURL(urlCache.get(key)); urlCache.delete(key); }
+      announceChange(key);
       return true;
     } catch (e) { return false; }
   },
