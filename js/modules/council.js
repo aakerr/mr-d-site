@@ -345,6 +345,8 @@ export default {
   _ribbonPage: 0,
   _ribbonPaused: false,
   _clickHandler: null,
+  _lastPointerType: 'mouse',   // what last touched the ribbon — see the pause wiring in mount()
+  _pointerEnter: null, _pauseOn: null, _pauseOff: null, _pointerDown: null,
 
   mount(el, ctx) {
     ensureStyle();
@@ -434,16 +436,26 @@ export default {
     };
     el.addEventListener('click', this._clickHandler);
 
-    // Pause the ribbon while the teacher is reading it.
+    // Pause the ribbon while the teacher is reading it. Hover is a MOUSE
+    // idea: on the touch smartboard a tap fires pointerdown (toggling the
+    // pause), then the browser follows up with a SYNTHETIC mouseenter — which
+    // used to instantly re-pause, so tapping to resume looked like a stuck
+    // ribbon. Remember which kind of pointer touched the ribbon last
+    // (pointerenter fires for both, before any synthetic mouse event) and let
+    // the hover handlers act only when that was a real mouse.
     const ribbon = el.querySelector('[data-ribbon]');
-    this._pauseOn = () => { this._ribbonPaused = true; };
-    this._pauseOff = () => { this._ribbonPaused = false; };
-    ribbon.addEventListener('mouseenter', this._pauseOn);
-    ribbon.addEventListener('mouseleave', this._pauseOff);
-    ribbon.addEventListener('pointerdown', (ev) => {
+    this._lastPointerType = 'mouse';
+    this._pointerEnter = (ev) => { this._lastPointerType = ev.pointerType || 'mouse'; };
+    this._pauseOn = () => { if (this._lastPointerType === 'mouse') this._ribbonPaused = true; };
+    this._pauseOff = () => { if (this._lastPointerType === 'mouse') this._ribbonPaused = false; };
+    this._pointerDown = (ev) => {
       if (ev.pointerType === 'mouse') return;   // mouse already handled by hover
       this._ribbonPaused = !this._ribbonPaused;
-    });
+    };
+    ribbon.addEventListener('pointerenter', this._pointerEnter);
+    ribbon.addEventListener('mouseenter', this._pauseOn);
+    ribbon.addEventListener('mouseleave', this._pauseOff);
+    ribbon.addEventListener('pointerdown', this._pointerDown);
 
     this.update(true);
 
@@ -634,9 +646,15 @@ export default {
     if (this._el && this._clickHandler) this._el.removeEventListener('click', this._clickHandler);
     const ribbon = this._el && this._el.querySelector('[data-ribbon]');
     if (ribbon) {
+      if (this._pointerEnter) ribbon.removeEventListener('pointerenter', this._pointerEnter);
       if (this._pauseOn) ribbon.removeEventListener('mouseenter', this._pauseOn);
       if (this._pauseOff) ribbon.removeEventListener('mouseleave', this._pauseOff);
+      if (this._pointerDown) ribbon.removeEventListener('pointerdown', this._pointerDown);
     }
+    this._pointerEnter = null;
+    this._pauseOn = null;
+    this._pauseOff = null;
+    this._pointerDown = null;
     this._cols = null;
     this._prevRank = null;
     this._el = null;
