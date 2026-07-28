@@ -302,7 +302,14 @@ async function openOverlay() {
 
   overlayEl = document.createElement('div');
   overlayEl.className = 'potw-overlay';
-  overlayEl.innerHTML = `
+  // Building the template can throw on a malformed profile (hand-edited or
+  // restored from a damaged backup). overlayEl is already set by then, and a
+  // throw between here and appendChild used to leave it pointing at a
+  // detached node — the `if (overlayEl) return` guard above then swallowed
+  // every later Launch tap until the module was remounted. On failure: log,
+  // reset, and leave the button alive for after the profile is repaired.
+  try {
+    overlayEl.innerHTML = `
     <div class="potw-map-layer"></div>
 
     <div class="potw-intro-layer">
@@ -330,6 +337,11 @@ async function openOverlay() {
     </header>
 
     <button type="button" class="potw-lesson-btn">📋 Lesson</button>`;
+  } catch (e) {
+    console.warn('potw: this destination profile could not be rendered — check it in Admin → Place of the Week', e);
+    overlayEl = null;
+    return;
+  }
   host.appendChild(overlayEl);
 
   // --- create the 3D map now so it can load during the ~37s intro -----------
@@ -850,10 +862,18 @@ function slideLesson() {
 }
 
 function buildLessonHTML() {
-  const facts = profile.quickFacts.map((f, i) =>
+  // A hand-edited or partially-restored profile may be missing any of these
+  // three arrays — a .map on undefined here used to throw inside openOverlay
+  // and brick the Launch button until remount. An empty section reads fine;
+  // a dead Launch button in front of the class does not.
+  const factList = Array.isArray(profile.quickFacts) ? profile.quickFacts : [];
+  const sourceList = Array.isArray(profile.primarySources) ? profile.primarySources : [];
+  const quizList = Array.isArray(profile.quiz) ? profile.quiz : [];
+
+  const facts = factList.map((f, i) =>
     `<div class="potw-fact"><span class="n">${i + 1}</span><span>${esc(f)}</span></div>`).join('');
 
-  const sources = profile.primarySources.map((s) =>
+  const sources = sourceList.map((s) =>
     `<button type="button" class="potw-source">
        <span class="glyph" aria-hidden="true">${esc(s.emoji)}</span>
        <span class="potw-source-body">
@@ -864,7 +884,7 @@ function buildLessonHTML() {
 
   const houses = Object.values(ctxRef.store.HOUSES);
   const points = bountyPoints();
-  const quiz = profile.quiz.map((q, qi) => {
+  const quiz = quizList.map((q, qi) => {
     // The store ledger is the source of truth: a bounty already paid for this
     // profile+week stays locked across relaunches and across class periods.
     const paid = ctxRef.store.getPaidBounty(activeKey, qi);
@@ -1052,7 +1072,10 @@ function wireLesson() {
       if (btn.disabled) return;
       const qi = Number(btn.dataset.q);
       const houseId = Number(btn.dataset.house);
-      const q = profile.quiz[qi];
+      // Defensive on both hops: these buttons only render when quiz entries
+      // exist, but a malformed entry (no question text) must degrade to a
+      // short ledger label, not a throw that eats the payout tap.
+      const q = (Array.isArray(profile.quiz) && profile.quiz[qi]) || {};
       const points = bountyPoints();
 
       // Paying a bounty is real points, so it asks for the teacher PIN if one is
@@ -1068,7 +1091,7 @@ function wireLesson() {
       // say why and leave all four buttons live for another winner. The old
       // path greyed out every button on any falsy result, which turned one
       // frozen house into a permanently dead question.
-      const res = ctxRef.store.payBountyChecked(activeKey, qi, houseId, points, q.q.slice(0, 40));
+      const res = ctxRef.store.payBountyChecked(activeKey, qi, houseId, points, String(q.q || '').slice(0, 40));
       if (!res.ok) {
         if (res.reason === 'already-paid') { lockBounty(qi, null); return; }
         bountyNotice(qi, res.message);
