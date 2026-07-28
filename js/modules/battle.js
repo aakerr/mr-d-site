@@ -419,6 +419,10 @@ function injectStyles() {
     box-shadow:0 8px 26px rgba(168,85,247,.4);}
   .battle-end-btn{background:transparent;border-color:#4b5563;color:#e5e7eb;}
   .battle-end-btn:hover{border-color:#ef4444;color:#fca5a5;}
+  /* End Battle lives at the foot of the centre column now — the top bar is
+     gone, so the arena carries the one battle-wide control, bottom-aligned
+     with the cards it sits between. */
+  .duel-end-mid{position:absolute;left:50%;transform:translateX(-50%);bottom:0;}
 
   /* three columns: challenger | arena | defender */
   .duel-stage{position:relative;z-index:1;display:grid;
@@ -512,8 +516,8 @@ function injectStyles() {
     font-size:clamp(1.45rem,2.7vw,2.3rem);color:var(--side-accent,#f9fafb);}
   .duel-section-lbl{flex:0 0 auto;width:100%;text-align:center;font-size:.7rem;font-weight:800;letter-spacing:.16em;
     text-transform:uppercase;color:#9ca3af;border-top:1px solid #374151;padding-top:.5rem;margin-top:.15rem;}
-  .duel-swap-btn{flex:0 0 auto;min-height:36px;padding:0 .8rem;border-radius:.7rem;background:transparent;
-    border:1px solid #4b5563;color:#9ca3af;font-weight:700;font-size:.75rem;cursor:pointer;
+  .duel-swap-btn{flex:0 0 auto;min-height:44px;padding:0 1rem;border-radius:.7rem;background:transparent;
+    border:1px solid #6b7280;color:#d1d5db;font-weight:700;font-size:.95rem;cursor:pointer;
     touch-action:manipulation;}
   .duel-swap-btn:hover{border-color:var(--side-accent,#9ca3af);color:#e5e7eb;}
 
@@ -617,10 +621,10 @@ function injectStyles() {
   .duel-arena{position:relative;height:100%;min-height:clamp(150px,22vh,260px);display:flex;
     flex-direction:column;align-items:center;justify-content:center;gap:.5rem;text-align:center;
     padding:.5rem;}
-  .duel-vs{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#7f1d1d;
+  .duel-vs{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#ef4444;
     font-size:clamp(2.4rem,5.5vw,4rem);line-height:1;
-    text-shadow:0 0 30px rgba(239,68,68,.45);}
-  .duel-arena-hint{color:#9ca3af;font-size:.82rem;max-width:15rem;line-height:1.35;}
+    text-shadow:0 0 34px rgba(239,68,68,.75),0 3px 12px rgba(0,0,0,.9);}
+  .duel-arena-hint{color:#e5e7eb;font-size:clamp(1rem,1.9vw,1.35rem);max-width:18rem;line-height:1.35;text-shadow:0 2px 8px rgba(0,0,0,.9);}
 
   /* projectile: fixed-position so it flies between the two crests wherever they sit */
   /* Bigger. It crosses a 1900px board in front of a class — at 2.1rem it was a
@@ -910,10 +914,10 @@ function injectStyles() {
   .duel-dice-math > *{opacity:0;transform:translateY(8px) scale(.9);
     transition:opacity .3s ease,transform .3s cubic-bezier(.2,.9,.3,1.3);}
   .duel-dice-math > .in{opacity:1;transform:none;}
-  .dm-faces{color:#9ca3af;font-size:clamp(1.2rem,2.6vw,2rem);font-weight:700;}
-  .dm-op{color:#6b7280;font-size:clamp(1.1rem,2.2vw,1.7rem);}
+  .dm-faces{color:#e5e7eb;font-size:clamp(1.7rem,3.6vw,2.8rem);font-weight:700;}
+  .dm-op{color:#9ca3af;font-size:clamp(1.4rem,2.8vw,2.2rem);}
   .dm-sum{color:#fde68a;font-size:clamp(1.9rem,4.4vw,3rem);text-shadow:0 0 22px rgba(253,230,138,.55);}
-  .dm-mult{color:#c4b5fd;font-size:clamp(1.4rem,3vw,2.2rem);text-shadow:0 0 20px rgba(167,139,250,.5);}
+  .dm-mult{color:#c4b5fd;font-size:clamp(1.7rem,3.6vw,2.7rem);text-shadow:0 0 20px rgba(167,139,250,.5);}
   .dm-final{color:#fca5a5;font-size:clamp(2.6rem,6.4vw,4.6rem);
     text-shadow:0 4px 18px rgba(0,0,0,.9),0 0 38px rgba(239,68,68,.7);}
   .dm-final.gain{color:#86efac;text-shadow:0 4px 18px rgba(0,0,0,.9),0 0 38px rgba(34,197,94,.7);}
@@ -1089,13 +1093,19 @@ function injectStyles() {
   button.duel2-slot{cursor:pointer;touch-action:manipulation;font:inherit;
     transition:transform .12s ease,border-color .15s ease,filter .15s ease;}
   button.duel2-slot:hover:not(:disabled){border-color:#ef4444;filter:brightness(1.12);}
+  /* Slots that open the Magic Shop hover PURPLE (the shop's colour), so the
+     two things a slot can do — strike (red) and shop (purple) — never look
+     like the same action. */
+  button.duel2-slot-shop:hover:not(:disabled){border-color:#a855f7;}
+  button.duel2-util-slot[data-open-shop]:hover{border-color:#a855f7;cursor:pointer;}
+  .duel2-slot-shop-hint{font-size:.72rem;font-weight:700;color:#c4b5fd;}
   button.duel2-slot:active:not(:disabled){transform:scale(.97);}
   button.duel2-slot:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.35);}
   .duel2-slot-locked{border-style:dashed;border-color:#4b5563;background:rgba(17,24,39,.5);}
   .duel2-slot-lock{font-size:1.3rem;opacity:.8;}
   .duel2-slot-lock-label{font-size:.64rem;font-weight:700;color:#9ca3af;line-height:1.2;}
   .duel2-slot-empty{border-style:dashed;}
-  .duel2-slot-empty-label{font-size:.72rem;font-weight:700;font-style:italic;color:#6b7280;}
+  .duel2-slot-empty-label{font-size:.95rem;font-weight:700;font-style:italic;color:#cbd5e1;}
   .duel2-slot-hidden{border-color:rgba(167,139,250,.5);background:rgba(76,29,149,.16);}
   .duel2-slot-hidden-emoji{font-size:1.6rem;}
   .duel2-slot-hidden-label{font-size:.72rem;font-weight:800;color:#c4b5fd;}
@@ -1107,7 +1117,7 @@ function injectStyles() {
   .duel2-util-emoji{font-size:clamp(.85rem,1.9vh,1.8rem);line-height:1;}
   .duel2-util-name{font-size:clamp(.6rem,1.55vh,1.2rem);font-weight:800;color:#e5e7eb;line-height:1.1;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
-  .duel2-util-state{font-size:clamp(.56rem,1.3vh,1.05rem);font-weight:700;color:#9ca3af;}
+  .duel2-util-state{font-size:clamp(.8rem,1.7vh,1.2rem);font-weight:700;color:#cbd5e1;}
   .duel2-util-empty{opacity:.5;}
   .duel2-util-held{border-color:rgba(253,230,138,.4);}
   button.duel2-util-slot{font:inherit;}
@@ -1482,6 +1492,7 @@ function arenaHtml(challenger, target) {
       <div class="duel-vs font-display">VS</div>
       <div class="duel-arena-hint">${esc(hint)}</div>
       ${target ? '<button type="button" class="duel-swap-btn" data-clear-target>⇄ Change opponent</button>' : ''}
+      <button type="button" class="battle-end-btn duel-end-mid">🏳️ End Battle</button>
     </div>`;
 }
 
@@ -1543,15 +1554,6 @@ function renderHpDuel() {
   rootEl.innerHTML = `
     <div class="duel-root">
       <div class="battle-embers">${emberField()}</div>
-      <div class="duel-topbar">
-        <div class="duel-topbar-inner">
-          <div class="duel-title font-display"><img class="battle-btn-mark" src="images/icon-battle.png" alt="" onerror="this.style.display='none'" />BATTLE DAY — CHOOSE YOUR OPPONENT</div>
-        <div class="duel-topbar-actions">
-          <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
-          <button type="button" class="battle-end-btn">🏳️ End Battle</button>
-        </div>
-        </div>
-      </div>
       <div class="duel-stage">
         ${leftHtml}
         ${arenaHtml(showChooser ? null : challenger, showChooser ? null : target)}
@@ -1576,8 +1578,11 @@ function wireDuelCommon({ onShopClick, onStrike }) {
   if (!rootEl) return;
   const store = ctxRef.store;
 
-  const shopBtn = rootEl.querySelector('.battle-shop-btn');
-  if (shopBtn) shopBtn.addEventListener('click', onShopClick);
+  // The shop has no button of its own any more — every empty, locked or
+  // not-held slot on the attacker's card is a door to it (data-open-shop).
+  rootEl.querySelectorAll('[data-open-shop]').forEach((btn) => {
+    btn.addEventListener('click', onShopClick);
+  });
   const endBtn = rootEl.querySelector('.battle-end-btn');
   if (endBtn) endBtn.addEventListener('click', endBattle);
 
@@ -1652,11 +1657,15 @@ function heldSlotInstances(store, houseId, slot) {
   return flat;
 }
 
-function lockedSlotHtml(slotLabel) {
-  return `<div class="duel2-slot duel2-slot-locked">
-    <span class="duel2-slot-lock">🔒</span>
-    <span class="duel2-slot-lock-label">Bag of Holding unlocks this ${esc(slotLabel)} slot</span>
-  </div>`;
+function lockedSlotHtml(slotLabel, shopable) {
+  const inner = `<span class="duel2-slot-lock">🔒</span>
+    <span class="duel2-slot-lock-label">Bag of Holding unlocks this ${esc(slotLabel)} slot</span>`;
+  // The attacker's locked slot doubles as a door to the fix: the Bag of
+  // Holding is a shop item, so tapping the lock opens the shop.
+  if (shopable) {
+    return `<button type="button" class="duel2-slot duel2-slot-locked duel2-slot-shop" data-open-shop title="Buy the Bag of Holding in the Magic Shop">${inner}</button>`;
+  }
+  return `<div class="duel2-slot duel2-slot-locked">${inner}</div>`;
 }
 
 // One attack-slot cell on the attacker's card: locked (no 2nd slot without
@@ -1665,8 +1674,13 @@ function lockedSlotHtml(slotLabel) {
 // back to the plain word if getFreezeInfo didn't have one, so this still
 // reads fine on a store that predates it.
 function attackSlotHtml(item, unlocked, target, frozen, frostLabel) {
-  if (!unlocked) return lockedSlotHtml('attack');
-  if (!item) return `<div class="duel2-slot duel2-slot-empty"><span class="duel2-slot-empty-label">Empty attack slot</span></div>`;
+  if (!unlocked) return lockedSlotHtml('attack', true);
+  if (!item) {
+    return `<button type="button" class="duel2-slot duel2-slot-empty duel2-slot-shop" data-open-shop title="Open the Magic Shop">
+      <span class="duel2-slot-empty-label">Empty attack slot</span>
+      <span class="duel2-slot-shop-hint">🛒 Tap to shop</span>
+    </button>`;
+  }
   const kind = item.effect.kind;
   const dice = item.effect.dice || '1d6';
   const mult = Math.max(1, Number(item.effect.mult) || 1);
@@ -1713,12 +1727,19 @@ function defenseSlotHtml(item, unlocked, revealed) {
 // One utility slot (Stone of Seeing / Shroud of Secrecy / Time Turner):
 // plain "held or not held" for every house, except the attacker's OWN Stone
 // slot, which is clickable — see peekWithStone.
-function utilitySlotHtml(store, houseId, itemId, interactiveOpts) {
+function utilitySlotHtml(store, houseId, itemId, interactiveOpts, shopable) {
   const catalogItem = store.getShopItems().find((i) => i.id === itemId);
   const emoji = (catalogItem && catalogItem.emoji) || '✨';
   const name = (catalogItem && catalogItem.name) || itemId;
   const held = store.countOwned(houseId, itemId);
   if (!held) {
+    if (shopable) {
+      return `<button type="button" class="duel2-util-slot duel2-util-empty" data-open-shop title="Buy ${esc(name)} in the Magic Shop">
+        <span class="duel2-util-emoji">${esc(emoji)}</span>
+        <span class="duel2-util-name">${esc(name)}</span>
+        <span class="duel2-util-state">🛒 Tap to shop</span>
+      </button>`;
+    }
     return `<div class="duel2-util-slot duel2-util-empty">
       <span class="duel2-util-emoji">${esc(emoji)}</span>
       <span class="duel2-util-name">${esc(name)}</span>
@@ -1748,7 +1769,7 @@ function utilitySlotHtml(store, houseId, itemId, interactiveOpts) {
 // An ACTIVE shroud is not an item any more — it is a condition. It gets its own
 // chip so a house that has already raised one cannot be sold the idea of
 // raising another, and so the class can see it is up.
-function shroudSlotHtml(store, houseId) {
+function shroudSlotHtml(store, houseId, shopable) {
   const cat = store.getShopItems().find((i) => i.id === 'shroud');
   const emoji = (cat && cat.emoji) || '🌫️';
   const name = (cat && cat.name) || 'The Shroud of Secrecy';
@@ -1765,13 +1786,13 @@ function shroudSlotHtml(store, houseId) {
   return utilitySlotHtml(store, houseId, 'shroud', held ? {
     attr: `data-raise-shroud="${Number(houseId)}"`, enabled: true, state: 'Tap to raise',
     title: 'Raise the Shroud — no Stone of Seeing can look at this house for a week',
-  } : null);
+  } : null, shopable);
 }
 
 // The Time Turner can only be offered when there is something to take back.
-function timeTurnerSlotHtml(store, houseId) {
+function timeTurnerSlotHtml(store, houseId, shopable) {
   const held = store.countOwned(houseId, 'timeturner');
-  if (!held) return utilitySlotHtml(store, houseId, 'timeturner', null);
+  if (!held) return utilitySlotHtml(store, houseId, 'timeturner', null, shopable);
   const gate = store.canTimeTurn(houseId);
   const last = store.lastStrikeOn(houseId);
   return utilitySlotHtml(store, houseId, 'timeturner', {
@@ -1784,11 +1805,11 @@ function timeTurnerSlotHtml(store, houseId) {
   });
 }
 
-function utilityRowHtml(store, houseId, stoneOpts) {
+function utilityRowHtml(store, houseId, stoneOpts, shopable) {
   return `<div class="duel2-util-row">
-    ${utilitySlotHtml(store, houseId, 'stone', stoneOpts)}
-    ${shroudSlotHtml(store, houseId)}
-    ${timeTurnerSlotHtml(store, houseId)}
+    ${utilitySlotHtml(store, houseId, 'stone', stoneOpts, shopable)}
+    ${shroudSlotHtml(store, houseId, shopable)}
+    ${timeTurnerSlotHtml(store, houseId, shopable)}
   </div>`;
 }
 
@@ -1829,7 +1850,7 @@ function attackerCardHtmlDuel(store, challenger, target) {
         <div class="duel-section-lbl">Attack slots${frozen ? ` — ❄️ ${esc(frostLabel || 'frozen')}` : ''}</div>
         <div class="duel2-slots-row">${slots}</div>
         <div class="duel-section-lbl">Utility</div>
-        ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle })}
+        ${utilityRowHtml(store, challenger.id, { enabled: stoneEnabled, title: stoneTitle }, true)}
       </div>
     </section>`;
 }
@@ -1894,15 +1915,6 @@ function renderMrDDuel() {
   rootEl.innerHTML = `
     <div class="duel-root" data-mode="duel">
       <div class="battle-embers">${emberField()}</div>
-      <div class="duel-topbar">
-        <div class="duel-topbar-inner">
-          <div class="duel-title font-display"><img class="battle-btn-mark" src="images/icon-battle.png" alt="" onerror="this.style.display='none'" />BATTLE DAY — CHOOSE YOUR OPPONENT</div>
-        <div class="duel-topbar-actions">
-          <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
-          <button type="button" class="battle-end-btn">🏳️ End Battle</button>
-        </div>
-        </div>
-      </div>
       <div class="duel-stage">
         ${leftHtml}
         ${arenaHtml(showChooser ? null : challenger, showChooser ? null : target)}
