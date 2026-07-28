@@ -2669,6 +2669,7 @@ async function strikeHp(itemId) {
   // straight through.)
   let result;
   let battleWon = null;
+  let looted = 0;
   try {
     // Take it out of the stockpile first. This can only fail if someone
     // double-tapped past the `resolving` guard or the last copy was already
@@ -2686,8 +2687,11 @@ async function strikeHp(itemId) {
     // A steal loots exactly what was actually taken — 0 if blocked, half if
     // reduced. The attacker gains POINTS equal to the HP damage dealt; that
     // is the whole point of the item. The target's points never move.
+    // addPoints can still decline (a frozen challenger cannot earn), so the
+    // announcement below uses the written delta, never the request.
     if (kind === 'steal' && result.outcome !== 'blocked' && result.applied > 0) {
-      store.addPoints(challenger.id, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+      const lootTx = store.addPoints(challenger.id, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
+      looted = lootTx ? lootTx.delta : 0;
     }
     // The house's HP hit zero: the battle is over. The winner takes the
     // prize in points; the loser never loses any.
@@ -2716,7 +2720,10 @@ async function strikeHp(itemId) {
   const defHpBar = rootEl.querySelector('[data-hp-bar="defender"]');
   if (defHpBar) defHpBar.style.width = `${maxTargetHp > 0 ? Math.max(0, Math.min(100, Math.round((result.before / maxTargetHp) * 100))) : 0}%`;
 
-  playStrike({ item, kind, amount, result, challenger, target,
+  // hpLost is what the meter actually dropped — `result.applied` is the hit's
+  // strength, which overshoots when the blow lands on a nearly-empty pool.
+  playStrike({ item, kind, amount, result, challenger, target, looted,
+    hpLost: result.before - result.after,
     beforeChallenger, afterChallenger, beforeTarget, afterTarget,
     beforeTargetHp: result.before, afterTargetHp: result.after, maxTargetHp, battleWon });
 }
@@ -2766,7 +2773,7 @@ function playStrike(o) {
         landHit(o, rootEl.querySelector('[data-crest="defender"]'), reduced);
         outcomeCard('pierced', '🫥 PIERCED!',
           `${esc(o.challenger.name)}'s strike phased straight through ${esc(o.target.name)}'s defense.`,
-          `−${o.result.applied} HP — full damage`);
+          `−${o.hpLost} HP — full damage`);
         maybeAnnounceVictory(o);
       }, reduced ? 0 : 180);
       return;
@@ -2777,15 +2784,15 @@ function playStrike(o) {
       landHit(o, crest, reduced, 'amber');
       outcomeCard('reduced', '🕵️ HALVED',
         `${esc(o.target.name)}'s relic weakened the blow.`,
-        `${o.amount} → ${o.result.applied} HP`);
+        `${o.amount} → ${o.hpLost} HP`);
       maybeAnnounceVictory(o);
       return;
     }
 
     landHit(o, crest, reduced);
     outcomeCard('hit', '💥 DIRECT HIT!',
-      `${esc(o.challenger.name)} struck ${esc(o.target.name)} with ${esc(o.item.name)}.${o.kind === 'steal' ? ` They looted <b>${o.result.applied} pts</b>.` : ''}`,
-      `−${o.result.applied} HP`);
+      `${esc(o.challenger.name)} struck ${esc(o.target.name)} with ${esc(o.item.name)}.${o.kind === 'steal' && o.looted > 0 ? ` They looted <b>${o.looted} pts</b>.` : ''}`,
+      `−${o.hpLost} HP`);
     maybeAnnounceVictory(o);
   }, travel);
 }
@@ -2806,7 +2813,7 @@ function landHit(o, crest, reduced, tint = 'red') {
     shakeCrest(crest);
   }
   // Damage number is text feedback — always shown (static under reduced motion).
-  spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${o.result.applied}`);
+  spawnFx(crest, 'duel-fx-dmg', IMPACT_MS, `−${o.hpLost}`);
   // The strike removes HIT POINTS — this is the meter the class is watching.
   animateHp('defender', o.beforeTargetHp, o.afterTargetHp, o.maxTargetHp, COUNT_MS);
   // Points: the defender's total NEVER moves from combat any more (before ===
@@ -2860,10 +2867,16 @@ async function teacherScore(houseId, delta) {
   if (!ok) return;        // refused — nothing moves, retry stays open
 
   if (delta > 0) {
-    store.addPoints(houseId, delta, { reason: 'Battle Day Victory (teacher)', tag: 'battle' });
+    // A frozen house cannot earn, and addPoints declines without a word — the
+    // refusal has to be SAID, not celebrated with a coin and a floating +10
+    // nothing was actually written for (same contract as the Die of Destiny's
+    // award path).
+    const why = store.explainRefusal(houseId, delta);
+    const tx = why ? null : store.addPoints(houseId, delta, { reason: 'Battle Day Victory (teacher)', tag: 'battle' });
+    if (!tx) { toast(why || 'Those points could not be added.'); return; }
     ctxRef.audio.sfx('coin');
     // addPoints already re-rendered via subscribe — query the fresh chip.
-    spawnFx(rootEl.querySelector(`[data-tchip="${houseId}"]`), 'duel-fx-chip duel-fx-chip-good', 850, `+${delta}`);
+    spawnFx(rootEl.querySelector(`[data-tchip="${houseId}"]`), 'duel-fx-chip duel-fx-chip-good', 850, `+${tx.delta}`);
     return;
   }
 
@@ -2872,9 +2885,15 @@ async function teacherScore(houseId, delta) {
   if (result.outcome === 'blocked') {
     ctxRef.audio.sfx('sword');
     spawnFx(chip, 'duel-fx-chip duel-fx-chip-blue', 850, '🛡️ BLOCKED');
+  } else if (!result.applied) {
+    // The zero floor took nothing — a house on 0 cannot lose 10, and floating
+    // "−10" over an unchanged total is a lie the class will catch.
+    toast(store.explainRefusal(houseId, delta) || `${house.name} has nothing left to take.`);
   } else if (result.outcome === 'reduced') {
     ctxRef.audio.sfx('thud');
     flareReduceBadge(houseId);
+    // `applied` is what the ledger wrote — halved by the relic, then possibly
+    // trimmed again at the zero floor. Announce that, not the request.
     spawnFx(chip, 'duel-fx-chip duel-fx-chip-bad', 850, `${-delta} → ${result.applied}`);
   } else {
     ctxRef.audio.sfx('thud');
