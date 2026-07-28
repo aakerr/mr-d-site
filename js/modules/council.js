@@ -64,6 +64,16 @@ const STYLE = `
   letter-spacing: 0.12em; color: #fdf5e2;
   text-shadow: 0 0 26px rgba(245,158,11,0.42), 0 3px 12px rgba(0,0,0,0.8);
 }
+/* The painted scales replacing the H1's emoji, sized off the title's own
+   font-size so it tracks the clamp() above for free — same em-mark pattern
+   as every other screen's title icon. The tiny tie-medal down in the
+   standings, and this module's registry icon field used elsewhere (tab
+   bars, menus), are status glyphs and labels, not chrome — they stay emoji
+   on purpose. */
+.council-title-mark {
+  height: 1em; width: auto; max-width: none; object-fit: contain;
+  display: inline-block; vertical-align: -0.25em; margin-right: 0.15em;
+}
 .council-rule {
   height: 2px; margin: clamp(3px,0.7vh,9px) auto 0; width: min(760px, 62vw);
   background: linear-gradient(90deg, transparent, rgba(245,158,11,0.55) 22%, rgba(245,158,11,0.85) 50%, rgba(245,158,11,0.55) 78%, transparent);
@@ -425,7 +435,7 @@ export default {
 
         <header class="council-head">
           <div class="council-titlewrap">
-            <h1 class="council-title">&#9878;&#65039; COUNCIL OF FOUR</h1>
+            <h1 class="council-title"><img class="council-title-mark" src="images/icon-scales.png" alt="" onerror="this.outerHTML='&#9878;&#65039; '" />COUNCIL OF FOUR</h1>
             <div class="council-rule"></div>
             <div class="council-sub" data-sub></div>
           </div>
