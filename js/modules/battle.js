@@ -266,9 +266,9 @@ function injectStyles() {
      bottom edge and the glyphs' rendered top edge went from ~109px to ~54px
      at a 928px-tall viewport, closing the gap by about half while still
      leaving clear daylight between the two (no overlap). */
-  .battle-swords-wrap{position:absolute;top:66%;left:50%;transform:translate(-50%,-50%);
-    display:flex;align-items:center;justify-content:center;pointer-events:none;}
-  .battle-sword{font-size:clamp(5rem,12vw,10rem);position:absolute;
+  .battle-swords-wrap{position:relative;width:2.3em;height:1.35em;
+    font-size:clamp(5rem,12vw,10rem);pointer-events:none;}
+  .battle-sword{font-size:1em;position:absolute;left:50%;top:50%;
     filter:drop-shadow(0 0 24px rgba(255,180,120,.6));}
   /* The forged sword (the Battle Day mark, single-blade cut) replaces the old 🗡️ glyph. Its blade is drawn at
      +45° (up-right), so each img is pre-rotated to point straight UP; the
@@ -283,14 +283,14 @@ function injectStyles() {
   .battle-sword-a{animation:battle-slam-a .7s cubic-bezier(.2,.9,.3,1.4) both;}
   .battle-sword-b{animation:battle-slam-b .7s cubic-bezier(.2,.9,.3,1.4) both;}
   @keyframes battle-slam-a{
-    0%{transform:translate(-220px,-40px) rotate(-120deg) scale(.4);opacity:0;}
-    70%{transform:translate(6px,0) rotate(-52deg) scale(1.15);opacity:1;}
-    100%{transform:translate(0,0) rotate(-45deg) scale(1);opacity:1;}
+    0%{transform:translate(calc(-50% - 220px),calc(-50% - 40px)) rotate(-120deg) scale(.4);opacity:0;}
+    70%{transform:translate(calc(-50% + 6px),-50%) rotate(-52deg) scale(1.15);opacity:1;}
+    100%{transform:translate(-50%,-50%) rotate(-45deg) scale(1);opacity:1;}
   }
   @keyframes battle-slam-b{
-    0%{transform:translate(220px,-40px) rotate(120deg) scale(.4);opacity:0;}
-    70%{transform:translate(-6px,0) rotate(52deg) scale(1.15);opacity:1;}
-    100%{transform:translate(0,0) rotate(45deg) scale(1);opacity:1;}
+    0%{transform:translate(calc(-50% + 220px),calc(-50% - 40px)) rotate(120deg) scale(.4);opacity:0;}
+    70%{transform:translate(calc(-50% - 6px),-50%) rotate(52deg) scale(1.15);opacity:1;}
+    100%{transform:translate(-50%,-50%) rotate(45deg) scale(1);opacity:1;}
   }
   .battle-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
     animation:battle-flash-pop .35s ease .55s both;}
@@ -300,10 +300,15 @@ function injectStyles() {
      can't clip still shows the original treatment. The red text-shadow reads
      as heat coming off the metal — it draws the glyph silhouette behind the
      transparent fill, which is exactly the underglow wanted here. */
-  .battle-stamp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
-    display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
+  /* Title and swords share ONE column, so the space between them is a single
+     measured value instead of two viewport anchors drifting apart — the owner
+     asked for half the old gap, and this is the same half at every size. */
+  .battle-stack{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
+    display:flex;flex-direction:column;align-items:center;
+    gap:clamp(10px,2.6vh,26px);pointer-events:none;}
+  .battle-stamp{display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(3.6rem,10.5vw,8.1rem);color:#e5e7eb;
-    text-shadow:0 5px 16px rgba(0,0,0,.85);}
+    text-shadow:0 4px 12px rgba(0,0,0,.55);}
   /* Two background layers under one text clip: a sheen band on top, forged
      steel beneath. Chrome ignores background-attachment:fixed inside a text
      clip, so a single continuous band is off the table — instead every letter
@@ -315,12 +320,12 @@ function injectStyles() {
     animation:battle-letter-stamp .35s ease both,battle-text-glint .55s ease-out both;
     background:
       linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%),
-      linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
+      linear-gradient(180deg,#ffffff 0%,#f1f4f9 30%,#cdd6e2 46%,#a2aebf 52%,#dde3ec 68%,#ffffff 100%);
     background-size:260% 100%,auto;
     background-repeat:no-repeat;
     background-position:180% 0,0 0;
     -webkit-background-clip:text;background-clip:text;color:transparent;
-    -webkit-text-stroke:1px rgba(15,23,42,.35);}
+    -webkit-text-stroke:1px rgba(15,23,42,.26);}
   @keyframes battle-text-glint{
     from{background-position:180% 0,0 0;}
     to{background-position:-80% 0,0 0;}
@@ -1166,12 +1171,14 @@ function triggerCinematic() {
   overlayEl.innerHTML = `
     <div class="battle-vignette"></div>
     <div class="battle-flash"></div>
+    <div class="battle-stack">
+    <div class="battle-stamp">
+      ${letters.map((ch, i) => `<span style="animation-delay:${0.55 + i * 0.07}s,${1.7 + i * 0.07}s">${ch === ' ' ? '&nbsp;' : esc(ch)}</span>`).join('')}
+    </div>
     <div class="battle-swords-wrap">
       <span class="battle-sword battle-sword-a"><img src="images/sword-forged.png" alt=""></span>
       <span class="battle-sword battle-sword-b"><img src="images/sword-forged.png" alt=""></span>
     </div>
-    <div class="battle-stamp">
-      ${letters.map((ch, i) => `<span style="animation-delay:${0.55 + i * 0.07}s,${1.7 + i * 0.07}s">${ch === ' ' ? '&nbsp;' : esc(ch)}</span>`).join('')}
     </div>`;
   host.appendChild(overlayEl);
 
