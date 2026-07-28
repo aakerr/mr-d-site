@@ -219,7 +219,10 @@ function injectStyles() {
      span keyframes below then swing them to their final ±45°, exactly as they
      swung the emoji. Sword B is mirrored (scaleX before rotate) so hilt and
      gem face outward on both sides — the pair reads as one symmetric X. */
-  .battle-sword img{height:1.15em;width:auto;display:block;transform:rotate(-45deg);}
+  /* max-width:none matters: Tailwind's preflight gives every img max-width:100%,
+     and inside this shrink-to-fit absolute span that resolves to a collapsed
+     zero-height box — the sword simply vanishes without it. */
+  .battle-sword img{height:1.15em;width:auto;max-width:none;display:block;transform:rotate(-45deg);}
   .battle-sword-b img{transform:rotate(45deg) scaleX(-1);}
   .battle-sword-a{animation:battle-slam-a .7s cubic-bezier(.2,.9,.3,1.4) both;}
   .battle-sword-b{animation:battle-slam-b .7s cubic-bezier(.2,.9,.3,1.4) both;}
