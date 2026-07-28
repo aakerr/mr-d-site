@@ -202,7 +202,7 @@ function injectStyles() {
     font-size:clamp(2.6rem,7vw,5.2rem);letter-spacing:.08em;line-height:1;color:#e5e7eb;
     background:linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
-    -webkit-text-stroke:4px rgba(8,12,20,.85);paint-order:stroke fill;
+    -webkit-text-stroke:1px rgba(10,14,24,.45);
     filter:drop-shadow(0 4px 14px rgba(0,0,0,.85));}
   .battle-landing-title{font-size:clamp(1.3rem,2.6vw,2rem);color:#e5e7eb;margin-bottom:.35rem;
     text-shadow:0 2px 10px rgba(0,0,0,.9);}
@@ -336,7 +336,7 @@ function injectStyles() {
     background-repeat:no-repeat;
     background-position:180% 0,0 0;
     -webkit-background-clip:text;background-clip:text;color:transparent;
-    -webkit-text-stroke:4px rgba(8,12,20,.85);paint-order:stroke fill;}
+    -webkit-text-stroke:1px rgba(30,41,59,.22);}
   @keyframes battle-text-glint{
     from{background-position:180% 0,0 0;}
     to{background-position:-80% 0,0 0;}
