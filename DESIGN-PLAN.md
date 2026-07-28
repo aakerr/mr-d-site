@@ -260,7 +260,7 @@ good — keep all of it. The problems are concentration and placement, not style
   All-Houses pill/chips swap 🏰 for images/class-shield.png; POTW's in-module 🌍 marks
   (launch button, small chrome — NOT the big theatrical globe, which stays as the 3D
   fallback) adopt icon-potw.png.
-- [ ] **10.2 Council artwork:** approved, but needs a painted scales piece from the owner
+- [x] **10.2 Council artwork:** approved, but needs a painted scales piece from the owner
   (same handoff as the forged sword). Wire it into the Council header + any scales chrome
   when it lands in images/.
 - [x] **10.3 Economy scales:** stay as-is (owner call — slow accumulation toward big
