@@ -18,7 +18,7 @@
 // Owns exactly one element (#firstrun-root), removed completely on close.
 import { store } from './store.js';
 import { backup } from './backup.js';
-import { lock, DEFAULT_PIN } from './lock.js';
+import { lock } from './lock.js';
 
 const ROOT_ID = 'firstrun-root';
 
@@ -217,11 +217,11 @@ function stepLock() {
       ` : `
         <p class="fr-actions fr-lock-row">
           <input type="text" inputmode="numeric" autocomplete="off" maxlength="8"
-                 class="fr-input fr-lock-input" data-fr-pin value="${esc(DEFAULT_PIN)}" aria-label="New teacher PIN" />
-          <button type="button" class="fr-btn fr-btn-primary" data-fr-action="set-pin">Turn on the PIN</button>
+                 class="fr-input fr-lock-input" data-fr-pin value="" placeholder="4–8 numbers" aria-label="New teacher PIN" />
+          <button type="button" class="fr-btn fr-btn-primary" data-fr-action="set-pin" disabled>Turn on the PIN</button>
         </p>
         <p class="fr-lock-msg" data-fr-pin-msg hidden></p>
-        <p class="fr-fineprint">It starts filled in with <b>${esc(DEFAULT_PIN)}</b> — type over it with something of your own if you would rather. Leaving this step alone leaves the PIN off, which is fine; you can turn it on later in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
+        <p class="fr-fineprint">The box starts empty on purpose — a PIN the app shipped with would be a PIN anyone could look up. Pick <b>4 to 8 numbers</b> of your own. Leaving this step alone leaves the PIN off, which is fine; you can turn it on later in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
       `}
       <p>You type it once and it stays unlocked for 15 minutes, so a lesson never turns into typing a PIN over and over.</p>
       <p class="fr-fineprint">Being straight with you: this stops a student walking up and tapping. It is not real security — it does not lock or scramble your saved data, and anyone who knows their way around a web browser can get past it. It is a classroom door, not a safe.</p>
@@ -373,6 +373,19 @@ function onClick(e) {
   }
 }
 
+// "Turn on the PIN" follows the field: enabled only while the box holds a
+// plausible PIN (4–8 digits). The check inside the set-pin handler stays as a
+// backstop, but the normal road never shows the teacher a disabled-feeling
+// button that then scolds them — the button simply isn't live until the PIN is.
+function onInput(e) {
+  const input = e.target.closest?.('[data-fr-pin]');
+  if (!input || !rootEl) return;
+  const btn = rootEl.querySelector('[data-fr-action="set-pin"]');
+  if (btn) btn.disabled = !/^\d{4,8}$/.test(String(input.value || '').trim());
+  const msg = rootEl.querySelector('[data-fr-pin-msg]');
+  if (msg) msg.hidden = true;                // typing again clears the last complaint
+}
+
 function onKeydown(e) {
   if (!isOpen()) return;
   if (e.key === 'Escape') { e.stopPropagation(); deferSetup(); close(); }
@@ -380,7 +393,7 @@ function onKeydown(e) {
 
 function close() {
   if (keyHandler) { document.removeEventListener('keydown', keyHandler, true); keyHandler = null; }
-  if (rootEl) { rootEl.removeEventListener('click', onClick); rootEl.remove(); }
+  if (rootEl) { rootEl.removeEventListener('click', onClick); rootEl.removeEventListener('input', onInput); rootEl.remove(); }
   rootEl = null;
   busy = false;
   termDraft = null;
@@ -395,6 +408,7 @@ function openWizard(atStep = 0, returning = false) {
   rootEl = document.createElement('div');
   rootEl.id = ROOT_ID;
   rootEl.addEventListener('click', onClick);
+  rootEl.addEventListener('input', onInput);
   document.body.appendChild(rootEl);
   keyHandler = onKeydown;
   document.addEventListener('keydown', keyHandler, true);
