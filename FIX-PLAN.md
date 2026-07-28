@@ -300,7 +300,7 @@ Grep-verified dead. Delete unless marked "decide".
   (nothing references them; git history preserves them).
 
 **Dead code (all verified single-reference)**
-- [ ] 3.6 admin.js: `AMBER` (83); retired intro-video-upload flow — `mediaBodyHTML`
+- [x] 3.6 admin.js: `AMBER` (83); retired intro-video-upload flow — `mediaBodyHTML`
   (3925-3935), `data-mkey` loop (3941-3946), `handleMediaFile` (4051-4057), `'media-remove'`
   case (5333-5337) and the change/drop tails (6071, 6175); `openHelpTopic` category branch
   (4866-4877); `data-action="shop-eff"` attributes (1512, 1624); stale `activeTab` comment
@@ -333,13 +333,13 @@ Grep-verified dead. Delete unless marked "decide".
   exist — fix the comment to name a real file.
 
 **Consolidation (with the escaper from 1.20)**
-- [ ] 3.13 `js/core/util.js`: shared `esc`/`pad`/`ymd`/`todayStr`/`addDays`/`parseYMD`,
+- [x] 3.13 `js/core/util.js`: shared `esc`/`pad`/`ymd`/`todayStr`/`addDays`/`parseYMD`,
   reduced-motion helper, `later()`/timer-set lifecycle. Note the trap: store's `addDays`
   takes date-strings, admin's takes Dates — same name, different contract; unify carefully.
-- [ ] 3.14 Deduplicate `houseImg()` (shop.js:98 / houses.js:373), the shop-image editor block
+- [x] 3.14 Deduplicate `houseImg()` (shop.js:98 / houses.js:373), the shop-image editor block
   (admin.js:1539-1549 vs 1702-1712), `wireHpDuel`/`wireMrDDuel` (~80% identical), and have
   shop.js import kind sets from store instead of `KNOWN_KINDS` (done as part of 1.1).
-- [ ] 3.15 Batch the N-emits-per-save paths: `syncCounterReciprocals` (admin.js:1964-1990) and
+- [x] 3.15 Batch the N-emits-per-save paths: `syncCounterReciprocals` (admin.js:1964-1990) and
   the shop-del sweep (5029-5038) — one emit per save. Debounce volume-slider persistence
   (admin.js:6080-6118) to `change`.
 - [x] 3.16 `media.js:71-80` `list()` N+1 → single readonly cursor; share the result across
@@ -366,10 +366,10 @@ README.md and ARCHITECTURE.md are excellent but have drifted:
   `js/core/sampledata.js`, `tools/hero-tuner.js` to the file-layout block.
 - [x] 4.5 After Phase 0: document the corrupt-save quarantine, `-prev` restore undo, and the
   two-tab rule in README's Data & Persistence section.
-- [ ] 4.6 `js/core/sampledata.js:178` — quest-points ×10 scaling is not idempotent (second
+- [x] 4.6 `js/core/sampledata.js:178` — quest-points ×10 scaling is not idempotent (second
   sample load → ×100). Guard it (only scale quests still < 100), and note in Admin that
   loading sample data twice is safe.
-- [ ] 4.7 Fix `main.js:25`: `encodeURIComponent` the teacher's `mapsApiKeyOverride`. Verify
+- [x] 4.7 Fix `main.js:25`: `encodeURIComponent` the teacher's `mapsApiKeyOverride`. Verify
   the committed Maps API key is referrer-restricted in Cloud Console (config.js:3) — if it
   isn't, restrict it; rotating it is the teacher's/owner's call, not code.
 
