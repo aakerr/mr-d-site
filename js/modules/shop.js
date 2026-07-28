@@ -248,13 +248,15 @@ function injectStyles() {
     color:#e9d5ff;letter-spacing:.04em;margin-bottom:.75rem;text-align:center;
     text-shadow:0 0 16px rgba(167,139,250,.4);}
 
-  /* Every section is its own grid — capping the column max-width (instead of
-     1fr) keeps a card the same width whether its section has 7 items or 2, so
-     e.g. Wildcards (usually few items) doesn't stretch into oversized cards
-     next to Offensive/Defensive's normal-width ones. Centered so a short row
-     doesn't hug the left edge. */
-  .shop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,300px));gap:1.1rem;
-    align-items:stretch;justify-content:center;}
+  /* Every section is its own flex row, not a grid — a grid's own
+     auto-fit(minmax()) tracks always span the full row regardless of how many
+     cards actually landed in it, so a lone last card just sat in the grid's
+     first column, hugging the left edge under a row of empty cells. Flex-wrap
+     has no such phantom cells: justify-content applies per wrapped LINE, so a
+     partial last row centers itself while a full row of 240-300px cards fills
+     out identically to the old grid (same min/max, same gap). */
+  .shop-grid{display:flex;flex-wrap:wrap;gap:1.1rem;align-items:stretch;justify-content:center;}
+  .shop-grid > .shop-card{flex:1 1 240px;max-width:300px;}
   .shop-empty{max-width:600px;margin:0 auto;text-align:center;color:#9ca3af;font-style:italic;padding:2rem;
     border:1px dashed #4c1d95;border-radius:1.25rem;}
   /* Every card is a stretched grid cell laid out as a flex column, so equal-height
