@@ -1080,6 +1080,10 @@ function openQuestCompleteModal(core) {
         <div class="admin-mini">${q.repeatable
           ? 'This quest is <b>repeatable</b> — it goes back on the board so another house can earn it too.'
           : 'This quest is <b>one time only</b> — it leaves the board for good.'}</div>
+        <label class="admin-flabel" for="admin-quest-note">How was it proven? <span class="admin-faint">— optional</span></label>
+        <input id="admin-quest-note" class="admin-input" type="text" maxlength="80" autocomplete="off"
+          placeholder="e.g. sign-off sheet from Ms. R" />
+        <div class="admin-mini">Whatever you type is appended to the ledger entry as <code>— proof: …</code>, so Records can search for it later. Leave it blank and nothing is added.</div>
       </div>
       <div class="admin-modal-foot">
         <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
@@ -1091,7 +1095,12 @@ function openQuestCompleteModal(core) {
 function confirmQuestComplete(core) {
   const store = ctxRef.store;
   const house = store.HOUSES[core];
-  const quest = store.completeQuest(core);
+  // The same optional proof note the Quests screen collects (DESIGN-PLAN 7.4).
+  // A teacher who marks a quest complete from Admin was getting a bare ledger
+  // line while the identical action one screen over could say how it was
+  // proven; the store already folds it in, so this only had to ask.
+  const note = (el('admin-quest-note')?.value || '').trim().slice(0, 80);
+  const quest = store.completeQuest(core, note ? { note } : undefined);
   closeModal();
   renderBody();
   if (quest && !quest.paid) {
