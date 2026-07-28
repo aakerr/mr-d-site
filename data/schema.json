@@ -24,7 +24,7 @@
     },
     "settings": {
       "type": "object",
-      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings). A fresh install seeds every sub-object below (moduleThemes, layouts, combat, sfx, introVideos, diceProphecy) with real, non-null objects straight from store.js's defaultState() — a null value only ever shows up in an OLDER SAVED state that predates one of these settings, and store.js's load() migration fills it in with the shipped default the next time that save is loaded, without disturbing anything the teacher already customised. See each field's own description below.",
+      "description": "Teacher-configurable settings (edited in Admin → ⚙️ Settings). A fresh install seeds every sub-object below (moduleThemes, layouts, combat, sfx, introVideos) with real, non-null objects straight from store.js's defaultState() — a null value only ever shows up in an OLDER SAVED state that predates one of these settings, and store.js's load() migration fills it in with the shipped default the next time that save is loaded, without disturbing anything the teacher already customised. The exception is 'diceProphecy', which is deliberately NOT a copy of anything: it holds only the teacher's per-outcome overrides, merged over the table that ships in store.js, so a shipped wording fix reaches an install that has already saved. See each field's own description below.",
       "required": ["termStart", "termWeeks", "theme", "mapsApiKeyOverride", "soundEnabled", "ambient", "lock", "combatMode", "combat", "awardPresets", "houses"],
       "properties": {
         "termStart": {
@@ -229,26 +229,19 @@
           }
         },
         "diceProphecy": {
-          "type": "array",
-          "description": "The Die of Destiny's d20 outcome table (Admin → ⚙️ Settings → Dice prophecy). Seeded with real values by store.js's defaultState() on a brand-new install. Only 'points', 'title', 'desc' and 'emoji' are teacher-editable per row (store.saveDiceOutcome) — 'min'/'max'/'hasButton'/'mythic' always come from the shipped table so every one of the 20 faces maps to exactly one outcome with no gaps.",
-          "items": {
+          "type": ["object", "array"],
+          "description": "TEACHER OVERRIDES ONLY, keyed by outcome id — NOT the outcome table itself. The Die of Destiny's d20 table (Admin → ⚙️ Settings → Dice prophecy) ships in code, in store.js's defaultDiceProphecy(), and store.js merges these overrides over it at load; a fresh or never-edited install saves {} here. That is the whole point: a wording or points fix in store.js reaches an install that has already saved, because only the fields the teacher actually changed are in this file. Each entry holds ONLY the changed fields out of 'points', 'title', 'desc' and 'emoji' (the four store.saveDiceOutcome accepts) — an outcome put back to its shipped value drops out of the object entirely. 'min'/'max'/'hasButton'/'mythic' can never appear here: they always come from the shipped table, so every one of the 20 faces maps to exactly one outcome with no gaps. LEGACY: an ARRAY here is the pre-override shape (a full copy of the whole table, one object per outcome, written by every version before this one); store.js load() converts it to overrides once — comparing each row against the shipped table and keeping only genuine differences — and the next save writes the object form. The one-time conversion also drops descriptions matching wordings the app itself shipped earlier (RETIRED_DICE_DESCS in store.js), which are the app's words rather than the teacher's. The 'settings.diceDescRev' revision marker that used to drive that correction by hand is deleted on load and never written again.",
+          "additionalProperties": {
             "type": "object",
-            "required": ["id", "min", "max", "emoji", "title", "desc", "points", "hasButton"],
+            "description": "Only the fields this outcome's teacher edit actually changed; anything omitted keeps the shipped value.",
             "properties": {
-              "id": { "type": "string", "description": "Stable key an edit is keyed to, e.g. 'catastrophe', 'mythic'. Never changes even if the wording does." },
-              "min": { "type": "integer", "minimum": 1, "maximum": 20 },
-              "max": { "type": "integer", "minimum": 1, "maximum": 20 },
-              "emoji": { "type": "string" },
-              "title": { "type": "string" },
-              "desc": { "type": "string" },
-              "points": { "type": "integer", "description": "Points awarded (may be negative, e.g. Catastrophe's -10)." },
-              "hasButton": { "type": "boolean", "description": "Whether the outcome plaque shows a tap-to-award button (false for outcomes that award nothing, like Misfortune or Fate is Neutral)." },
-              "mythic": { "type": "boolean", "default": false, "description": "True only for the natural-20 row — offers a Mythic Relic pick (any shop item flagged mythicOnly) after the +20 is awarded, if any such item exists." }
+              "points": { "type": "integer", "description": "Points awarded (may be negative, e.g. Catastrophe's -10). Clamped to ±9999 (MAX_DELTA) on save." },
+              "title": { "type": "string", "description": "Outcome title on the plaque, trimmed to 40 characters." },
+              "desc": { "type": "string", "description": "Outcome description, trimmed to 140 characters." },
+              "emoji": { "type": "string", "description": "Outcome emoji, trimmed to 4 characters." }
             }
           },
-          "example": [
-            { "id": "catastrophe", "min": 1, "max": 1, "emoji": "💀", "title": "CATASTROPHE", "desc": "House loses 10 points", "points": -10, "hasButton": true }
-          ]
+          "example": { "fortune": { "points": 7, "title": "Fortune Beams" }, "mythic": { "emoji": "🏆" } }
         },
         "backupDownload": {
           "type": "boolean",

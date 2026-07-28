@@ -236,15 +236,6 @@ const SHOP_DESC_REV = 3;
 // load would resurrect art the teacher deliberately removed in Admin.
 const SHOP_ART_REV = 1;
 
-// Same idea for the dice prophecy table, which is saved state for the same
-// reason and went stale for the same reason.
-const DICE_DESC_REV = 2;
-const OLD_DICE_DESCS = {
-  smallfavor: ['Move your token / +2 class points'],
-  // Promised a Mythic Relic under rules that have none to give.
-  mythic: ['+20 points AND a Mythic Relic to defend your house!'],
-};
-
 // Every description these items have EVER shipped with, recovered from git
 // history (two of them shipped under more than one wording). A saved
 // description matching any of these was written by the app, not the teacher,
@@ -626,6 +617,112 @@ function applyHouseOverrides(overrides = {}) {
   }
 }
 
+// ---- shipped content vs teacher overrides ----------------------------------
+// THE RULE, and the reason this section exists: CONTENT THAT SHIPS WITH THE APP
+// LIVES IN THIS FILE, AND SAVED STATE HOLDS ONLY WHAT THE TEACHER CHANGED.
+//
+// It used to work the other way. defaultState() copied the whole dice table,
+// the whole shop catalog, the whole quest board and the whole intro-video list
+// into localStorage on first run, and from that moment the saved copy WAS the
+// content — so fixing a wording, a price or a piece of artwork in this file
+// reached fresh installs only, and never the classroom laptop that had already
+// run the app once. Every such fix therefore needed its own bespoke migration
+// with a revision marker to run it exactly once (DICE_DESC_REV, SHOP_DESC_REV,
+// SHOP_ART_REV, the intro-video retire/backfill, the quest field backfills).
+// Three separate audit bugs came out of that one design, and each fix added
+// machinery rather than removing the cause.
+//
+// So: the merged content still lives on `state` exactly as every reader in this
+// file and in the modules expects it — nothing downstream changes, and that is
+// deliberate. What changes is the two ends:
+//
+//   load()     materialises each family as shipped-content + the teacher's diff
+//   persist()  writes back only the diff (see toSaved below)
+//
+// A diff is per id and per field: the fields whose value differs from the
+// shipped item, and nothing else. An unedited install saves an empty object.
+// Which means a wording change in this file reaches EVERY install at the next
+// reload, with no marker and no migration, for ever — and a teacher's edit to
+// that same field still wins, because it is the one thing that was saved.
+//
+// The one-time conversion from the old full-copy shape is keyed off the SHAPE
+// itself (an array where a diff object now lives), not off a version number:
+// Admin's backup restore and "load sample data" both write a whole state object
+// straight to localStorage, so an old-shaped payload can arrive at any time,
+// long after any version stamp would have said the migration was done.
+
+// Fields of a dice outcome a teacher may change. min/max/hasButton/mythic are
+// deliberately absent — see defaultDiceProphecy() for why the die's 20 faces
+// are not editable.
+const DICE_EDITABLE = ['points', 'title', 'desc', 'emoji'];
+
+// Wordings the APP shipped in earlier versions, read ONLY by the one-time
+// conversion below. A saved description matching one of these was written by
+// this file, not by the teacher, so it must not be preserved as an override —
+// it would freeze the old text on that install for ever, which is the exact bug
+// this refactor removes. "Move your token" was left over from a physical board
+// game; the Mythic Relic was promised under rules that have none to give. Once
+// converted, a save can never contain either again, and this table goes with
+// the last install that still has to convert.
+const RETIRED_DICE_DESCS = {
+  smallfavor: ['Move your token / +2 class points'],
+  mythic: ['+20 points AND a Mythic Relic to defend your house!'],
+};
+
+// Shipped table + the teacher's diffs = what the app runs on. Accepts either
+// the saved diff object or an old full-copy array; every value is validated
+// here rather than trusted, because this also receives whatever a restored
+// backup file happens to contain.
+function materializeDiceProphecy(saved) {
+  const legacy = Array.isArray(saved);
+  const byId = legacy
+    ? Object.fromEntries(saved.filter((o) => o && o.id).map((o) => [o.id, o]))
+    : (saved && typeof saved === 'object' ? saved : {});
+  return defaultDiceProphecy().map((d) => {
+    const s = byId[d.id] || {};
+    const retired = legacy && (RETIRED_DICE_DESCS[d.id] || []).includes(String(s.desc || '').trim());
+    return {
+      ...d,
+      points: Number.isFinite(Number(s.points)) ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(s.points)))) : d.points,
+      title: typeof s.title === 'string' && s.title.trim() ? s.title.trim().slice(0, 40) : d.title,
+      desc: (!retired && typeof s.desc === 'string' && s.desc.trim()) ? s.desc.trim().slice(0, 140) : d.desc,
+      emoji: typeof s.emoji === 'string' && s.emoji.trim() ? s.emoji.trim().slice(0, 4) : d.emoji,
+    };
+  });
+}
+
+// The other direction: what is worth saving out of the live table. An outcome
+// the teacher has put back to its shipped wording drops out of the file
+// entirely, which is how "reset to default" stays reset even after the shipped
+// wording changes again later.
+function diceProphecyOverrides(list) {
+  const out = {};
+  const live = Array.isArray(list) ? list : [];
+  for (const d of defaultDiceProphecy()) {
+    const cur = live.find((o) => o && o.id === d.id);
+    if (!cur) continue;
+    const diff = {};
+    for (const key of DICE_EDITABLE) {
+      if (cur[key] !== d[key]) diff[key] = cur[key];
+    }
+    if (Object.keys(diff).length) out[d.id] = diff;
+  }
+  return out;
+}
+
+// The single place the in-memory state is turned into the text on disk. Every
+// content family that ships defaults hands back its overrides here; everything
+// else is saved as it stands.
+function toSaved(st) {
+  return {
+    ...st,
+    settings: {
+      ...st.settings,
+      diceProphecy: diceProphecyOverrides(st.settings && st.settings.diceProphecy),
+    },
+  };
+}
+
 let state = load();
 const listeners = new Set();
 
@@ -708,34 +805,15 @@ function load() {
         });
         merged.settings.moduleThemes = out;
       }
-      // Dice outcome points/wording (Die of Destiny) — teacher-editable in
-      // Admin. Rebuilt every load, keyed by id, same reasoning as moduleThemes
-      // above: min/max/hasButton/mythic always come from the shipped defaults
-      // (so a roll can never land on a gap), while points/title/desc/emoji are
-      // taken from the saved copy when present and valid.
-      {
-        const def = defaultDiceProphecy();
-        const saved = Array.isArray(merged.settings.diceProphecy) ? merged.settings.diceProphecy : [];
-        // Same trap the shop descriptions hit: this table is SAVED state, so a
-        // wording fix here reaches nobody who has already run the app — their
-        // copy wins for ever. "Move your token" was left over from a physical
-        // board game and is what the outcome plaque shows a whole class during
-        // a live roll. Retire text the APP shipped, keyed off a revision marker
-        // so it happens once; anything the teacher wrote himself is untouched.
-        const retired = merged.settings.diceDescRev !== DICE_DESC_REV;
-        merged.settings.diceProphecy = def.map((d) => {
-          const s = saved.find((x) => x.id === d.id) || {};
-          const stale = retired && (OLD_DICE_DESCS[d.id] || []).includes(String(s.desc || '').trim());
-          return {
-            ...d,
-            points: Number.isFinite(Number(s.points)) ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, Math.round(Number(s.points)))) : d.points,
-            title: typeof s.title === 'string' && s.title.trim() ? s.title.trim().slice(0, 40) : d.title,
-            desc: (!stale && typeof s.desc === 'string' && s.desc.trim()) ? s.desc.trim().slice(0, 140) : d.desc,
-            emoji: typeof s.emoji === 'string' && s.emoji.trim() ? s.emoji.trim().slice(0, 4) : d.emoji,
-          };
-        });
-        merged.settings.diceDescRev = DICE_DESC_REV;
-      }
+      // Die of Destiny outcomes: the shipped table with the teacher's edits
+      // merged over it, keyed by id. min/max/hasButton/mythic always come from
+      // this file (so a roll can never land on a gap), and so does any of the
+      // four editable fields the teacher has not touched — which is what lets a
+      // wording fix here reach a laptop that has already saved.
+      merged.settings.diceProphecy = materializeDiceProphecy(merged.settings.diceProphecy);
+      // The revision marker that used to drive that fix by hand. Nothing reads
+      // it any more; drop it so it stops riding along in every backup.
+      delete merged.settings.diceDescRev;
       // Deep-merge the other sub-trees too: a state saved before a feature
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
@@ -1046,7 +1124,10 @@ function persist() {
   // other window has already moved past.
   if (staleTab) return;
   try {
-    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(state));
+    // toSaved(), not `state`: shipped content stays in this file and only the
+    // teacher's overrides are written — see "shipped content vs teacher
+    // overrides" above.
+    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(toSaved(state)));
     persistFailed = false;
   } catch (e) {
     console.warn('store: persist failed', e);
