@@ -842,11 +842,65 @@ function load() {
       }
       return merged;
     }
-  } catch (e) { console.warn('store: failed to load, using defaults', e); }
+  } catch (e) {
+    console.warn('store: failed to load, using defaults', e);
+    // A SAVE THAT WOULD NOT PARSE IS NOT A SAVE THAT SHOULD BE THROWN AWAY.
+    // Booting to defaults here is correct — the app has to start. But the very
+    // next emit() used to overwrite the damaged text with those defaults, and
+    // whatever was recoverable in it (a term of points, usually) was gone for
+    // good. A truncated write or a bad character is often repairable by hand;
+    // nothing is repairable once it has been overwritten.
+    quarantineCorruptSave();
+  }
   // Fresh install, or a save too broken to read. It goes through the same repair
   // as a loaded state — defaults are not automatically self-consistent, and
   // pretending otherwise is what broke this in the first place.
   return repairPotwVideos(defaultState());
+}
+
+// Move the unreadable payload somewhere the next save cannot reach, and tell the
+// teacher — in words that say what to do, not what went wrong.
+function quarantineCorruptSave() {
+  try {
+    const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+    if (!raw) return;                       // nothing to lose; a genuinely fresh start
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const key = `${CONFIG.STORAGE_KEY}-corrupt-${stamp}`;
+    localStorage.setItem(key, raw);
+    console.warn(`store: damaged save set aside as ${key} (${raw.length} bytes)`);
+    if (typeof document !== 'undefined') {
+      // The banner has to survive module load order, so it waits for a body.
+      const show = () => showCorruptSaveNotice(key, raw.length);
+      if (document.body) show();
+      else document.addEventListener('DOMContentLoaded', show, { once: true });
+    }
+  } catch (e2) {
+    // Storage is refusing writes entirely — persist() will raise its own banner.
+    console.warn('store: could not quarantine the damaged save', e2);
+  }
+}
+
+function showCorruptSaveNotice(key, bytes) {
+  if (typeof document === 'undefined' || document.getElementById('store-corrupt-save')) return;
+  const bar = document.createElement('div');
+  bar.id = 'store-corrupt-save';
+  bar.setAttribute('role', 'alert');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:14px 18px;'
+    + 'background:#78350f;color:#fff;font:600 15px/1.45 system-ui,sans-serif;'
+    + 'box-shadow:0 -6px 24px rgba(0,0,0,.5);display:flex;gap:14px;align-items:center;';
+  bar.innerHTML = `<span style="font-size:22px">&#128737;&#65039;</span>
+    <span style="flex:1">
+      <b>This app started with a blank term.</b><br>
+      The saved data on this computer could not be read, so it has been set aside
+      rather than written over (${bytes.toLocaleString()} characters, kept as
+      <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:4px">${key}</code>).
+      <b>Restore your most recent backup</b> in the Teacher Admin panel, and tell
+      whoever set this up before carrying on — the old data may still be recoverable.
+    </span>
+    <button type="button" style="flex:0 0 auto;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.5);
+      background:transparent;color:#fff;font:inherit;cursor:pointer">Dismiss</button>`;
+  bar.querySelector('button').addEventListener('click', () => bar.remove());
+  (document.body || document.documentElement).appendChild(bar);
 }
 
 // A failed save used to be a console.warn and nothing else. That is the worst

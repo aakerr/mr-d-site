@@ -204,8 +204,14 @@ function ensureSubscribed() {
 async function boot() {
   if (initialized) return;
   initialized = true;
-  if (!supported()) return;          // graceful degradation (Firefox/Safari)
+  // SUBSCRIBE FIRST, ALWAYS. This used to sit below the supported() check, so on
+  // any browser without showDirectoryPicker — Firefox, Safari — the daily
+  // safety-net download never ran, while backup.health() and the shell's cloud
+  // tooltip both went on promising "a backup file is saved to your Downloads
+  // once a day". The folder autosave genuinely needs the File System Access
+  // API; the daily download does not, and works everywhere.
   ensureSubscribed();                // subscribe even before a folder is chosen
+  if (!supported()) return;          // folder autosave degrades; the download does not
   try {
     lastDailyDate = (await idbGet(DAILY_KEY)) || null;
     const handle = await idbGet(HANDLE_KEY);
