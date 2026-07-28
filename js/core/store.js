@@ -1800,7 +1800,12 @@ export const store = {
       const d = until.getDay();
       if (d !== 0 && d !== 6) left--;      // Sunday / Saturday do not count
     }
-    state.frozen[houseId] = until.getTime();
+    // A second Axe landing on an already-frozen house can only EXTEND the
+    // sentence. Recomputing from today would let a fresh 1-day roll quietly
+    // thaw a house still serving five — the class that paid for the long
+    // freeze would watch it evaporate.
+    const current = Number(state.frozen[houseId]) || 0;
+    state.frozen[houseId] = Math.max(current, until.getTime());
     emit();
   },
   // ----- the three information items -------------------------------------------
