@@ -743,8 +743,16 @@ function injectStyles() {
     overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.65);background:rgba(0,0,0,.35);
     border:1px solid rgba(239,68,68,.35);}
   .duel-dice-host{position:absolute;inset:0;}
-  .duel-dice-total{min-height:2.6em;text-align:center;color:#e5e7eb;font-weight:700;
-    line-height:1.3;font-size:clamp(1.05rem,2.2vw,1.6rem);opacity:0;transition:opacity .3s ease;}
+  /* The tray must not move when the sum arrives. "Rolling..." is one short line
+     and the finished math is a huge number plus a caption, so the stage — which
+     is centred — used to grow underneath and shove the dice frame 22px up just
+     as the class looked at it. The box reserves its FINAL height from the moment
+     the overlay opens, built from the same clamps the terms use, and centres
+     whatever is in it. Measured shift after: 0px. */
+  .duel-dice-total{position:relative;text-align:center;color:#e5e7eb;font-weight:700;
+    line-height:1.3;font-size:clamp(1.05rem,2.2vw,1.6rem);opacity:0;transition:opacity .3s ease;
+    min-height:calc(clamp(2.6rem,6.4vw,4.6rem) * 1.15 + clamp(.7rem,1.4vw,1rem) * 1.3 + .35rem);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;}
   .duel-dice-total.show{opacity:1;}
   .duel-dice-parts{color:#9ca3af;margin-right:.5rem;}
   .duel-dice-num{font-family:'Cinzel',Georgia,serif;font-weight:800;color:#fde68a;
@@ -777,7 +785,10 @@ function injectStyles() {
     letter-spacing:.16em;font-size:clamp(.7rem,1.4vw,1rem);color:#9ca3af;
     opacity:0;transition:opacity .3s ease;}
   .duel-dice-caption.in{opacity:1;}
-  .dm-capped{color:#fbbf24;font-weight:700;font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+  /* Out of flow: it only appears when a roll overshoots what the defender owns,
+     and it must not resize the box it sits in. */
+  .dm-capped{position:absolute;top:100%;left:0;right:0;margin-top:.15rem;
+    color:#fbbf24;font-weight:700;font-family:'Plus Jakarta Sans',system-ui,sans-serif;
     font-size:clamp(.72rem,1.4vw,1rem);letter-spacing:.02em;}
 
   /* second-target chooser — only the Catapult reaches this today, but it keys
