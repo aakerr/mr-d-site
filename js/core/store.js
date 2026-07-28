@@ -2054,13 +2054,38 @@ export const store = {
 
   // ----- transaction correction (the only way to undo a mis-award) -----
 
+  // ZERO IS THE FLOOR — on deletes too. addPoints trims every write so a
+  // total can never go below zero, but deleting a past "+300" from a house
+  // that has since spent those points used to sneak the total negative
+  // through the back door. The guard mirrors the write-side rule: refuse
+  // any removal that would leave the house's term total below zero.
+  //
+  // Returns the removed transaction (truthy) on success, false on refusal
+  // or unknown id — same truthiness as the old true/false contract, so
+  // existing callers keep working. explainRemoveRefusal() below says WHY
+  // in words, for the UI that wants to toast the refusal.
   removeTransaction(id) {
     const i = state.transactions.findIndex((t) => t.id === id);
     if (i < 0) return false;
+    const tx = state.transactions[i];
+    if (tx.delta > 0 && store.getTotal(tx.houseId, 'term') - tx.delta < 0) return false;
     state.transactions.splice(i, 1);
     bumpLedger();
     emit();
-    return true;
+    return tx;
+  },
+
+  // Why removeTransaction would refuse, in words a teacher can act on —
+  // same pattern as explainRefusal for writes. Returns null when the
+  // removal WILL go through.
+  explainRemoveRefusal(id) {
+    const tx = state.transactions.find((t) => t.id === id);
+    if (!tx) return 'That ledger entry no longer exists.';
+    if (tx.delta > 0 && store.getTotal(tx.houseId, 'term') - tx.delta < 0) {
+      const name = HOUSES[tx.houseId]?.name || 'That house';
+      return `${name} has already spent those points — removing this +${tx.delta} would put them below zero. Nothing was removed.`;
+    }
+    return null;
   },
 
   // ----- intro video presets (teacher-editable) -----
