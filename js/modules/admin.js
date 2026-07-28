@@ -7,7 +7,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
-import { lock, DEFAULT_PIN } from '../core/lock.js';
+import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 import { buildSampleState } from '../core/sampledata.js';  // ⚙️ Settings → "Load sample data"
 import { escapeHtml as esc } from '../core/escape.js';
@@ -75,7 +75,10 @@ let awardForm = null;                 // in-progress quick-award preset editor (
 // Teacher PIN card (Settings tab). mode is only meaningful once a PIN exists:
 // null = the default on/off summary view, 'change' / 'off' = the inline form
 // asking for the current PIN before either action goes through.
-let lockUi = { mode: null, currentPin: '', newPin: DEFAULT_PIN, confirmPin: DEFAULT_PIN, error: '' };
+// The PIN boxes deliberately start EMPTY — they used to seed DEFAULT_PIN as
+// a suggestion, but anyone who has seen the repo knows that number, and the
+// firstrun wizard ships its PIN field empty for the same reason.
+let lockUi = { mode: null, currentPin: '', newPin: '', confirmPin: '', error: '' };
 let helpState = null;                 // null | 'loading' | 'ok' | 'unavailable' (Help tab)
 let pendingPdf = null;                // { key, file, rest } awaiting the presentation-vs-resource choice
 let musicPreview = null;              // { el, screen } — the one background-music preview clip playing, if any
@@ -886,9 +889,14 @@ function updateQuestPreview({ pointsChanged = false } = {}) {
   if (pointsChanged && !questForm.penaltyTouched && el('admin-quest-penalty')) {
     el('admin-quest-penalty').value = Math.round((Number(points) || 0) / 2);
   }
+  // A blank penalty box previews as the half-the-reward default (undefined
+  // routes questPenalty to its fallback), matching what saveQuestFromForm
+  // will actually store — the preview must not say "no penalty" for a quest
+  // that will save with one.
+  const penRaw = el('admin-quest-penalty') ? el('admin-quest-penalty').value : questForm.penalty;
   el('admin-quest-preview').textContent = questSentence({
     points,
-    penalty: el('admin-quest-penalty') ? el('admin-quest-penalty').value : questForm.penalty,
+    penalty: String(penRaw ?? '').trim() === '' ? undefined : penRaw,
     repeatable: questForm.repeatable,
   });
 }
@@ -919,7 +927,11 @@ function saveQuestFromForm() {
     type: f.type,
     icon: f.icon,
     repeatable: f.repeatable,
-    penalty: Number(f.penalty),
+    // A blanked penalty box means "use the default" — the half-the-reward
+    // rule the hint under the field promises. Number('') is 0, so passing it
+    // through would silently save a no-penalty quest instead; undefined lets
+    // store.saveQuest apply its own default. Typing 0 still means 0.
+    penalty: String(f.penalty ?? '').trim() === '' ? undefined : Number(f.penalty),
   });
   if (!saved) { f.saveError = "Something in this quest wasn't accepted. Check the title and reward."; renderQuestModal(); return; }
   const wasNew = f.isNew;
@@ -2272,9 +2284,12 @@ function awardPtsLabel(points) {
 function awardSentence(f) {
   const n = Math.round(Number(f?.points));
   if (!Number.isFinite(n) || n === 0) return 'Enter a points value to see a preview.';
+  // Neutral phrasing on purpose — the button applies to whichever house is
+  // selected on Records, and naming one (it used to say "Camelot") reads
+  // wrong the moment the teacher renames or never uses that house.
   return n > 0
-    ? `Tapping this gives Camelot +${n} points.`
-    : `Tapping this takes ${Math.abs(n)} points from Camelot.`;
+    ? `Tapping this gives the selected house +${n} points.`
+    : `Tapping this takes ${Math.abs(n)} points from the selected house.`;
 }
 
 function awardRowHTML(p, i, total) {
@@ -3278,13 +3293,19 @@ function syncTermMarkers(termStart, termWeeks) {
 
 function saveSettings() {
   const store = ctxRef.store;
-  const termStart = el('admin-term-start').value || store.getSettings().termStart;
+  // A cleared date box falls back to the saved value — the term always needs
+  // SOME start date — but the toast must say so: a plain "saved" over a
+  // silently-kept old date told the teacher the clear had worked.
+  const typedStart = el('admin-term-start').value;
+  const termStart = typedStart || store.getSettings().termStart;
   let termWeeks = Number(el('admin-term-weeks').value);
   if (!Number.isFinite(termWeeks) || termWeeks < 1) termWeeks = 9;
   termWeeks = Math.min(52, Math.round(termWeeks));
   store.updateSettings({ termStart, termWeeks });
   syncTermMarkers(termStart, termWeeks);
-  toast('Term settings saved — markers placed on the calendar.');
+  toast(typedStart
+    ? 'Term settings saved — markers placed on the calendar.'
+    : 'Term settings saved — the start-date box was empty, so the previous date was kept.');
   renderBody({ force: true });   // explicit save must repaint even if still focused
 }
 
@@ -3562,6 +3583,10 @@ function toggleDownloadBackup() {
 // or writes settings.lock directly.
 function resetLockUi() { lockUi = { mode: null, currentPin: '', newPin: '', confirmPin: '', error: '' }; }
 
+// Same gate the firstrun wizard applies: 4 to 8 digits, nothing else. The PIN
+// pad is a digit pad, so a PIN with letters in it could never be typed back in.
+const PIN_RE = /^\d{4,8}$/;
+
 function renderLockCard() {
   const enabled = lock.isEnabled();
   const s = ctxRef.store.getSettings();
@@ -3572,16 +3597,16 @@ function renderLockCard() {
   if (!enabled) {
     body = `
       <p class="admin-mini">Puts a PIN in front of the Admin panel and point-award actions, so a student can't wander up to the board while you're away and start tapping. Nothing students do themselves — quests, the shop, the dice — is affected.</p>
-      <p class="admin-mini">The boxes start filled in with <b>${esc(DEFAULT_PIN)}</b> as a suggestion — type over it with something of your own if you would rather. <b>The lock is off until you tap the button below.</b></p>
+      <p class="admin-mini">Choose a PIN of <b>4 to 8 digits</b> and type it in both boxes — they start empty on purpose, so the number is yours alone. <b>The lock is off until you tap the button below.</b></p>
       ${errLine}
       <div class="admin-two">
         <div>
-          <label class="admin-flabel" for="admin-lock-new">New PIN (4+ digits)</label>
-          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.newPin)}" />
+          <label class="admin-flabel" for="admin-lock-new">New PIN (4–8 digits)</label>
+          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="8" value="${esc(lockUi.newPin)}" />
         </div>
         <div>
           <label class="admin-flabel" for="admin-lock-confirm">Confirm PIN</label>
-          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.confirmPin)}" />
+          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="8" value="${esc(lockUi.confirmPin)}" />
         </div>
       </div>
       <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="lock-set">Turn on the lock</button>
@@ -3594,12 +3619,12 @@ function renderLockCard() {
       <input id="admin-lock-current" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.currentPin)}" />
       <div class="admin-two" style="margin-top:10px">
         <div>
-          <label class="admin-flabel" for="admin-lock-new">New PIN (4+ digits)</label>
-          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.newPin)}" />
+          <label class="admin-flabel" for="admin-lock-new">New PIN (4–8 digits)</label>
+          <input id="admin-lock-new" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="8" value="${esc(lockUi.newPin)}" />
         </div>
         <div>
           <label class="admin-flabel" for="admin-lock-confirm">Confirm new PIN</label>
-          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(lockUi.confirmPin)}" />
+          <input id="admin-lock-confirm" class="admin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="8" value="${esc(lockUi.confirmPin)}" />
         </div>
       </div>
       <div class="admin-backup-row" style="margin-top:12px">
@@ -3663,10 +3688,10 @@ function renderLockCard() {
 async function saveLockSet() {
   lockUi.newPin = el('admin-lock-new') ? el('admin-lock-new').value.trim() : '';
   lockUi.confirmPin = el('admin-lock-confirm') ? el('admin-lock-confirm').value.trim() : '';
-  if (lockUi.newPin.length < 4) { lockUi.error = 'The PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  if (!PIN_RE.test(lockUi.newPin)) { lockUi.error = 'The PIN needs to be 4 to 8 digits (numbers only).'; renderBody({ force: true }); return; }
   if (lockUi.newPin !== lockUi.confirmPin) { lockUi.error = 'Those two PINs don’t match.'; renderBody({ force: true }); return; }
   const ok = await lock.setPin(lockUi.newPin);
-  if (!ok) { lockUi.error = 'The PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  if (!ok) { lockUi.error = 'The PIN needs to be 4 to 8 digits (numbers only).'; renderBody({ force: true }); return; }
   resetLockUi();
   renderBody({ force: true });
   toast('Teacher PIN turned on.');
@@ -3676,7 +3701,7 @@ async function saveLockChange() {
   lockUi.currentPin = el('admin-lock-current') ? el('admin-lock-current').value.trim() : '';
   lockUi.newPin = el('admin-lock-new') ? el('admin-lock-new').value.trim() : '';
   lockUi.confirmPin = el('admin-lock-confirm') ? el('admin-lock-confirm').value.trim() : '';
-  if (lockUi.newPin.length < 4) { lockUi.error = 'The new PIN needs to be at least 4 digits.'; renderBody({ force: true }); return; }
+  if (!PIN_RE.test(lockUi.newPin)) { lockUi.error = 'The new PIN needs to be 4 to 8 digits (numbers only).'; renderBody({ force: true }); return; }
   if (lockUi.newPin !== lockUi.confirmPin) { lockUi.error = 'Those two new PINs don’t match.'; renderBody({ force: true }); return; }
   if (!(await lock.verify(lockUi.currentPin))) { lockUi.error = 'That current PIN is wrong.'; renderBody({ force: true }); return; }
   await lock.setPin(lockUi.newPin);
@@ -3875,14 +3900,18 @@ function renderPotw() {
           const weekLine = pr.weekOf
             ? `<span class="admin-week-line">📅 Week of ${esc(weekRangeLabel(pr.weekOf))}</span>`
             : '<span class="admin-week-line none">📅 No week set — won\'t play automatically</span>';
-          const vid = videoOpts.find((v) => v.id === (pr.introVideoId || 'rock'));
+          const vid = videoOpts.find((v) => v.id === (pr.introVideoId || CONFIG.POTW_DEFAULT_VIDEO_ID));
           // Wrapped so verifyPotwMedia() can flip it if this destination depends
           // on a stored video blob that no longer exists (no URL fallback).
           const reliesOnBlob = store.getPotwVideoUrl(pr) ? '0' : '1';
+          // The retired 'rock' preset lingered here as both the id fallback
+          // (above) and this label — a destination with no explicit choice
+          // plays CONFIG.POTW_DEFAULT_VIDEO_ID, so name THAT preset's label.
+          const defaultVid = videoOpts.find((v) => v.id === CONFIG.POTW_DEFAULT_VIDEO_ID);
           const vidLine = `<span class="admin-video-check" data-key="${esc(k)}" data-relies="${reliesOnBlob}">${
             pr.videoUrl
               ? '<span class="admin-pres-tag">🎬 Custom video link</span>'
-              : `<span class="admin-pres-tag">🎬 ${esc(vid ? vid.label : 'Rock')} intro</span>`
+              : `<span class="admin-pres-tag">🎬 ${esc(vid ? vid.label : (defaultVid ? defaultVid.label : 'Default'))} intro</span>`
           }</span>`;
           return `
           <div class="admin-potw-card${isPlaying ? ' active' : ''}">
@@ -4341,7 +4370,10 @@ function renderPotwModal() {
   if (weekMonday) {
     const clash = Object.entries(store.getPotwProfiles())
       .find(([k, p]) => k !== f.key && p.weekOf && mondayOfDate(p.weekOf) === weekMonday);
-    if (clash) weekClash = `<div class="admin-warn-line">⚠️ <b>${esc(clash[1].title)}</b> is already set for this week — the most recently added one will win.</div>`;
+    // store.resolvePotwKey breaks a same-week tie by insertion order (its
+    // sort is stable and both share a start date), so the destination added
+    // FIRST keeps playing — the opposite of what this line used to claim.
+    if (clash) weekClash = `<div class="admin-warn-line">⚠️ <b>${esc(clash[1].title)}</b> is already set for this week — whichever was added first will play. Give one of them a different week.</div>`;
   }
 
   // ---- step 3: location ----
@@ -5422,7 +5454,7 @@ function onClick(e) {
       if (!def) break;
       openConfirm(
         `Switch to "${def.label}"?`,
-        `This is not cosmetic. The Magic Shop's items change completely — different items, different prices — and anything Houses are currently holding or have stockpiled is cleared out. Points, the ledger, quests, the planner and every other setting are left exactly as they are. ${def.blurb}`,
+        `This is not cosmetic. The Magic Shop's items change completely — different items, different prices — and anything Houses are currently holding or have stockpiled is cleared out. Any active freezes, Shrouds and revealed defenses are reset too, along with the last strike's Time Turner window. Points, the ledger, quests, the planner and every other setting are left exactly as they are. ${def.blurb}`,
         () => {
           const applied = store.setCombatMode(target);
           activeTab = 'battle';
