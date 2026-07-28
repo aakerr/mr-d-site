@@ -177,18 +177,54 @@ function injectStyles() {
   style.id = STYLE_ID;
   style.textContent = `
   /* ---- landing ---- */
+  /* THE FOUR ARMIES. The owner's painting (all four houses drawn up on the
+     field, each under its real banner) runs full-bleed behind everything.
+     Two scrims sit on top of it in the same background stack: a vertical
+     one that darkens sky and foreground so the picture never fights the
+     top bar, and a central ellipse that clears a stage for the text column
+     down the no-man's-land in the middle of the field. */
   .battle-landing{position:relative;height:100%;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;text-align:center;overflow:hidden;gap:1.5rem;
-    background:radial-gradient(ellipse at 50% 30%,#2a0a0a 0%,#0b0f19 68%);}
-  .battle-landing-eyebrow{color:#f87171;letter-spacing:.35em;text-transform:uppercase;
-    font-size:clamp(.85rem,1.6vw,1.1rem);font-weight:700;}
-  .battle-landing-title{font-size:clamp(1.5rem,3.2vw,2.25rem);color:#9ca3af;margin-bottom:.5rem;}
-  .battle-ignite-btn{position:relative;background:linear-gradient(135deg,#7f1d1d,#b91c1c 45%,#ef4444);
-    color:#fff;font-family:'Cinzel',Georgia,serif;font-weight:800;
-    font-size:clamp(1.6rem,4.2vw,3rem);padding:clamp(24px,4vw,44px) clamp(40px,6vw,72px);
-    border:3px solid #fca5a5;border-radius:1.5rem;min-height:48px;cursor:pointer;
-    letter-spacing:.04em;box-shadow:0 0 0 0 rgba(239,68,68,.55),0 20px 60px rgba(0,0,0,.6);
-    animation:battle-pulse-glow 2s ease-in-out infinite;transition:transform .15s ease;}
+    align-items:center;justify-content:center;text-align:center;overflow:hidden;gap:1.4rem;
+    background:
+      radial-gradient(ellipse 46% 60% at 50% 46%,rgba(5,6,12,.62),rgba(5,6,12,0) 100%),
+      linear-gradient(180deg,rgba(4,5,10,.72) 0%,rgba(4,5,10,.28) 34%,rgba(4,5,10,.30) 62%,rgba(4,5,10,.58) 100%),
+      url('images/four-armies.jpg') center 38%/cover no-repeat,#0b0f19;}
+  /* Short red rules flanking the eyebrow, as on the poster comp. */
+  .battle-landing-eyebrow{color:#ef4444;letter-spacing:.42em;text-transform:uppercase;
+    font-size:clamp(.85rem,1.6vw,1.1rem);font-weight:700;display:flex;align-items:center;
+    gap:1rem;text-shadow:0 2px 8px rgba(0,0,0,.9);}
+  .battle-landing-eyebrow::before,.battle-landing-eyebrow::after{content:'';height:2px;
+    width:clamp(28px,3.5vw,52px);background:linear-gradient(90deg,transparent,#b91c1c);}
+  .battle-landing-eyebrow::after{background:linear-gradient(90deg,#b91c1c,transparent);}
+  /* The big steel wordmark — the cinematic title's forged gradient, standing
+     still. The flat pink stays underneath as the no-clip fallback. */
+  .battle-landing-wordmark{font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-size:clamp(2.6rem,7vw,5.2rem);letter-spacing:.08em;line-height:1;color:#e5e7eb;
+    background:linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    -webkit-text-stroke:1px rgba(10,14,24,.45);
+    filter:drop-shadow(0 4px 14px rgba(0,0,0,.85));}
+  .battle-landing-title{font-size:clamp(1.3rem,2.6vw,2rem);color:#e5e7eb;margin-bottom:.35rem;
+    text-shadow:0 2px 10px rgba(0,0,0,.9);}
+  /* The ignite button as a war banner: a gold bevel frame (the wrapper's
+     gradient showing through 4px of padding), a deep red field, gold Cinzel
+     lettering, and the warm pulse it has always had — now in ember orange so
+     it reads as firelight against the painting. */
+  .battle-ignite-btn{position:relative;cursor:pointer;border:0;border-radius:14px;
+    padding:4px;background:linear-gradient(180deg,#f2d27c 0%,#b98a2e 45%,#6e4c14 100%);
+    box-shadow:0 0 0 1px rgba(58,36,8,.9),0 18px 50px rgba(0,0,0,.65),0 0 46px 6px rgba(255,120,40,.28);
+    animation:battle-pulse-glow 2.4s ease-in-out infinite;transition:transform .15s ease;}
+  .battle-ignite-inner{display:flex;align-items:center;justify-content:center;
+    gap:.35em;border-radius:10px;min-height:48px;
+    font-size:clamp(1.5rem,3.8vw,2.7rem);
+    padding:clamp(20px,3.2vw,34px) clamp(38px,5.5vw,64px);
+    background:linear-gradient(175deg,#a31c22 0%,#8a1418 55%,#6e0f13 100%);
+    box-shadow:inset 0 0 0 2px rgba(255,222,150,.28),inset 0 14px 30px rgba(255,190,120,.14),inset 0 -16px 34px rgba(0,0,0,.5);}
+  .battle-ignite-text{font-family:'Cinzel',Georgia,serif;font-weight:800;
+    font-size:1em;letter-spacing:.06em;color:#f6c453;
+    background:linear-gradient(180deg,#ffe9a8 0%,#f3c04b 55%,#c98f22 100%);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 3px rgba(40,20,0,.8));}
   /* The same crossed-swords mark as the dashboard tile and the cinematic —
      one graphic everywhere Battle Day announces itself. max-width:none guards
      against the preflight img rule collapsing it (same trap as the cinematic). */
@@ -198,10 +234,11 @@ function injectStyles() {
   .battle-ignite-btn:hover{transform:scale(1.04);}
   .battle-ignite-btn:active{transform:scale(.96);}
   @keyframes battle-pulse-glow{
-    0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.55),0 20px 60px rgba(0,0,0,.6);}
-    50%{box-shadow:0 0 50px 14px rgba(239,68,68,.65),0 20px 70px rgba(0,0,0,.7);}
+    0%,100%{box-shadow:0 0 0 1px rgba(58,36,8,.9),0 18px 50px rgba(0,0,0,.65),0 0 40px 4px rgba(255,120,40,.24);}
+    50%{box-shadow:0 0 0 1px rgba(58,36,8,.9),0 18px 56px rgba(0,0,0,.7),0 0 62px 14px rgba(255,140,50,.42);}
   }
-  .battle-landing-sub{color:#6b7280;font-size:clamp(.9rem,1.6vw,1.1rem);max-width:32rem;}
+  .battle-landing-sub{color:#cbd5e1;font-size:clamp(.9rem,1.6vw,1.1rem);max-width:34rem;
+    text-shadow:0 2px 8px rgba(0,0,0,.95);}
 
   /* ---- cinematic overlay (kept verbatim — the entry everyone loves) ---- */
   /* The gradient's CENTRE used to be 35% opaque, so the landing page — its
@@ -1083,9 +1120,10 @@ function renderLanding() {
   rootEl.innerHTML = `
     <div class="battle-landing">
       <div class="battle-landing-eyebrow">Friday Showdown</div>
+      <div class="battle-landing-wordmark">BATTLE DAY</div>
       <div class="battle-landing-title">The houses stand ready&hellip;</div>
-      <button type="button" class="battle-ignite-btn font-display"><img class="battle-ignite-icon" src="images/icon-battle.png" alt=""> BATTLE DAY!</button>
-      <p class="battle-landing-sub">Tap to ignite Combat Mode — one house picks an opponent, spends its magic items, and strikes.</p>
+      <button type="button" class="battle-ignite-btn font-display"><span class="battle-ignite-inner"><img class="battle-ignite-icon" src="images/icon-battle.png" alt=""> <span class="battle-ignite-text">BATTLE DAY!</span></span></button>
+      <p class="battle-landing-sub">Tap to ignite Combat Mode — one house picks an opponent,<br>spends its magic items, and strikes.</p>
     </div>`;
   const btn = rootEl.querySelector('.battle-ignite-btn');
   if (btn) btn.addEventListener('click', triggerCinematic);
