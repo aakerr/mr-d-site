@@ -29,6 +29,11 @@ let clickHandler = null;
 let currentRenderFn = null; // set while mounted; lets async media loads trigger a re-render
 let activeWildRollDispose = null; // dispose fn for an in-flight dice3d roll, cleared on settle/unmount
 let wildRollActive = false; // true from purchase-confirm through overlay teardown — blocks a second concurrent roll
+// Set while a PAID wildcard's outcome hasn't been written to the store yet
+// (the die is still tumbling). Holds the recorder function so unmount() can
+// decide the fate with a substitute draw — a house that has spent its points
+// must get its outcome, wherever the teacher navigates. See playWildReveal.
+let pendingWildOutcome = null;
 // In-flight guard for resolvePurchase() — module-scoped (not a DOM attribute
 // or state on `s`) because a store mutation mid-purchase (store.purchase(),
 // addPoints(), activateShield(), etc.) triggers store.subscribe(doRender),
@@ -1150,10 +1155,12 @@ function blockFx(targetChip) {
 
 // 'wild' is its own flow: pay immediately, then a REAL d20 roll (via the
 // shared dice3d API) decides the swing live on screen — the class watches it
-// land before the score changes. The outcome table is shown beside the tray
-// so the mapping is never a mystery. Points apply the instant the die
-// settles (or, in the fallback/rejection path, the instant a substitute draw
-// resolves) — never silently, and never before the reveal.
+// land, and the swing is written to the store the INSTANT the die settles.
+// The outcome table is shown beside the tray so the mapping is never a
+// mystery. Everything after the settle — the number, the highlight, the
+// treasury count — is pure presentation of a ledger entry that already
+// exists, so navigating away mid-reveal can no longer eat a paid-for
+// outcome (it used to: the swing sat in a setTimeout that unmount cleared).
 function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
   const store = ctxRef.store;
   const audio = ctxRef.audio;
@@ -1162,12 +1169,32 @@ function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
   const table = wildOutcomeTable(amount);
   wildRollActive = true;
 
+  // The one writer of this roll's outcome. Idempotent — only the first call
+  // writes — and registered as pendingWildOutcome so unmount() can invoke it
+  // with a substitute draw if the shop is torn down while the die is still
+  // tumbling (the cost is already spent; the outcome must not be lost).
+  // Captures the pre-swing total so the reveal can animate the treasury from
+  // the numbers that were true at settle time, however late it plays.
+  let recorded = null;
+  const recordOutcome = (value) => {
+    if (recorded) return recorded;
+    const row = wildRowForRoll(value, table) || { min: value, max: value, amount: 0 };
+    const swing = row.amount;
+    const startTotal = store.getTotal(buyerId, 'term'); // cost already spent; swing lands next
+    const tx = store.addPoints(buyerId, swing, {
+      reason: `${item.name} — rolled ${value}: ${swing === 0 ? 'no change' : swing > 0 ? 'fortune!' : 'misfortune!'}`,
+      tag: 'wild',
+    });
+    recorded = { value, row, swing, applied: tx ? tx.delta : 0, startTotal };
+    pendingWildOutcome = null;
+    return recorded;
+  };
+  pendingWildOutcome = recordOutcome;
+
   // Defensive fallback if the shared overlay host is ever missing — still
   // resolves fairly and never silently.
   if (!host) {
-    const value = 1 + Math.floor(Math.random() * 20);
-    const row = wildRowForRoll(value, table) || { amount: 0 };
-    store.addPoints(buyerId, row.amount, { reason: `${item.name} — rolled ${value}`, tag: 'wild' });
+    recordOutcome(1 + Math.floor(Math.random() * 20));
     if (rootEl === mountedRootAtStart) render(s);
     wildRollActive = false;
     return;
@@ -1220,12 +1247,17 @@ function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
     // not at settle, so the die stays visibly at rest through the reveal.
     if (activeWildRollDispose) { try { activeWildRollDispose(); } catch (e) {} activeWildRollDispose = null; }
     wildRollActive = false;
+    // Store changes were held back from the screen while the overlay ran
+    // (see the subscribe guard in mount()) — paint the true state now.
+    if (rootEl === mountedRootAtStart && currentRenderFn) currentRenderFn();
   }
 
   // Pacing (so the class can actually follow the roll, not blink and miss it):
-  //   die settles -> rolled number + matching stakes row hold ~1.5-2s
-  //   -> fade out -> RESULT ("+6"/"−12") appears, holds a full 2s
-  //   -> ONLY THEN points are applied and the treasury count animates up/down.
+  //   die settles (points are WRITTEN here) -> rolled number + matching
+  //   stakes row hold ~1.5-2s -> fade out -> RESULT ("+6"/"−12") appears,
+  //   holds a full 2s -> ONLY THEN the treasury count animates up/down.
+  // The score is already correct from the first beat; the reveal just takes
+  // its time telling the class about it.
   const HOLD_ROLL_MS = 1800;
   const FADE_MS = 300;
   const HOLD_RESULT_MS = 2000;
@@ -1233,11 +1265,11 @@ function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
   const POST_COUNT_MS = 500;
 
   function finish(value) {
-    const row = wildRowForRoll(value, table) || { min: value, max: value, amount: 0 };
-    const swing = row.amount;
+    // Write the outcome FIRST — everything below is theatre over a ledger
+    // entry that now exists, safe against any navigation.
+    const { row, swing, applied, startTotal } = recordOutcome(value);
     const good = swing > 0;
     const neutral = swing === 0;
-    const startTotal = store.getTotal(buyerId, 'term'); // cost already spent; swing not applied yet
 
     // ---- die settled: show the raw rolled number over the tray and light up
     // the stakes row it lands on; hold so it's actually readable.
@@ -1273,13 +1305,9 @@ function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
         showBanner(`${buyer.name} rolled ${value} on ${item.name} — ${neutral ? 'nothing happens.' : `${good ? '+' : ''}${swing} pts!`} ${item.emoji || '🎲'}`);
 
         later(() => {
-          // ---- ONLY NOW do the points actually move: apply + animate the
-          // treasury counter together, so the stored total and the screen
-          // change in lockstep.
-          store.addPoints(buyerId, swing, {
-            reason: `${item.name} — rolled ${value}: ${neutral ? 'no change' : good ? 'fortune!' : 'misfortune!'}`,
-            tag: 'wild',
-          });
+          // ---- the points already moved at settle (recordOutcome); this is
+          // the moment the SCREEN catches up: the shop repaints and the
+          // treasury counter animates the delta that was really written.
           audio.sfx(good ? 'coin' : 'thud');
           if (rootEl === mountedRootAtStart) render(s);
 
@@ -1291,7 +1319,7 @@ function playWildReveal(s, item, buyer, buyerId, mountedRootAtStart) {
           const treasuryLineEl = overlay.querySelector('.shop-wild-treasury-line');
           if (treasuryLineEl) {
             treasuryLineEl.classList.add('show');
-            animateTreasuryCount(treasuryLineEl, startTotal, startTotal + swing, COUNT_MS, finishUp);
+            animateTreasuryCount(treasuryLineEl, startTotal, startTotal + applied, COUNT_MS, finishUp);
           } else {
             finishUp();
           }
@@ -1611,10 +1639,22 @@ export default {
     // would blow away the disabled attribute on the Confirm button. The
     // explicit render(s) calls inside resolvePurchase() still run regardless,
     // so the final state always paints once the guard clears.
-    unsub = store.subscribe(() => { if (!purchaseInFlight) doRender(); });
+    // Also suspended while a wildcard reveal is running: the swing is written
+    // the instant the die settles, but the treasury behind the blur must not
+    // move until the reveal's own beat — finish() repaints explicitly at
+    // exactly that moment, and teardown always ends with the true state.
+    unsub = store.subscribe(() => { if (!purchaseInFlight && !wildRollActive) doRender(); });
   },
 
   unmount() {
+    // A paid-for wildcard whose outcome hasn't been written yet (the teacher
+    // navigated away while the die was still tumbling): decide it NOW with a
+    // fair substitute draw. The reveal is gone, but the ledger entry — and
+    // the points — are correct the moment any other screen looks at them.
+    if (pendingWildOutcome) {
+      try { pendingWildOutcome(1 + Math.floor(Math.random() * 20)); } catch (e) { console.warn('shop:', e); }
+      pendingWildOutcome = null;
+    }
     clearTimers();
     clearFx();
     // A pending dice3d roll self-disposes once its host leaves the document
