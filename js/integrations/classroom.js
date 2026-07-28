@@ -18,8 +18,10 @@
  *    - Copy the Client ID
  * 6. Paste the Client ID into CLASSROOM_CONFIG.CLIENT_ID below
  * 7. Serve the app over https (or localhost for testing)
- * 8. initClassroomAuth() will be called at startup; if CLIENT_ID is set,
- *    it will initialize the Google Identity Services flow
+ * 8. This is a scaffold: nothing in the app calls initClassroomAuth() yet.
+ *    Wiring it into main.js (or wherever this integration is switched on)
+ *    is still future work — once that's done, calling it with CLIENT_ID
+ *    set will initialize the Google Identity Services flow.
  */
 
 export const CLASSROOM_CONFIG = {
