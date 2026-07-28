@@ -12,6 +12,10 @@
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { lock } from '../core/lock.js';
 import { createDiceSim } from './dice3d/sim.js';
+// The shared escaper (see escape.js for why there is exactly one). This file
+// never distinguished content from attribute positions — escapeHtml covers
+// both, aliased to the `esc` name its ~90 call sites already use.
+import { escapeHtml as esc } from '../core/escape.js';
 
 const STYLE_ID = 'battle-styles';
 
@@ -129,11 +133,6 @@ function spawnFxPlain(parent, className, ttl) {
   fxNodes.add(el);
   later(() => { el.remove(); fxNodes.delete(el); }, ttl);
   return el;
-}
-
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // Remaining-time formatter shared by shield/reduction badges.
