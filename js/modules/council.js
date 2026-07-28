@@ -122,8 +122,16 @@ const STYLE = `
   position: absolute; top: 0; bottom: 0; width: 25%;
   padding: 0 clamp(4px, 0.8vw, 20px);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-  transition: left ${MOVE_MS}ms ${SPRING};
+  transition: left ${MOVE_MS}ms ${SPRING}, transform 200ms ease, filter 200ms ease;
+  cursor: pointer;
 }
+/* 6.4 REVISED: the whole column is a tap target to that house's Records. A
+   lift-on-hover and a settle-on-press so a class watching the board can see
+   the columns are alive — same magnitude as the dashboard's own tiles
+   (dash-tile: -2px hover / scale(.96) press) — without disturbing the
+   rank-change drop/rise reaction, which animates .council-banner alone. */
+.council-col:hover { transform: translateY(-6px); filter: brightness(1.06); }
+.council-col:active { transform: translateY(-2px); filter: brightness(0.97); }
 .council-crown {
   font-size: clamp(1.1rem, 3vh, 2.2rem); line-height: 1;
   opacity: 0; transform: translateY(8px) scale(.7);
@@ -426,12 +434,30 @@ export default {
     });
 
     this._clickHandler = (e) => {
-      const btn = e.target.closest('[data-scope]');
-      if (!btn) return;
-      const scope = btn.dataset.scope === 'week' ? 'week' : 'term';
-      if (scope === this._scope) return;
-      this._scope = scope;
-      this.update(true);
+      const scopeBtn = e.target.closest('[data-scope]');
+      if (scopeBtn) {
+        const scope = scopeBtn.dataset.scope === 'week' ? 'week' : 'term';
+        if (scope !== this._scope) { this._scope = scope; this.update(true); }
+        return;
+      }
+      // 6.4 REVISED: a tap anywhere on a house's column (name, shield, banner,
+      // rank plinth — the whole thing is one tap target) hands off to Records
+      // with that house pre-selected. sessionStorage carries the intent
+      // because council.js and houses.js are separate modules with no direct
+      // reference to each other; houses.js reads-and-clears the same key on
+      // its next mount. Works mid-ribbon-scroll: the ribbon at the bottom of
+      // the screen is a different element with its own listeners, so paging
+      // there never intercepts a column tap up here.
+      const col = e.target.closest('.council-col');
+      if (col) {
+        const houseId = Number(col.dataset.house);
+        if (Number.isFinite(houseId)) {
+          try { sessionStorage.setItem('mrd-records-focus', String(houseId)); } catch (err) { /* private mode etc — navigate anyway, houses.js just falls back to its default tab */ }
+          if (this._ctx && this._ctx.registry && typeof this._ctx.registry.navigate === 'function') {
+            this._ctx.registry.navigate('houses');
+          }
+        }
+      }
     };
     el.addEventListener('click', this._clickHandler);
 

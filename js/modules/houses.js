@@ -1103,6 +1103,23 @@ export default {
     const store = ctx.store;
     const s = initInternalState(store);
 
+    // 6.4 REVISED — Council-podium handoff: a tap on a house's column there
+    // writes this key and navigates here. Read-and-clear on every mount (not
+    // just the first) so the key never survives to steer some later, unrelated
+    // visit to Records — a stale key would silently override the teacher's
+    // own tab choice the next time this screen opens on its own. `s.scope` is
+    // the one piece of state that "drives the WHOLE screen" (see
+    // initInternalState above), so overriding it before the first render is
+    // enough to land straight on that house's tab.
+    try {
+      const focusRaw = sessionStorage.getItem('mrd-records-focus');
+      if (focusRaw != null) {
+        sessionStorage.removeItem('mrd-records-focus');
+        const focusId = Number(focusRaw);
+        if (Number.isFinite(focusId) && store.HOUSES[focusId]) s.scope = focusId;
+      }
+    } catch (e) { /* sessionStorage unavailable (private mode etc) — default scope stands */ }
+
     // Toast host lives on <body>: every store change re-renders `el`, which
     // would otherwise wipe out a toast mid-animation.
     const toastHost = document.createElement('div');
