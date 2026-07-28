@@ -44,3 +44,33 @@ registry.init(ctx);
 initShell(ctx);
 initAmbient();
 registry.home();
+
+// Warm the big painted backgrounds while the dashboard idles. On GitHub Pages
+// a screen's art otherwise starts downloading the moment the screen opens —
+// a visible beat of blank scrim before the painting pops in. Loading them one
+// at a time (never in parallel) keeps the warm-up from competing with
+// whatever the current screen is still fetching; requestIdleCallback delays
+// the start until the dashboard has settled. Every file is already cached on
+// the second visit, making this free except the first time.
+const ART_PRELOAD = [
+  'images/four-armies.jpg',       // Battle Day landing/cinematic/arena
+  'images/quest-hall.jpg',        // Quests
+  'images/magic-shop.jpg',        // Magic Shop
+  'images/potw-background.jpg',   // Place of the Week landing
+  'images/die-of-destiny.jpg',    // Die of Destiny
+  'images/wheel-background.jpg',  // Wheel of Fate (three pieces)
+  'images/wheel-outside.png',
+  'images/wheel-center.png',
+  'images/council-chamber.jpg',   // Council of Four
+  ...Object.values(store.HOUSES).map((h) => h.heroImage),  // dashboard heroes
+];
+function preloadArt(queue) {
+  if (!queue.length) return;
+  const img = new Image();
+  const next = () => preloadArt(queue);
+  img.onload = next;
+  img.onerror = next;   // a missing file must not stall the rest of the queue
+  img.src = queue.shift();
+}
+const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+idle(() => preloadArt([...ART_PRELOAD]));
