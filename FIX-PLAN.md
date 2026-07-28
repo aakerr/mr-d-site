@@ -388,7 +388,7 @@ README.md and ARCHITECTURE.md are excellent but have drifted:
   single award, most-improved house, quests completed) built from data `getWeeklySeries`
   already computes. Turns the ledger into a Monday-morning ritual instead of a background
   number.
-- [ ] **5.4 Random-picker utility.** A themed "Wheel of Fate" that picks one of the four
+- [x] **5.4 Random-picker utility.** A themed "Wheel of Fate" that picks one of the four
   houses (for who answers first, who presents, tie-breaks). Fits the existing dice/fate
   aesthetic, ~a screen's worth of code, and replaces the most common physical teacher tool
   not yet in the app. (House-level only — the app deliberately has no student roster.)

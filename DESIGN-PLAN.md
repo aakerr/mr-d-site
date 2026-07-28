@@ -132,7 +132,7 @@ unless a dependency is called out. One item = one commit.
   strobe. Skip entirely when backup health is 'attention'/'none' (the existing urgent
   state must stay the dominant signal).
 
-- [ ] **7.3 Bell-ringer countdown timer on the dashboard.**
+- [x] **7.3 Bell-ringer countdown timer on the dashboard.**
   A small timer chip in the Daily Itinerary panel header (dashboard.js:269): tap opens a
   preset picker (2/5/10 min + custom), counts down large enough to read from desks,
   plays the existing `points_awarded` sfx (or a new gentle chime slot) at zero, and
