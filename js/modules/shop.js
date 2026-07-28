@@ -46,6 +46,11 @@ let pendingWildOutcome = null;
 // use. Cleared in a `finally` so a refused PIN can't wedge the modal.
 let purchaseInFlight = false;
 let carouselTeardown = null; // teardown fn from wireCarousel — torn down before every re-render and on unmount
+// Toast/banner host lives on <body>, not inside rootEl (houses.js's pattern):
+// every store change rebuilds rootEl via innerHTML, which would wipe a toast
+// mid-animation — often the very toast explaining the change. Created on
+// mount, removed (children and all) on unmount.
+let toastHost = null;
 const timers = new Set();
 const fxNodes = new Set();  // transient combat-effect DOM nodes, force-cleaned on unmount
 
@@ -1054,11 +1059,17 @@ function render(s) {
 // =============================================================================
 // feedback: banner / toast / shake
 // =============================================================================
+// Both mount into toastHost (on <body>) rather than rootEl — the banner is
+// usually announcing the very store change that is about to rebuild rootEl,
+// and as a rootEl child it died in that rebuild before anyone read it. The
+// nodes themselves are position:fixed, so where they live changes nothing
+// about where they appear.
 function showBanner(text) {
+  if (!toastHost) return;
   const el = document.createElement('div');
   el.className = 'shop-banner';
   el.textContent = text;
-  rootEl.appendChild(el);
+  toastHost.appendChild(el);
   later(() => {
     el.classList.add('shop-banner-out');
     later(() => el.remove(), 300);
@@ -1066,12 +1077,13 @@ function showBanner(text) {
 }
 
 function showToast(text) {
-  const existing = rootEl.querySelector('.shop-toast');
+  if (!toastHost) return;
+  const existing = toastHost.querySelector('.shop-toast');
   if (existing) existing.remove();
   const el = document.createElement('div');
   el.className = 'shop-toast';
   el.textContent = text;
-  rootEl.appendChild(el);
+  toastHost.appendChild(el);
   later(() => el.remove(), 2000);
 }
 
@@ -1589,6 +1601,11 @@ export default {
     rootEl = el;
     injectStyles();
     injectCarouselStyles();
+    // See the toastHost declaration at the top of the file: banners/toasts
+    // must outlive the re-render their own store change triggers.
+    toastHost = document.createElement('div');
+    toastHost.className = 'shop-toast-host';
+    document.body.appendChild(toastHost);
     const store = ctx.store;
     const s = initState();
 
@@ -1742,6 +1759,7 @@ export default {
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     clickHandler = null;
     if (carouselTeardown) { carouselTeardown(); carouselTeardown = null; }
+    if (toastHost) { try { toastHost.remove(); } catch (e) {} toastHost = null; }
     rootEl = null;
     ctxRef = null;
     currentRenderFn = null;
