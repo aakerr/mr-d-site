@@ -66,6 +66,11 @@
           "default": true,
           "description": "Master switch for all sound effects and voice lines (Admin → Sound). Turning it off silences everything, regardless of what 'sfx' or 'ambient' below are individually set to."
         },
+        "quietMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Quiet mode (Admin → 🎨 Look & Sound → Display & Theme). Mutes sound effects (forces soundEnabled off when turned on) and freezes ambient/seasonal animation, for test days or quiet work time. Absent on older saves — store.js's getQuietMode() reads it as falsy until the teacher turns it on, so no migration is needed."
+        },
         "ambient": {
           "type": "object",
           "description": "Quiet per-screen background music loops (see js/core/ambient.js). Off by default — this is opt-in, and the teacher turns it on in Admin.",

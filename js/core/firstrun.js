@@ -156,7 +156,7 @@ function stepTerm() {
       </div>
       ${savedTerm ? '<div class="fr-status fr-status-ok"><b>✅ Saved.</b> The top bar has already updated.</div>' : ''}
       <p class="fr-actions"><button type="button" class="fr-btn fr-btn-primary" data-fr-action="save-term">Save these dates</button></p>
-      <p class="fr-fineprint">You can change this whenever a new term starts — <b>🗝️ Admin → ⚙️ Settings → Term Timeline</b>. Changing it never deletes any points.</p>
+      <p class="fr-fineprint">You can change this whenever a new term starts — <b>🗝️ Admin → ⚙️ Term & World → Term Timeline</b>. Changing it never deletes any points.</p>
     `,
     next: 'Next',
   };
@@ -213,7 +213,7 @@ function stepLock() {
       <p class="fr-lede">The board is at the front of the room, and it is going to be left alone sometimes.</p>
       <p>You can put a short PIN in front of the things that matter — the Admin panel, and anything that awards or takes away points. Everything students are meant to do at the board stays open: rolling the Die of Destiny, taking on a quest, reading the standings.</p>
       ${on ? `
-        <p class="fr-lock-on">✅ <b>The PIN is on.</b> You can change it any time in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
+        <p class="fr-lock-on">✅ <b>The PIN is on.</b> You can change it any time in <b>🗝️ Admin → 🛡️ Data & Safety</b>.</p>
       ` : `
         <p class="fr-actions fr-lock-row">
           <input type="text" inputmode="numeric" autocomplete="off" maxlength="8"
@@ -221,7 +221,7 @@ function stepLock() {
           <button type="button" class="fr-btn fr-btn-primary" data-fr-action="set-pin" disabled>Turn on the PIN</button>
         </p>
         <p class="fr-lock-msg" data-fr-pin-msg hidden></p>
-        <p class="fr-fineprint">The box starts empty on purpose — a PIN the app shipped with would be a PIN anyone could look up. Pick <b>4 to 8 numbers</b> of your own. Leaving this step alone leaves the PIN off, which is fine; you can turn it on later in <b>🗝️ Admin → ⚙️ Settings</b>.</p>
+        <p class="fr-fineprint">The box starts empty on purpose — a PIN the app shipped with would be a PIN anyone could look up. Pick <b>4 to 8 numbers</b> of your own. Leaving this step alone leaves the PIN off, which is fine; you can turn it on later in <b>🗝️ Admin → 🛡️ Data & Safety</b>.</p>
       `}
       <p>You type it once and it stays unlocked for 15 minutes, so a lesson never turns into typing a PIN over and over.</p>
       <p class="fr-fineprint">Being straight with you: this stops a student walking up and tapping. It is not real security — it does not lock or scramble your saved data, and anyone who knows their way around a web browser can get past it. It is a classroom door, not a safe.</p>

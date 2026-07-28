@@ -30,8 +30,8 @@ js/core/backup.js      — File System Access auto-backup to a chosen folder, pl
 js/core/media.js       — IndexedDB-backed media store (videos, PDFs, images)
 js/core/carousel.js    — shared horizontal card-strip engine (strip/arrows/counter/
                           focus-card), used by both Quests and Magic Shop when the
-                          teacher picks "carousel" over "grid" (Admin → Settings →
-                          Screen layout); each screen owns only its own card markup
+                          teacher picks "carousel" over "grid" (Admin → 🎨 Look &
+                          Sound → Screen layout); each screen owns only its own card markup
 js/core/sampledata.js  — builds one realistic sample term (ledger, quests, planner)
                           for Admin's "Load sample data" — reads the live catalog/
                           settings so it respects whatever combat mode is active
@@ -44,6 +44,8 @@ js/core/util.js        — shared small helpers used across modules (see the fil
 js/modules/dashboard.js   js/modules/houses.js    js/modules/potw.js
 js/modules/dice.js        js/modules/battle.js    js/modules/shop.js
 js/modules/quests.js      js/modules/council.js   js/modules/admin.js
+js/modules/wheel.js       — Wheel of Fate, a house-only random picker (dashboard tile,
+                          plain Math.random(), NOT the fate-audited dice path)
 js/integrations/classroom.js   — Google Classroom scaffold, UNWIRED (see below)
 tools/hero-tuner.js     — dev-only overlay: live sliders over the dashboard hero's
                           CSS variables (name/motto/"WELCOME" size, gaps). Nothing it
@@ -65,7 +67,7 @@ music/*.mp3, potw-songs/*.mp3, videos/*.mp4, sfx/*.mp3      — bundled audio/vi
 ```
 
 Modules actually registered, in boot order (`js/main.js`):
-`dashboard → houses → potw → dice → battle → shop → admin → quests → council`.
+`dashboard → houses → potw → dice → battle → shop → admin → quests → council → wheel`.
 
 ## Module contract (`js/modules/*.js`)
 Each module default-exports:
@@ -669,7 +671,7 @@ width without forking the file.
 Both `js/modules/quests.js` and `js/modules/shop.js` import this module and
 choose grid vs. carousel per-render via `store.getLayout('quests')` /
 `store.getLayout('shop')` — **not** a per-mount UI toggle. This is a
-persisted, teacher-set preference (Admin → ⚙️ Settings → 🗂️ Screen layout,
+persisted, teacher-set preference (Admin → 🎨 Look & Sound → 🗂️ Screen layout,
 `renderScreenLayoutCard()` in admin.js), saved via `store.setLayout(id,
 layout)` into `settings.layouts` (see `LAYOUT_SCREENS` / `DEFAULT_LAYOUT` in
 store.js — grid is the default) and shared by every device that loads the

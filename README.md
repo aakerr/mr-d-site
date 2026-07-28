@@ -22,7 +22,7 @@ things, done by hand if you'd rather (or need to redo one later):
    setup, but it only fires once a day. Connecting a folder saves within
    seconds of every change instead — turn both on for the best protection:
    - Tap the 🗝️ Admin glyph (far right of the top bar)
-   - Go to ⚙️ Settings → Backup & Restore
+   - Go to 🛡️ Data & Safety → Backup & Restore
    - Under "🔄 Continuous folder backup," tap "Connect Folder" (**Chrome or
      Edge only** — Safari and Firefox don't support the folder-picker API
      this uses; the daily download above still covers them)
@@ -31,7 +31,7 @@ things, done by hand if you'd rather (or need to redo one later):
    - **Important:** Backups save state (points, calendar, quests, settings) as JSON, but NOT media (videos, PDFs, images). Media lives in the browser's IndexedDB only. If you restore on a new machine, you'll need to re-upload media files.
 
 2. **Set Your Term Dates**
-   - ⚙️ Settings → scroll to "Term"
+   - ⚙️ Term & World → Term Timeline
    - Change "Term Start" to the Monday your term begins (YYYY-MM-DD format)
    - Change "Total Weeks" if you're not running 9 weeks
    - The app calculates "Week 1 of 9" based on these dates
@@ -42,7 +42,7 @@ things, done by hand if you'd rather (or need to redo one later):
    - Each core (1–4) can have different itineraries; students see today's schedule on the Morning Dashboard
 
 4. **Turn on the Teacher PIN (optional)**
-   - ⚙️ Settings → "🔒 Teacher PIN" — off by default
+   - 🛡️ Data & Safety → "🔒 Teacher PIN" — off by default
    - Puts a short PIN in front of the Admin panel and anything that awards or removes points, so a student can't wander up to an unattended board and start tapping
    - Everything students do themselves — accepting a quest, buying from the shop, rolling the dice — is never gated
    - See **Teacher PIN (Lock)** under Core Features below before you turn this on — it's a classroom deterrent, not real security, and it's worth understanding the recovery path first
@@ -69,9 +69,10 @@ Open **http://localhost:8000**. The app loads immediately and works fully offlin
 
 ## Teacher's Admin Panel (🗝️ glyph, top-right)
 
-The admin panel has seven tabs. Click the key icon to open it anytime. If you've
-turned on the Teacher PIN, opening Admin is the one thing that always asks for
-it, no matter which tab you're headed to.
+The admin panel has eight tabs, plus a ❓ Help corner control beside the tab bar
+(not a tab itself). Click the key icon to open it anytime. If you've turned on
+the Teacher PIN, opening Admin is the one thing that always asks for it, no
+matter which tab you're headed to.
 
 ### 📅 Planner
 - **Calendar view** of the entire term
@@ -88,6 +89,9 @@ it, no matter which tab you're headed to.
 - **Active Quests**: one card per core/house, with the same **✅ Confirm
   Complete** / **✖ Mark Given Up** buttons that also appear right on the
   Quests board itself — use whichever screen is in front of you
+- Confirming a completion has an optional **"How was it proven?"** field
+  (matches the same prompt on the Quests board itself); whatever you type is
+  appended to that ledger entry as `— proof: …`, so Records can search for it later
 - **"Clear without penalty"**: undoes an accepted-by-mistake quest with no
   point cost, when Give Up's penalty isn't appropriate
 - **Quest Catalog**: teacher-maintained list of available class quests
@@ -188,39 +192,13 @@ six effect kinds (each has a live plain-English preview as you edit):
   catalog over and empties every house's current holdings in both
   directions; points, the ledger, quests, the planner and every other
   setting are untouched
-- **Battle rules gate**: the prize/HP settings (Hit points mode) or the
-  combat-tuning fields relevant to whichever mode is active
-- **House status & holdings**: whichever mode is active gets its own panel
-  here for undoing what only Battle Day itself can do —
-  under **Mr. D's rules**: un-freeze a house the Legendary Ice Axe landed
-  on, lower a raised Shroud of Secrecy early, or take back an item a house
-  bought by mistake (this does not refund the points spent on it); under
-  **Hit points**: clear an active shield or damage-reduction relic by hand
-
-### ❓ Help
-The in-app teacher's handbook — searchable, with topics grouped under Quick
-answers, Getting started, Points, Place of the Week, Quests, Magic Shop &
-Battle, Die of Destiny, The Admin panel, Your data & backups, Housekeeping,
-Something looks wrong?, and **🩺 System check** (see below). Also where you
-re-run the first-run setup wizard.
-
-### ⚙️ Settings
-- **Term**: Start date (Monday) & total weeks
-- **Houses**: rename, recolour, or swap the crest/banner image for any of the
-  four houses — none of it costs a house any points, and it can be reset back
-  to the shipped defaults per house
-- **Screen colours**: pin the Home screen, Records, or Quests to a fixed
-  accent colour instead of following whichever house is active (see
-  **Per-screen colours** under Known Limitations — only these three screens
-  are affected)
-- **Quick award buttons**: edit the one-tap presets shown on Records → Award Routines
-- **⚔️ Battle rules** *(Hit points mode only — Mr. D's rules keep their own
-  settings in Admin → ⚔️ Battle Day instead, alongside the combat-mode
-  switch itself)*: how Battle Day decides who wins what. Hit points (HP)
-  are separate from points — points are the currency, HP is just what a
-  strike removes during a fight. When a house's HP hits zero, the fight is
-  over and the winner takes a prize *in points*, decided by the rule below.
-  **The loser never loses a point**, no matter which rule you pick.
+- **⚔️ Battle rules** *(Hit points mode only — while Mr. D's rules is active,
+  this card explains itself instead of showing controls that would do
+  nothing)*: how Battle Day decides who wins what. Hit points (HP) are
+  separate from points — points are the currency, HP is just what a strike
+  removes during a fight. When a house's HP hits zero, the fight is over and
+  the winner takes a prize *in points*, decided by the rule below. **The
+  loser never loses a point**, no matter which rule you pick.
   - **Prize rule** — three ways to size the winner's prize:
     - **Half the gap** (the default): the winner takes half the point gap
       between the two houses. This shrinks on its own as the trailing house
@@ -253,9 +231,51 @@ re-run the first-run setup wizard.
     640 points, so 112 HP") and a prize preview between any two houses you
     pick, both of which update as you type — so you can see exactly what a
     change does before you save it.
-- **Theme**: Dark mode (light mode not implemented yet); optional seasonal
-  ambient particles (falling leaves/snow/etc., based on the calendar date)
-- **Maps API Key**: Leave blank to use the bundled key; paste your own if you prefer
+- **House status & holdings**: whichever mode is active gets its own panel
+  here for undoing what only Battle Day itself can do —
+  under **Mr. D's rules**: un-freeze a house the Legendary Ice Axe landed
+  on, lower a raised Shroud of Secrecy early, or take back an item a house
+  bought by mistake (this does not refund the points spent on it); under
+  **Hit points**: clear an active shield or damage-reduction relic by hand
+
+### ❓ Help (corner control, not a tab)
+Sits beside the tab bar rather than taking a tab slot of its own. The in-app
+teacher's handbook — searchable, with topics grouped under Quick
+answers, Getting started, Points, Place of the Week, Quests, Magic Shop &
+Battle, Die of Destiny, The Admin panel, Your data & backups, Housekeeping,
+Something looks wrong?, and **🩺 System check** (see below). Also where you
+re-run the first-run setup wizard.
+
+Settings used to be one long scroll of thirteen unrelated cards. It's now
+split into three tabs, always the last three in the tab bar, grouped by what
+each card actually does — what the term IS, what it LOOKS and SOUNDS like,
+and what keeps it SAFE:
+
+### ⚙️ Term & World
+- **Term Timeline**: Start date (Monday) & total weeks, with a live preview
+  of the "Week N of M" label
+- **Term Start / End Markers**: read-only list of the term-boundary events —
+  add or edit them on the 📅 Planner calendar instead
+- **Houses**: rename, recolour, or swap the crest/banner image for any of the
+  four houses — none of it costs a house any points, and it can be reset back
+  to the shipped defaults per house
+- **Quick award buttons**: edit the one-tap presets shown on Records → Award Routines
+- **🎲 Die of Destiny — Prophecy Table**: edit the wording, emoji and points
+  for each of the six roll outcomes; the ranges that trigger each outcome are
+  fixed on purpose so every face of the d20 always lands on exactly one
+
+### 🎨 Look & Sound
+- **Screen colours**: pin the Home screen, Records, or Quests to a fixed
+  accent colour instead of following whichever house is active (see
+  **Per-screen colours** under Known Limitations — only these three screens
+  are affected)
+- **Screen layout**: choose grid or carousel for the Quests board and the
+  Magic Shop, independently — a saved, shared preference, not a per-visit toggle
+- **Display & Theme**: Dark mode (light mode not implemented yet); optional
+  seasonal ambient particles (falling leaves/snow/etc., based on the calendar
+  date); **Quiet mode** — one switch that mutes sound effects and freezes
+  ambient/seasonal animation for a test day or quiet work time; Google Maps
+  API key (leave blank to use the bundled key, paste your own if you prefer)
 - **Background music**: one card assigns a quiet looping track (drop files in
   `/music`) to any screen except Place of the Week and Battle Day, which make
   their own noise, **plus a Flyover slot** — the music that plays under Place
@@ -263,11 +283,21 @@ re-run the first-run setup wizard.
   choice here, not set per destination the way it used to be. A master
   volume slider and the global mute (`M` key, or the speaker icon in the
   top bar) sit alongside all of it
+- **Sound effects**: swap any of the app's built-in beeps (or the spoken
+  Battle Day line) for your own recording — drop an `.mp3`/`.m4a` into the
+  `sfx` folder and point a row at it; nothing here is included in a backup
+  file, so keep your own copies
+
+### 🛡️ Data & Safety
 - **Backup & Restore**: connect/disconnect a continuous auto-backup folder
   (Chrome/Edge only — see **Automatic Backup** below), toggle the once-a-day
   Downloads safety net, export/import a backup file by hand, and (when one
   exists) **↩ Undo last restore** — puts back exactly what was on this
   computer before the most recent restore or sample-data load
+- **Sample Data**: fills the app with about four invented weeks of activity
+  (points, quests, Magic Shop purchases, dice rolls, a full events calendar)
+  so a brand-new install has something to look at — replaces whatever's on
+  screen, exactly like restoring a backup, and can be undone the same way
 - **🔒 Teacher PIN**: off by default — see **Teacher PIN (Lock)** under Core Features
 - **Danger Zone**: Hard reset the app
   - Type `RESET` to confirm
@@ -282,9 +312,11 @@ re-run the first-run setup wizard.
 The default home screen.
 - **House Leaderboard**: All four houses sorted by term points (color-coded)
 - **This Week's Standings**: Points earned this week only (separate from term total, useful for weekly resets)
-- **Today's Itinerary** (per core): Bell ringer, lesson blocks, challenges
+- **Today's Itinerary** (per core): Bell ringer (with an optional countdown
+  timer chip right in the panel header), lesson blocks, challenges
 - **Homework Due**: What's due today and this week
-- **Navigation Tiles**: Quick-launch to Records, Quests, Place of the Week, Battle Day, Magic Shop, Die of Destiny
+- **Navigation Tiles**: Quick-launch to Records, Quests, Place of the Week,
+  Battle Day, Magic Shop, Die of Destiny, and Wheel of Fate (7 tiles)
 
 ### Council of Four (⚖️)
 Select **"All Cores"** in the top-bar house switcher instead of a single house
@@ -335,7 +367,7 @@ Four parts, top to bottom:
   of how many are shown on screen (the on-screen list itself caps at 400 rows
   for speed — narrow your filters or export the CSV for the full history)
 - **Award Routines**: your one-tap quick-award presets (edited in Admin →
-  Settings → Quick award buttons), for a single house or all four at once
+  ⚙️ Term & World → Quick award buttons), for a single house or all four at once
 
 ### Place of the Week (🌍)
 A cinematic, multi-stage geography voyage.
@@ -380,7 +412,9 @@ A cinematic, multi-stage geography voyage.
   3. Complete the quest (photo proof, signatures, whatever you ask)
   4. **You** confirm the result — either on the big buttons right on the Quest
      Board hero (✓ Complete / ✗ Give Up) or in Admin → Quests, whichever is
-     closer. Both are gated by the Teacher PIN if it's turned on
+     closer. Both are gated by the Teacher PIN if it's turned on. Confirming
+     a completion offers an optional "How was it proven?" note, appended to
+     the ledger entry so Records can search for it later
   5. **Give Up** deducts a penalty (half the quest's points by default, set
      per quest in Admin) and returns the quest to the board for another house
      to take. Accepted by mistake instead? "Clear without penalty" in Admin →
@@ -394,7 +428,7 @@ A cinematic, multi-stage geography voyage.
 > scrolling **grid** (the default) or as a one-card-at-a-time **carousel**
 > with prev/next arrows — better at a smartboard, where scrolling up and
 > down with a mouse isn't really an option. This is a teacher setting, not a
-> per-visit toggle: pick it once in **Admin → ⚙️ Settings → 🗂️ Screen
+> per-visit toggle: pick it once in **Admin → 🎨 Look & Sound → 🗂️ Screen
 > layout**, and it's saved and shared with every device viewing the board.
 > The Magic Shop offers the same choice, independently, in the same place.
 
@@ -443,7 +477,7 @@ touches points, the ledger, quests, the planner, or any other setting.
 - **Choose the challenger** (defaults to whichever house is active in the top
   bar), then **choose their opponent** — tapping a house shows its points and
   whether it's currently shielded or damage-reduced. If "Punching down" is
-  switched off in Admin → Settings → ⚔️ Battle rules (the default), a house
+  switched off in Admin → ⚔️ Battle Day → ⚔️ Battle rules (the default), a house
   with fewer points than the challenger still shows up here but is visibly
   locked, with the reason spelled out
 - **Pick a strike**: the challenger's screen lists every *offensive* item
@@ -461,7 +495,7 @@ touches points, the ledger, quests, the planner, or any other setting.
 - Once an opponent is chosen, the screen also shows the **prize on the
   table** — what the attacker stands to win in points if this fight ends the
   defender's HP, based on whichever prize rule you've set (see **⚔️ Battle
-  rules** under Settings, below)
+  rules** under Battle Day, above)
 - **At zero HP**, the fight ends on the spot: the winner is credited the
   prize in points and the loser's point total does not change at all
 - **"🔮 Open Magic Shop"** button jumps straight to the shop to stock up on a
@@ -565,8 +599,18 @@ Classroom d20 roller with a 3D physics simulation and outcome table.
 - Rolls are genuinely uniform 1–20 — nothing behind the scenes weights the
   outcome
 
+### Wheel of Fate (🎡)
+A four-wedge spinner for the tie-breaks and "who goes first" calls a teacher
+already handled with a pointing finger — **house-level only**, not a student
+picker; this app has no student roster to draw from. Tap **SPIN**, the disc
+lands on one of the four houses, and a **+5 to them** quick-award button
+appears (logged to the ledger as "Wheel of Fate"). Unlike the d20, the pick
+is a plain, uniform random draw — it isn't wired into the fate-audited dice
+path the Prophecy Table uses, because it isn't gambling for points, just
+picking a house.
+
 ### Teacher PIN (Lock) 🔒
-Off by default. Turn it on in Admin → Settings and it puts a short PIN in
+Off by default. Turn it on in Admin → 🛡️ Data & Safety and it puts a short PIN in
 front of two things only: **opening the Admin panel**, and **any action that
 awards or removes points** anywhere in the app (the quick-points panel, Battle
 Day strikes and teacher scoring, Magic Shop purchases, quest complete/give-up,
@@ -592,7 +636,7 @@ never gated.
 ### Ambient Music & Master Mute
 Every screen except Place of the Week and Battle Day (which make their own
 noise) can have a quiet looping background track, assigned in Admin →
-Settings → Background music. Tracks crossfade smoothly when you switch
+🎨 Look & Sound → Background music. Tracks crossfade smoothly when you switch
 screens, and there's one master volume plus a hard on/off:
 - Press **`M`** anywhere in the app to mute or unmute everything instantly
   (ignored while you're typing in a text field)
@@ -632,7 +676,7 @@ images/icon-points.png (Records)
 ```
 
 ### Edit Term Dates & POTW Profiles
-- **Term Dates**: Admin → ⚙️ Settings
+- **Term Dates**: Admin → ⚙️ Term & World
 - **POTW Destinations**: Admin → 🌍 Place of the Week (full editor UI with Google Maps link picker)
 - **Intro Videos**: Pick "Intro 1" or "Intro 2" (local files bundled in `/videos`), or paste your own YouTube link for that destination
 
@@ -661,7 +705,7 @@ The app uses a simple plugin architecture.
    ```js
    import yourmodule from './modules/yourmodule.js';
    // ...
-   [dashboard, houses, potw, dice, battle, shop, admin, quests, council, yourmodule].forEach((m) => registry.register(m));
+   [dashboard, houses, potw, dice, battle, shop, admin, quests, council, wheel, yourmodule].forEach((m) => registry.register(m));
    ```
 
 ---
@@ -689,11 +733,12 @@ All state lives in localStorage under the key `mrd-classroom-os-v1`. This includ
 - Quests (catalog, active, completed, per-quest type/icon/give-up penalty)
 - Planner events
 - POTW profiles & scheduling
-- Settings — term dates, theme (incl. seasonal effects), backup folder handle,
-  Teacher PIN (hashed, plus the plain-text recovery code), per-screen accent
-  colours, per-screen grid/carousel layout, quick award presets, per-screen
-  ambient music assignments (including the global Place of the Week flyover
-  track), the Die of Destiny's editable prophecy table, and the
+- Settings — term dates, theme (incl. seasonal effects and quiet mode),
+  backup folder handle, Teacher PIN (hashed, plus the plain-text recovery
+  code), per-screen accent colours, per-screen grid/carousel layout, quick
+  award presets, per-screen ambient music assignments (including the global
+  Place of the Week flyover track), the Die of Destiny's editable prophecy
+  table, and the
   **⚔️ Battle rules** (Hit points mode's prize rule and its number, punching
   down, starting HP and bonus HP per 500 points — Mr. D's rules keep their
   own punching-down flag and teacher-scoring amount alongside the rule-set
@@ -712,18 +757,18 @@ actually change something on a given school day (a point award, a planner
 edit, a completed quest — not points specifically), the app downloads
 `mrd-backup-YYYY-MM-DD.json` to your browser's normal Downloads folder. It
 won't hand you an empty file on a day nothing happened, and it only ever
-tries once per day. Turn it off in ⚙️ Settings → Backup & Restore if you'd
+tries once per day. Turn it off in 🛡️ Data & Safety → Backup & Restore if you'd
 rather not have a file land in Downloads every day.
 
 ### Automatic Backup (Continuous Folder Backup)
-- **Enabled in Settings → Backup & Restore** → "Connect Folder" (File System
-  Access API — **Chrome or Edge only**; Safari and Firefox don't support
-  this API, so they rely on the daily download above instead)
+- **Enabled in 🛡️ Data & Safety → Backup & Restore** → "Connect Folder" (File
+  System Access API — **Chrome or Edge only**; Safari and Firefox don't
+  support this API, so they rely on the daily download above instead)
 - **Saves**:
   - `mrd-live-backup.json` (updated every ~2 seconds)
   - `mrd-backup-YYYY-MM-DD.json` (one per calendar day, write-once)
 - **Does NOT save**: Media (videos, PDFs)
-- **Restore**: Settings → "Restore Latest" — reads `mrd-live-backup.json`
+- **Restore**: 🛡️ Data & Safety → "Restore Latest" — reads `mrd-live-backup.json`
   first, then falls back through your folder's dated `mrd-backup-*.json`
   snapshots, newest first, if the live file is missing or unreadable
 
@@ -738,7 +783,7 @@ rather not have a file land in Downloads every day.
 - **Every restore or sample-data load snapshots first.** Importing a
   backup, restoring from a connected folder, or loading sample data all
   save exactly what was on the computer beforehand under a `-prev` key
-  before replacing anything. Admin → ⚙️ Settings → Backup & Restore shows
+  before replacing anything. Admin → 🛡️ Data & Safety → Backup & Restore shows
   an **↩ Undo last restore** button whenever that snapshot exists — it puts
   everything back exactly as it was and reloads. Available until the next
   restore or sample-data load overwrites it.
@@ -754,7 +799,7 @@ rather not have a file land in Downloads every day.
   you can act on either way.
 
 ### Reset All Data
-⚙️ Settings → "Danger Zone" → Type `RESET` to confirm
+🛡️ Data & Safety → "Danger Zone" → Type `RESET` to confirm
 - Wipes everything: transactions, quests, shop, planner, POTW edits, settings
 - **WARNING**: Never use browser "Clear Site Data"—it also wipes IndexedDB and the backup folder handle. Data is unrecoverable.
 
@@ -801,7 +846,7 @@ final authority — the schema is kept in sync by hand and code moves first.
 ## Term vs Week Scoring
 
 - **Term Totals**: Used for leaderboards, Magic Shop purchases, final rankings
-  - Calculated from the term start date (set in Settings)
+  - Calculated from the term start date (set in ⚙️ Term & World)
   - Used to determine if a house can afford a shop item
 - **Week Totals**: Points earned this week only
   - Calculated from the current Monday (store calculates week boundaries automatically)
@@ -838,8 +883,8 @@ what's genuinely unresolved:
   tapping around an unattended board — that's genuinely all it claims to do.
   It does not encrypt anything, and its recovery code is stored as plain text
   (by design — see **Teacher PIN (Lock)** above).
-- **Per-screen accent colours only affect three screens.** Admin → Settings →
-  Screen colours can pin the Home screen, Records, or Quests to a fixed
+- **Per-screen accent colours only affect three screens.** Admin →
+  🎨 Look & Sound → Screen colours can pin the Home screen, Records, or Quests to a fixed
   colour instead of following the active house. Magic Shop, Battle Day, Die
   of Destiny, Council of Four, and Place of the Week each have their own
   built-in palette and are not affected by that setting.
@@ -851,7 +896,7 @@ what's genuinely unresolved:
   an audio file dropped directly into a slide) is up to Google's player, not
   this code. A PDF upload remains the fully offline, fully app-controlled option.
 - **Google Classroom integration is an unwired scaffold** — see above.
-- **Light mode is not implemented** — the toggle exists in Settings but only dark mode is built out.
+- **Light mode is not implemented** — the toggle exists in 🎨 Look & Sound but only dark mode is built out.
 - **Media (videos, PDFs, images) never travels with a backup file.** Backups
   restore points, quests, the shop, the planner and settings perfectly; any
   uploaded media has to be re-added by hand on a new computer.
@@ -887,14 +932,14 @@ what's genuinely unresolved:
 - Verify your browser supports WebGL (most modern browsers do)
 
 ### Backup folder lost permission
-- Admin → ⚙️ Settings → "Reconnect backup folder…"
+- Admin → 🛡️ Data & Safety → "Reconnect backup folder…"
 - Pick the folder again (browser will prompt for permission)
 - Auto-save resumes
 
 ### Data lost after clearing browser data
 - **Never clear site data** if you have backups in IndexedDB
-- Use Admin → Danger Zone reset instead for a clean slate
-- If you have a backup folder, you can restore from it (Settings → Restore Latest)
+- Use Admin → 🛡️ Data & Safety → Danger Zone reset instead for a clean slate
+- If you have a backup folder, you can restore from it (🛡️ Data & Safety → Restore Latest)
 
 ---
 
@@ -920,8 +965,9 @@ what's genuinely unresolved:
 - `js/core/health.js` — "System check" diagnostics (rendered inside Help)
 - `js/core/backup.js` — File System Access API auto-backup to a chosen folder (Chrome/Edge), plus the once-a-day Downloads safety net that works in every browser
 - `js/core/media.js` — IndexedDB-backed media store (videos, PDFs, images)
-- `js/modules/admin.js` — The Teacher's Admin panel (all seven tabs)
+- `js/modules/admin.js` — The Teacher's Admin panel (all eight tabs, plus the ❓ Help corner)
 - `js/modules/quests.js` / `js/modules/council.js` — Quest Board / Council of Four screens
+- `js/modules/wheel.js` — Wheel of Fate, a house-only random picker
 - `js/main.js` — Boot and module registration
 - `data/schema.json` — JSON Schema documenting the persisted state (lags current fields — see Schema Reference)
 - `js/integrations/classroom.js` — Google Classroom API scaffold (not currently wired in)
@@ -948,7 +994,7 @@ Access at `http://localhost:8000`.
    // These globals are NOT exposed; import the store module to debug
    // Instead, use the Admin panel UI for all operations
    ```
-5. Admin → ⚙️ Settings → Danger Zone for a hard reset
+5. Admin → 🛡️ Data & Safety → Danger Zone for a hard reset
 
 ### API Reference
 See `ARCHITECTURE.md` for the complete store API, registry API, and module contract.
