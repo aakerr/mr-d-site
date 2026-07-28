@@ -180,17 +180,52 @@ function renderShell() {
             title="Teacher's handbook" aria-label="Teacher's handbook">❓</button>
         </div>
       </div>
+      <div id="admin-bstrip"></div>
       <div id="admin-body" class="admin-body"></div>
     </div>
     <div id="admin-panel-root"></div>
     <div id="admin-modal-root"></div>`;
   syncSegActive();
+  syncBackupStrip();
   renderBody();
 }
 
 function syncSegActive() {
   rootEl.querySelectorAll('.admin-seg-btn,.admin-help-corner').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === activeTab));
+}
+
+// ---------------------------------------------------------------------------
+// The backup health strip — one line, under the header, on EVERY tab.
+//
+// Whether this term's points are actually being saved anywhere is the single
+// most important fact in Admin, and it used to be readable only by scrolling
+// to the eleventh card of thirteen on the Settings tab. So it now says so
+// permanently, in one line, wherever the teacher happens to be standing: green
+// and deliberately quiet while everything is fine, amber when the folder needs
+// reconnecting, rose when nothing at all is protecting the data. Tapping it
+// goes to the tab that can fix it.
+//
+// Every call into backup.js is wrapped, the same discipline shell.js uses: a
+// thrown health() renders no strip rather than taking the whole panel down.
+// ---------------------------------------------------------------------------
+const BSTRIP_ICON = { folder: '☁️', daily: '⬇️', attention: '⚠️', none: '🚨' };
+
+function backupStripHTML() {
+  let h = null;
+  try { h = backup.health(); } catch (e) { console.warn('admin: backup.health() failed', e); return ''; }
+  if (!h || !h.level) return '';
+  const icon = BSTRIP_ICON[h.level] || '☁️';
+  // No point offering a jump to the tab you are already reading.
+  const jump = activeTab === 'data' ? ''
+    : '<span class="admin-bstrip-go"><span class="admin-bstrip-ico">🛡️</span>Data &amp; Safety →</span>';
+  return `<button type="button" class="admin-bstrip level-${esc(h.level)}" data-action="tab" data-tab="data"
+    title="Open 🛡️ Data &amp; Safety"><span class="admin-bstrip-msg"><span class="admin-bstrip-ico">${icon}</span>${esc(h.message)}</span>${jump}</button>`;
+}
+
+function syncBackupStrip() {
+  const host = el('admin-bstrip');
+  if (host) host.innerHTML = backupStripHTML();
 }
 
 // force=true bypasses the mid-typing guard — used by explicit saves, which must
@@ -219,6 +254,7 @@ function setTab(tab) {
   closePanel();
   closeModal();
   syncSegActive();
+  syncBackupStrip();   // the strip's "→ Data & Safety" hint depends on where we are
   renderBody();
   // Selecting ❓ Help brings the handbook up immediately — the tab body behind
   // it is just a table of contents for jumping to another article.
@@ -5645,6 +5681,26 @@ function injectStyles() {
     transition:background .18s ease,color .18s ease,border-color .18s ease;}
   .admin-help-corner:hover{color:var(--color-text);border-color:#f59e0b;}
   .admin-help-corner.active{background:#f59e0b;border-color:#f59e0b;box-shadow:0 4px 16px rgba(245,158,11,.35);}
+  /* backup health strip (every tab) — 20px of side padding so its text starts
+     on the same rail as the body's content below it, and 7px above and below
+     so the line sits centred in its own band rather than crowding either edge. */
+  #admin-bstrip{flex-shrink:0;}
+  #admin-bstrip:empty{display:none;}
+  .admin-bstrip{width:100%;min-height:34px;display:flex;align-items:center;justify-content:center;gap:10px;
+    padding:7px 20px;border:0;border-bottom:1px solid var(--color-card2);background:transparent;
+    font-family:inherit;font-size:.78rem;font-weight:600;line-height:1.3;text-align:center;
+    color:var(--color-text-soft);cursor:pointer;transition:background .16s ease;}
+  .admin-bstrip:hover{background:var(--color-card2);}
+  /* Healthy is the state he will see every single day, so it stays a whisper:
+     a green word, a barely-there tint, no border of its own. */
+  .admin-bstrip.level-folder{color:#4ade80;background:rgba(34,197,94,.05);}
+  .admin-bstrip.level-daily{color:var(--color-text-soft);background:rgba(148,163,184,.06);}
+  .admin-bstrip.level-attention{color:#fbbf24;background:rgba(245,158,11,.13);}
+  .admin-bstrip.level-none{color:#fda4af;background:rgba(244,63,94,.15);font-weight:700;}
+  .admin-bstrip-go{font-weight:700;opacity:.7;white-space:nowrap;}
+  /* Same .3-ish em the tab bar gives its emoji, for the same reason: the cloud
+     and shield glyphs carry no right side bearing of their own. */
+  .admin-bstrip-ico{margin-right:.35em;}
   .admin-body{flex:1;overflow-y:auto;padding:20px;}
   .admin-body::-webkit-scrollbar{width:9px;}
   .admin-body::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:8px;}
@@ -6380,11 +6436,15 @@ export default {
     // countdowns live (writes don't emit store changes). Backup status only
     // exists on Data & Safety; shield/reduction timers now live on Battle Day.
     backupStatusTimer = setInterval(() => {
+      // The strip is on every tab, and its state can change with nothing to
+      // subscribe to — a folder permission lapsing, the daily file landing —
+      // so it re-reads health() on the same tick as the card's own line.
+      syncBackupStrip();
       if (activeTab === 'data') updateBackupStatusLine();
       if (activeTab === 'battle') updateShieldTimes();
     }, 5000);
 
-    unsub = ctx.store.subscribe(() => { renderBody(); });
+    unsub = ctx.store.subscribe(() => { syncBackupStrip(); renderBody(); });
   },
 
   unmount() {
