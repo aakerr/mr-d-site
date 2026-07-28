@@ -2017,12 +2017,20 @@ export const store = {
     if (shielded && !pierce) {
       return { outcome: 'blocked', applied: 0, shielded, reduced };
     }
-    const applied = (reduced && !pierce) ? Math.max(1, Math.round(dmg / 2)) : dmg;
+    const intended = (reduced && !pierce) ? Math.max(1, Math.round(dmg / 2)) : dmg;
     const fromName = fromId && HOUSES[fromId] ? ` from ${HOUSES[fromId].name}` : '';
-    store.addPoints(toId, -applied, { reason: `${label}${fromName}`, tag: 'attack' });
+    // `applied` is what the LEDGER took, not what the attack asked for.
+    // addPoints trims a deduction at the zero floor (and returns null when
+    // there was nothing to take at all), and returning the untrimmed number
+    // here let a steal credit the attacker with points the defender never
+    // had — minted from nothing. Same rule applyDuelAttack already follows:
+    // the number reported is the number written.
+    const tx = store.addPoints(toId, -intended, { reason: `${label}${fromName}`, tag: 'attack' });
     return {
       outcome: pierce && (shielded || reduced) ? 'pierced' : (reduced ? 'reduced' : 'full'),
-      applied, shielded, reduced, blocked: dmg - applied,
+      applied: tx ? Math.abs(tx.delta) : 0,
+      intended,                              // pre-trim, for the ledger-curious
+      shielded, reduced, blocked: dmg - intended,
     };
   },
 
