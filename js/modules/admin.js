@@ -2747,6 +2747,11 @@ function renderSettings() {
           <button class="admin-btn admin-btn-lg" data-action="backup-import">⬆ Import backup</button>
           <input id="admin-import-file" type="file" accept="application/json,.json" hidden />
         </div>
+        ${hasUndoSnapshot() ? `
+        <div class="admin-backup-row" style="margin-top:10px">
+          <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="backup-undo">↩ Undo last restore</button>
+        </div>
+        <div class="admin-mini" style="margin:8px 0 0">Puts back exactly what was on this computer before the last restore or sample-data load. Available until the next one.</div>` : ''}
         <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in any of these backups.</div>
 
         <hr class="admin-hr" />
@@ -3287,20 +3292,90 @@ function exportBackup() {
   toast('Backup exported.');
 }
 
+// ---------------------------------------------------------------------------
+// REPLACING EVERYTHING — the one path all three overwrite routes go through.
+//
+// Import a file, restore from the folder, load sample data: each of them wiped
+// live state with no way back, and each checked only that the payload had a
+// `version` and a `transactions` key. A half-written backup, a file from a
+// different app that happens to share two key names, or a mis-tapped "Load
+// sample data" on a Friday afternoon all ended the same way — a term of points
+// gone, with a confirm dialog that had truthfully said "this cannot be undone".
+//
+// Now it can. The outgoing state is kept under -prev, and Admin offers to put
+// it back.
+// ---------------------------------------------------------------------------
+const PREV_KEY = `${CONFIG.STORAGE_KEY}-prev`;
+
+// Deep enough to reject the things that actually turn up: a truncated file, a
+// backup from something else, an array, a string of JSON-encoded JSON.
+function looksLikeBackup(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, reason: 'This does not look like a Classroom OS backup.' };
+  }
+  if (!('version' in data) || !('transactions' in data)) {
+    return { ok: false, reason: 'This does not look like a Classroom OS backup — it has no version or point history.' };
+  }
+  if (!Array.isArray(data.transactions)) {
+    return { ok: false, reason: 'This backup’s point history is damaged (it is not a list).' };
+  }
+  const bad = data.transactions.find((t) => !t || typeof t !== 'object' || !('delta' in t) || !('houseId' in t));
+  if (bad) {
+    return { ok: false, reason: 'This backup’s point history is damaged — at least one entry is missing its house or its points.' };
+  }
+  for (const key of ['settings', 'shop', 'quests', 'potw']) {
+    if (key in data && (typeof data[key] !== 'object' || data[key] === null || Array.isArray(data[key]))) {
+      return { ok: false, reason: `This backup’s ${key} section is damaged.` };
+    }
+  }
+  return { ok: true, reason: '' };
+}
+
+function hasUndoSnapshot() {
+  try { return !!localStorage.getItem(PREV_KEY); } catch (e) { return false; }
+}
+
+// Returns false (having toasted) if it could not write; the caller must not
+// reload in that case, or the failure scrolls past unread.
+function replaceAllData(data) {
+  try {
+    const current = localStorage.getItem(CONFIG.STORAGE_KEY);
+    // Snapshot FIRST. If this throws (storage full), nothing has been destroyed
+    // yet and the teacher still has what they had.
+    if (current) localStorage.setItem(PREV_KEY, current);
+    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    toast('Restore failed: ' + e.message);
+    return false;
+  }
+}
+
+function undoLastRestore() {
+  const prev = (() => { try { return localStorage.getItem(PREV_KEY); } catch (e) { return null; } })();
+  if (!prev) { toast('There is nothing to undo.'); return; }
+  openConfirm('Undo the last restore?',
+    'This puts back exactly what was on this computer before the last restore or sample-data load, and reloads. Whatever the restore brought in is discarded.',
+    () => {
+      try {
+        // Swap, don't delete: undoing an undo is a thing teachers do.
+        const current = localStorage.getItem(CONFIG.STORAGE_KEY);
+        localStorage.setItem(CONFIG.STORAGE_KEY, prev);
+        if (current) localStorage.setItem(PREV_KEY, current);
+        location.reload();
+      } catch (e) { toast('Could not undo: ' + e.message); }
+    }, { yesLabel: 'Put it back' });
+}
+
 function importBackup(file) {
   const reader = new FileReader();
   reader.onload = () => {
     let data;
     try { data = JSON.parse(reader.result); } catch (e) { toast('That file is not valid JSON.'); return; }
-    if (!data || typeof data !== 'object' || !('version' in data) || !('transactions' in data)) {
-      toast('This does not look like a Classroom OS backup.');
-      return;
-    }
-    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. This cannot be undone.', () => {
-      try {
-        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
-        location.reload();
-      } catch (e) { toast('Restore failed: ' + e.message); }
+    const check = looksLikeBackup(data);
+    if (!check.ok) { toast(check.reason); return; }
+    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. If it turns out to be the wrong file, <b>Undo last restore</b> in this panel puts everything back.', () => {
+      if (replaceAllData(data)) location.reload();
     }, { yesLabel: 'Replace & reload' });
   };
   reader.onerror = () => toast('Could not read that file.');
@@ -3325,12 +3400,11 @@ function renderSampleDataCard() {
 function loadSampleData() {
   openConfirm(
     'Load sample data?',
-    'This fills the app with about four weeks of invented activity — points, quests, Magic Shop purchases, dice rolls and a full events calendar — so every screen has something populated to look at. It is sample data only, not your real class. Loading it replaces everything currently on screen, exactly like restoring a backup file — nothing you have entered for real is kept. This cannot be undone, though you can Reset afterward to start clean.',
+    'This fills the app with about four weeks of invented activity — points, quests, Magic Shop purchases, dice rolls and a full events calendar — so every screen has something populated to look at. It is sample data only, not your real class. Loading it replaces everything currently on screen, exactly like restoring a backup file. If you did not mean to, <b>Undo last restore</b> in this panel puts your real data straight back.',
     () => {
       try {
         const sample = buildSampleState();
-        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(sample));
-        location.reload();
+        if (replaceAllData(sample)) location.reload();
       } catch (e) { toast('Could not load sample data: ' + e.message); }
     },
     { danger: false, yesLabel: 'Load sample data' },
@@ -3589,9 +3663,10 @@ async function saveBackupNow() {
 async function restoreFromFolder() {
   const data = await backup.restoreLatest();
   if (!data) { toast(backup.status().lastError || 'Could not read a backup from the folder.'); return; }
-  openConfirm('Restore from backup folder?', 'This replaces ALL current data with the folder\'s latest backup, then reloads. This cannot be undone.', () => {
-    try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data)); location.reload(); }
-    catch (e) { toast('Restore failed: ' + e.message); }
+  const check = looksLikeBackup(data);
+  if (!check.ok) { toast(check.reason); return; }
+  openConfirm('Restore from backup folder?', 'This replaces ALL current data with the folder\'s latest backup, then reloads. If it is not the one you wanted, <b>Undo last restore</b> in this panel puts everything back.', () => {
+    if (replaceAllData(data)) location.reload();
   }, { yesLabel: 'Replace & reload' });
 }
 
@@ -5048,6 +5123,7 @@ function onClick(e) {
     case 'backup-connect': connectBackupFolder(); break;
     case 'backup-save-now': saveBackupNow(); break;
     case 'backup-restore-folder': restoreFromFolder(); break;
+    case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
     case 'backup-download-now': saveDownloadNow(); break;
