@@ -2773,6 +2773,17 @@ async function strikeHp(itemId) {
     // HIT POINTS take the damage now, not points — shields/reductions/pierce
     // resolve exactly as before, just against HP (see resolveHpAttack above).
     result = resolveHpAttack(store, { toId: target.id, amount, pierce });
+    // The house's HP hit zero: the battle is over. The winner takes the
+    // prize in points; the loser never loses any.
+    // ORDER IS DELIBERATE: the prize is awarded BEFORE any steal loot lands.
+    // The gap rule measures the two totals as they stood when the arena's
+    // banner advertised the prize — loot arriving first would raise the
+    // winner's total and quietly shrink the payout below the number the
+    // class was promised.
+    if (result.defeated) {
+      const prize = store.awardBattleWin(challenger.id, target.id);
+      battleWon = { prize };
+    }
     // A steal loots exactly what was actually taken — 0 if blocked, half if
     // reduced. The attacker gains POINTS equal to the HP damage dealt; that
     // is the whole point of the item. The target's points never move.
@@ -2781,12 +2792,6 @@ async function strikeHp(itemId) {
     if (kind === 'steal' && result.outcome !== 'blocked' && result.applied > 0) {
       const lootTx = store.addPoints(challenger.id, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
       looted = lootTx ? lootTx.delta : 0;
-    }
-    // The house's HP hit zero: the battle is over. The winner takes the
-    // prize in points; the loser never loses any.
-    if (result.defeated) {
-      const prize = store.awardBattleWin(challenger.id, target.id);
-      battleWon = { prize };
     }
   } finally {
     resolving = false;
@@ -2926,9 +2931,14 @@ function maybeAnnounceVictory(o) {
     if (!rootEl || view !== 'duel') return;
     ctxRef.audio.sfx('fanfare');
     screenVignettePulse();
+    // A gap-rule prize of 0 (the winner was already ahead) must not read as
+    // "+0 pts" — a fanfare over nothing looks like a broken payout. The win
+    // card stays; the prize line says why there is no bounty.
     outcomeCard('victory', `🏆 ${esc(o.challenger.name).toUpperCase()} WINS THE DUEL!`,
       `${esc(o.target.name)} is defeated — but keeps every point it earned. No points were lost.`,
-      `+${o.battleWon.prize} pts to ${esc(o.challenger.name)}`);
+      o.battleWon.prize > 0
+        ? `+${o.battleWon.prize} pts to ${esc(o.challenger.name)}`
+        : `${esc(o.challenger.name)} was already ahead — no bounty`);
     later(() => {
       if (!rootEl || view !== 'duel') return;
       targetId = null;   // battle over — back to picking a new opponent
