@@ -727,18 +727,18 @@ function createMap3d() {
 // ---- flyover background music -----------------------------------------------
 // Starts on the "🚀 Fly to…" tap (the reveal card waits for a human, so nothing
 // earlier could stay in sync) and fades out when the destination is reached.
-// Source order: teacher blob (potw:<key>:flyover) → profile.flyoverUrl →
-// the bundled default track (CONFIG.POTW_FLYOVER_DEFAULT) → silence.
-async function startFlyoverMusic() {
+//
+// ONE track for every destination, chosen in Admin → Settings → 🎵 Background
+// music, where the rest of the app's music already lived. It used to be chosen
+// per destination in the POTW editor — an upload block and a URL field that
+// between them made "where do I change the music?" a two-answer question. Old
+// per-destination choices (profile.flyoverUrl, potw:<key>:flyover blobs) are
+// retired and simply not read; store.getFlyoverTrack() hands back the global
+// choice, or CONFIG.POTW_FLYOVER_DEFAULT when the teacher has picked nothing.
+function startFlyoverMusic() {
   if (previewMode || flyMusicEl || !overlayEl) return;
-  let src = null;
-  try { src = await media.url(`potw:${activeKey}:flyover`); } catch (e) { src = null; }
-  if (!src) {
-    const u = profile && profile.flyoverUrl;
-    if (typeof u === 'string' && u.trim()) src = u.trim();
-  }
-  if (!src && typeof CONFIG.POTW_FLYOVER_DEFAULT === 'string') src = CONFIG.POTW_FLYOVER_DEFAULT;
-  if (!src || !overlayEl || flyMusicEl) return;   // nothing set — silence, no error
+  const src = ctxRef.store?.getFlyoverTrack?.() || CONFIG.POTW_FLYOVER_DEFAULT || '';
+  if (!src) return;   // nothing set — silence, no error
   try {
     // ctx.audio honours the sound switch (a muted track still returns an element
     // at volume 0, which the fade below then ramps harmlessly).
@@ -746,7 +746,6 @@ async function startFlyoverMusic() {
     if (!el) return;
     flyMusicEl = el;
     el.addEventListener('error', () => { if (flyMusicEl === el) stopFlyoverMusic(); });
-    if (!overlayEl) stopFlyoverMusic();           // torn down during the await
   } catch (e) { console.warn('potw: flyover music unavailable', e); }
 }
 
