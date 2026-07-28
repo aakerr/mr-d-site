@@ -915,6 +915,53 @@ function shopOverrides(st) {
   };
 }
 
+// ---- quest board ------------------------------------------------------------
+// Same three answers as the shop, one catalog instead of two. What is different
+// here is that a quest carries fields the app DERIVES rather than ships: the
+// give-up penalty is half the reward unless the teacher says otherwise, and an
+// untyped quest falls back to its category's icon. load() used to write those
+// derived values into every saved quest ("backfill"), which turned a default
+// into a stored fact — so raising a quest's points later left its penalty
+// frozen at half of the old ones. Anything the app can work out for itself is
+// not saved; quests.js, admin.js and failQuest() all already compute the same
+// fallbacks at the point of use, and now they are the only rule.
+function trimDerivedQuestFields(quest, shipped) {
+  const out = { ...quest };
+  if (!('repeatable' in shipped) && out.repeatable === false) delete out.repeatable;
+  if (!('penalty' in shipped) && Number(out.penalty) === Math.round(Number(out.points || 0) / 2)) delete out.penalty;
+  return out;
+}
+
+function questOverrides(list) {
+  const shipped = defaultQuestCatalog();
+  const shippedById = new Map(shipped.map((s) => [s.id, s]));
+  const trimmed = (Array.isArray(list) ? list : []).filter((q) => q && q.id).map((q) => {
+    const s = shippedById.get(q.id);
+    return s ? trimDerivedQuestFields(q, s) : q;
+  });
+  return splitOverrides(shipped, trimmed, null);
+}
+
+function materializeQuestCatalog(savedQuests) {
+  const shipped = defaultQuestCatalog();
+  const q = savedQuests && typeof savedQuests === 'object' ? savedQuests : {};
+  if (q.edits || q.added || q.deleted) {
+    return mergeOverrides(shipped, {
+      edits: (q.edits && typeof q.edits === 'object') ? q.edits : {},
+      added: Array.isArray(q.added) ? q.added.filter((x) => x && x.id) : [],
+      deleted: Array.isArray(q.deleted) ? q.deleted.filter((id) => typeof id === 'string') : [],
+    });
+  }
+  // Legacy full copy. A shipped quest missing from it counts as deleted: the
+  // board was copied whole and there was never a "already introduced" list to
+  // check against, so absence is the only record a deletion ever left. (Which
+  // also means a quest shipped after that copy was made has never reached this
+  // install — it could not, until now.) An empty array is not a wiped board,
+  // it is a save from before the catalog had anything in it.
+  if (Array.isArray(q.catalog) && q.catalog.length) return mergeOverrides(shipped, questOverrides(q.catalog));
+  return shipped;
+}
+
 // The single place the in-memory state is turned into the text on disk. Every
 // content family that ships defaults hands back its overrides here; everything
 // else is saved as it stands.
@@ -926,6 +973,10 @@ function toSaved(st) {
       diceProphecy: diceProphecyOverrides(st.settings && st.settings.diceProphecy),
       introVideos: introVideoOverrides(st.settings && st.settings.introVideos),
     },
+    // `catalog: undefined` is dropped by JSON.stringify — the merged board is
+    // in memory only, and `active`/`completed` (real records, not content)
+    // carry on being saved exactly as they are.
+    quests: { ...st.quests, catalog: undefined, ...questOverrides(st.quests && st.quests.catalog) },
     shop: shopOverrides(st),
   };
 }
@@ -1025,27 +1076,14 @@ function load() {
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
       merged.quests = { ...def.quests, ...(merged.quests || {}) };
-      if (!Array.isArray(merged.quests.catalog) || !merged.quests.catalog.length) merged.quests.catalog = def.quests.catalog;
-      // Backfill quest fields added after this browser last saved: pick up the
-      // shipped `repeatable` flag by id, and give every quest a fail penalty.
-      const defQuestById = Object.fromEntries(def.quests.catalog.map((q) => [q.id, q]));
-      merged.quests.catalog = merged.quests.catalog.map((q) => {
-        const d = defQuestById[q.id];
-        return {
-          ...q,
-          repeatable: q.repeatable ?? (d ? !!d.repeatable : false),
-          penalty: Number.isFinite(Number(q.penalty)) ? Number(q.penalty)
-            : (d && Number.isFinite(Number(d.penalty)) ? Number(d.penalty) : Math.round(Number(q.points || 0) / 2)),
-          // Quest kinds arrived after some browsers had already saved. Take the
-          // shipped type by id; a quest the teacher wrote themselves has no
-          // default to borrow, so it lands on the fallback until they pick one.
-          type: QUEST_TYPES[q.type] ? q.type
-            : (d && QUEST_TYPES[d.type] ? d.type : DEFAULT_QUEST_TYPE),
-          // Per-quest icons shipped later still. Borrow the shipped one by id;
-          // a teacher's own quest keeps '' and falls back to its category icon.
-          icon: typeof q.icon === 'string' && q.icon ? q.icon : (d && d.icon ? d.icon : ''),
-        };
-      });
+      // The quest board ships in this file; the save holds the teacher's edits,
+      // their own quests and the ids they deleted. Four per-field backfills used
+      // to run here — repeatable, penalty, type and icon, each added to the
+      // catalog after some browsers had already saved a copy of it — and all
+      // four are gone: a field the app can derive is derived where it is used
+      // (see trimDerivedQuestFields), and a field that ships is read from the
+      // shipped quest by id every load.
+      merged.quests.catalog = materializeQuestCatalog(saved.quests);
       if (!merged.quests.active || typeof merged.quests.active !== 'object') merged.quests.active = {};
       if (!Array.isArray(merged.quests.completed)) merged.quests.completed = [];
       // Both shop catalogs ship in this file and the save holds only what the

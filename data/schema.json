@@ -364,15 +364,32 @@
     },
     "quests": {
       "type": "object",
-      "description": "Class Quests system (one active per core, completion teacher-confirmed).",
-      "required": ["catalog", "active", "completed"],
+      "description": "Class Quests system (one active per core, completion teacher-confirmed). The BOARD itself is not stored here: the shipped quests live in code, in store.js's defaultQuestCatalog(), and this object holds only the teacher's overrides ('edits'/'added'/'deleted', the same pattern as 'shop') plus the two things that are records rather than content — which quest each core is on now, and every completion. Four per-field backfills used to run on load, writing 'repeatable', 'penalty', 'type' and 'icon' into every saved quest as each field was added to the catalog; all four are gone. A field the app can DERIVE is never stored — the give-up penalty is half the reward unless the teacher sets one, and an untyped quest borrows its category's icon — because storing a default turns it into a fact: a quest whose reward was later raised kept a penalty worked out from the old one. store.failQuest(), quests.js and admin.js each already computed the same fallback at the point of use, and that is now the only rule. LEGACY: a save holding a 'catalog' array is the old full-copy shape; store.js load() converts it once, dropping values that merely repeat what the app would derive, and treating a shipped quest missing from it as deleted — the board was copied whole, so absence is the only record a deletion ever left.",
+      "required": ["active", "completed"],
       "properties": {
+        "edits": {
+          "type": "object",
+          "description": "questId -> the fields of that SHIPPED quest the teacher changed, and nothing else (field shapes are as in 'catalog' below). A quest edited back to its shipped values drops out entirely, and a value equal to one the app would derive is never written.",
+          "additionalProperties": { "type": "object" },
+          "example": { "q-library": { "title": "Library Heroes", "points": 999, "penalty": 111 } }
+        },
+        "added": {
+          "type": "array",
+          "description": "Quests the teacher wrote themselves, stored whole — there is no shipped quest to diff them against.",
+          "items": { "type": "object" }
+        },
+        "deleted": {
+          "type": "array",
+          "description": "Ids of SHIPPED quests the teacher deleted in Admin (store.deleteQuest). Any house holding one has it cleared at the same moment.",
+          "items": { "type": "string" },
+          "example": ["q-cleanup"]
+        },
         "catalog": {
           "type": "array",
-          "description": "Available quests (pre-seeded + teacher-edited in Admin).",
+          "description": "LEGACY ONLY — the old full copy of the whole quest board, and the shape of a quest for every key above. store.js load() converts it to 'edits'/'added'/'deleted' the first time it sees one and never writes this key again; it is still what a backup file exported before that change contains. NOTE that 'penalty', 'repeatable', 'type' and 'icon' may all be ABSENT on a quest now: each is derived where it is used when missing (penalty = half of 'points', repeatable = false, type = 'service', icon = the category's icon), and a value equal to the derived one is deliberately not stored.",
           "items": {
             "type": "object",
-            "required": ["id", "points", "title", "desc", "type", "icon", "repeatable"],
+            "required": ["id", "points", "title", "desc"],
             "properties": {
               "id": {
                 "type": "string",
