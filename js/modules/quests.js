@@ -31,6 +31,7 @@ let ctxRef = null;
 let rootEl = null;
 let unsub = null;
 let clickHandler = null;
+let inputHandler = null;
 let keyHandler = null;
 let lockHandler = null;
 let resizeHandler = null;
@@ -423,6 +424,14 @@ function injectStyles() {
   .quest-modal-info{margin:0 0 1em;padding:.7em 1em;border-radius:.8rem;
     font-size:clamp(1rem,1.9vh,1.2rem);line-height:1.45;
     background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);color:#cbd5e1;}
+  /* ---- 7.4: optional proof note on the Complete confirm ---- */
+  .quest-modal-proof{margin:0 0 1em;text-align:left;}
+  .quest-modal-proof-label{display:block;margin-bottom:.35em;font-size:clamp(.8rem,1.5vh,.95rem);
+    font-weight:700;color:var(--color-text-soft,#9ca3af);}
+  .quest-modal-proof-input{width:100%;box-sizing:border-box;min-height:44px;padding:.6em .8em;
+    border-radius:.7rem;border:1px solid var(--color-line,#374151);background:var(--color-card2,#1f2937);
+    color:var(--color-text,#e5e7eb);font-family:inherit;font-size:clamp(.95rem,1.9vh,1.1rem);}
+  .quest-modal-proof-input:focus{outline:2px solid var(--m,#f59e0b);outline-offset:1px;}
   .quest-modal-acts{display:flex;gap:.8em;}
   .quest-modal-btn{flex:1;min-height:clamp(52px,7vh,66px);border-radius:.95rem;border:none;cursor:pointer;
     font-weight:800;font-family:inherit;font-size:clamp(1rem,2.1vh,1.35rem);
@@ -784,7 +793,12 @@ function modalHtml(store) {
     extra = `<div class="quest-modal-info">This adds <b>+${q.points} points</b> to ${esc(house.name)} and files the
       quest in the Hall of Deeds. ${q.repeatable
         ? 'It is <b>repeatable</b>, so it returns to the board for any house.'
-        : 'It is a <b>one-time</b> quest, so it leaves the board for good.'}</div>`;
+        : 'It is a <b>one-time</b> quest, so it leaves the board for good.'}</div>
+      <div class="quest-modal-proof">
+        <label class="quest-modal-proof-label" for="quest-modal-note">How was it proven? — optional</label>
+        <input type="text" id="quest-modal-note" class="quest-modal-proof-input" data-note-input
+          placeholder="e.g. sign-off sheet from Ms. R" maxlength="80" value="${esc(m.note || '')}" />
+      </div>`;
     go = `✓ Complete — award +${q.points}`;
     color = '#22c55e';
     colorSoft = 'rgba(34,197,94,.35)';
@@ -842,6 +856,15 @@ function render() {
   const prevGrid = rootEl.querySelector('.quest-grid');
   const keepTop = prevGrid ? prevGrid.scrollTop : 0;
   const keepLeft = carouselScrollLeft(rootEl);
+  // 7.4's proof note lives only in ui.modal.note until Confirm is pressed —
+  // a store change from anywhere else in the app (another window, an admin
+  // award elsewhere) re-renders this whole screen via the subscribe below,
+  // and without capturing focus/caret here that mid-type note would vanish
+  // right as the teacher is closing out a quest. Same idea as the scroll
+  // preservation above, one field instead of a whole board.
+  const prevNote = rootEl.querySelector('#quest-modal-note');
+  const noteFocused = !!prevNote && document.activeElement === prevNote;
+  const noteCaret = noteFocused ? prevNote.selectionStart : null;
   // Tear down the previous wiring BEFORE the DOM it's attached to is replaced:
   // wireCarousel() binds its click listener to the ROOT we pass it (so arrow
   // clicks work no matter where in the strip they land), and that root is
@@ -863,6 +886,14 @@ function render() {
     headings: rootEl.querySelector('.quest-headings'),
     // No pill any more — the masthead fitter tolerates a null here.
   });
+
+  if (noteFocused) {
+    const freshNote = rootEl.querySelector('#quest-modal-note');
+    if (freshNote) {
+      freshNote.focus();
+      if (noteCaret != null) { try { freshNote.setSelectionRange(noteCaret, noteCaret); } catch (e) { /* ignore */ } }
+    }
+  }
 
   // Restore the grid's scroll position captured above, before paint so it
   // never flashes. The carousel's own position is restored by wireCarousel()
@@ -999,7 +1030,14 @@ async function confirmModal() {
     const heroBtn = rootEl.querySelector(`.quest-act-done[data-core="${m.core}"]`);
     const rect = heroBtn ? heroBtn.getBoundingClientRect() : null;
     const house = store.HOUSES[m.core];
-    const quest = store.completeQuest(m.core);   // emits → re-render via subscribe
+    // 7.4: the optional proof note rides along as a second, options-style
+    // argument — a shape store.completeQuest doesn't take yet at the time
+    // this file was written (a sibling task adds it). Passing it regardless
+    // costs nothing: an older completeQuest(core) simply ignores the extra
+    // argument, so this call degrades to exactly today's behaviour until the
+    // store catches up, with no typeof guard needed.
+    const note = (m.note || '').trim().slice(0, 80);
+    const quest = store.completeQuest(m.core, note ? { note } : undefined);   // emits → re-render via subscribe
     render();
     if (quest && !quest.paid) {
       // Completed, but nothing was paid — say which, and why. Cheering here
@@ -1039,6 +1077,17 @@ async function confirmModal() {
   render();
 }
 
+// 7.4: keystrokes in the optional proof field write straight into ui.modal —
+// no render() call, so the input the teacher is looking at never gets pulled
+// out from under their caret over its own typing. render() only rebuilds the
+// modal (and this value with it) when something ELSE changes it, at which
+// point the caret-restore in render() takes over.
+function onInput(e) {
+  const input = e.target.closest('[data-note-input]');
+  if (!input || !ui || !ui.modal) return;
+  ui.modal.note = input.value.slice(0, 80);
+}
+
 function onClick(e) {
   const btn = e.target.closest('[data-q]');
   if (!btn) return;
@@ -1064,7 +1113,8 @@ function onClick(e) {
     }
 
     case 'complete':
-      ui.modal = { kind: 'complete', core: Number(btn.dataset.core) };
+      // note starts empty — the proof field is optional, see modalHtml/onInput.
+      ui.modal = { kind: 'complete', core: Number(btn.dataset.core), note: '' };
       render();
       break;
 
@@ -1114,6 +1164,9 @@ export default {
     clickHandler = onClick;
     rootEl.addEventListener('click', clickHandler);
 
+    inputHandler = onInput;
+    rootEl.addEventListener('input', inputHandler);
+
     keyHandler = (ev) => {
       if (ev.key === 'Escape' && ui && ui.modal) { ui.modal = null; render(); }
     };
@@ -1149,13 +1202,14 @@ export default {
     if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
     if (carTeardown) { carTeardown(); carTeardown = null; }
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
+    if (rootEl && inputHandler) rootEl.removeEventListener('input', inputHandler);
     if (keyHandler) document.removeEventListener('keydown', keyHandler);
     if (lockHandler) window.removeEventListener('lock:changed', lockHandler);
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
     const st = document.getElementById(STYLE_ID);
     if (st) st.remove();
-    rootEl = null; ctxRef = null; clickHandler = null; keyHandler = null; lockHandler = null; resizeHandler = null; ui = null;
+    rootEl = null; ctxRef = null; clickHandler = null; inputHandler = null; keyHandler = null; lockHandler = null; resizeHandler = null; ui = null;
     lastBoardW = 0;
   },
 };
