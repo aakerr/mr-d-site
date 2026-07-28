@@ -82,7 +82,30 @@ function onShopPointerRelease() {
 
 // image URL resolution cache — persists across mount/unmount, keyed by media key
 const mediaUrlCache = new Map(); // mediaKey -> url string | null (null = resolved, no file)
-const mediaFetching = new Set();
+// mediaKey -> token for the lookup currently in flight. A token (not a Set):
+// eviction mid-flight deletes the entry, and the settle handler only writes
+// the cache if ITS token is still the current one — so a lookup started
+// before the file changed can never re-cache the now-revoked URL, even if a
+// fresh lookup for the same key has already begun.
+const mediaFetching = new Map();
+
+// media.js announces every put/delete with this event — the one signal that
+// any object URL previously handed out for that key is now revoked (its
+// header names this file as the listener; change the name in both places or
+// not at all). Registered ONCE at module scope, not per mount: the cache
+// itself outlives mounts, so its invalidation must too, and a per-mount
+// listener would stack duplicates across visits. If the shop is on screen,
+// repaint so the next resolveItemImage re-fetches — through the same holds
+// the store subscription honours (mid-purchase, mid-reveal, finger down).
+window.addEventListener('mrd:media-changed', (e) => {
+  const key = e && e.detail ? e.detail.key : null;
+  if (key == null) return;
+  mediaUrlCache.delete(key);
+  mediaFetching.delete(key);
+  if (!currentRenderFn || purchaseInFlight || wildRollActive) return;
+  if (pointerDownInside) { renderDeferred = true; return; }
+  currentRenderFn();
+});
 
 // ---- per-mount UI state -----------------------------------------------------
 // The buyer is never chosen in-shop anymore — it's whatever house is active in
@@ -672,10 +695,19 @@ function resolveItemImage(item, onReady) {
     const key = raw.slice(6);
     if (mediaUrlCache.has(key)) return mediaUrlCache.get(key);
     if (!mediaFetching.has(key)) {
-      mediaFetching.add(key);
-      media.url(key)
-        .then((url) => { mediaUrlCache.set(key, url || null); mediaFetching.delete(key); onReady && onReady(); })
-        .catch(() => { mediaUrlCache.set(key, null); mediaFetching.delete(key); onReady && onReady(); });
+      // The token pins this lookup to the cache generation it started in: if
+      // the file changes mid-flight, the mrd:media-changed handler above
+      // drops the entry, the token comparison fails, and this result — a URL
+      // that was revoked while we waited — is discarded instead of cached.
+      const token = {};
+      mediaFetching.set(key, token);
+      const settle = (url) => {
+        if (mediaFetching.get(key) !== token) return; // superseded/evicted mid-flight
+        mediaUrlCache.set(key, url || null);
+        mediaFetching.delete(key);
+        onReady && onReady();
+      };
+      media.url(key).then(settle).catch(() => settle(null));
     }
     return undefined;
   }
