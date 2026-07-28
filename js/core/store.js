@@ -1406,6 +1406,27 @@ function fmtDue(dateStr) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// Shared school-day walker for the freeze (Legendary Ice Axe). Two callers
+// need the exact same weekend-skipping rule and must never drift apart:
+// freezeHouse walks FORWARD a fixed number of school days to find an expiry
+// ({ steps }); getFreezeInfo walks forward from today and COUNTS the school
+// days crossed to reach an expiry already on the books ({ untilMs }). Both
+// are the same loop — start at midnight, step a calendar day at a time,
+// skip Saturday/Sunday — so it is written once and called both ways instead
+// of risking two copies that quietly disagree about a long weekend.
+function walkSchoolDays(fromMs, { steps, untilMs } = {}) {
+  const d = new Date(fromMs);
+  d.setHours(0, 0, 0, 0);
+  let count = 0;
+  const stepMode = steps != null;
+  while (stepMode ? count < steps : d.getTime() < untilMs) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) count++;   // Sunday / Saturday do not count
+  }
+  return stepMode ? d.getTime() : count;
+}
+
 export const store = {
   HOUSES,
   QUEST_TYPES,
@@ -2152,20 +2173,13 @@ export const store = {
   // it. If he says he meant plain calendar days, delete the weekend skip.
   freezeHouse(houseId, days) {
     if (!state.frozen || typeof state.frozen !== 'object') state.frozen = {};
-    const until = new Date();
-    until.setHours(0, 0, 0, 0);
-    let left = Math.max(1, Math.round(days));
-    while (left > 0) {
-      until.setDate(until.getDate() + 1);
-      const d = until.getDay();
-      if (d !== 0 && d !== 6) left--;      // Sunday / Saturday do not count
-    }
+    const until = walkSchoolDays(Date.now(), { steps: Math.max(1, Math.round(days)) });
     // A second Axe landing on an already-frozen house can only EXTEND the
     // sentence. Recomputing from today would let a fresh 1-day roll quietly
     // thaw a house still serving five — the class that paid for the long
     // freeze would watch it evaporate.
     const current = Number(state.frozen[houseId]) || 0;
-    state.frozen[houseId] = Math.max(current, until.getTime());
+    state.frozen[houseId] = Math.max(current, until);
     emit();
   },
   // ----- the three information items -------------------------------------------
@@ -2333,6 +2347,43 @@ export const store = {
   thawHouse(houseId) {
     if (state.frozen && state.frozen[houseId]) { delete state.frozen[houseId]; emit(); return true; }
     return false;
+  },
+
+  // Owner-requested (7.5): everything Battle Day already enforces is invisible
+  // everywhere else. This is the one place a UI asks "is this house frozen,
+  // and how do I say so in a classroom-friendly way" — a badge/tint renderer
+  // that throws or finds this missing should fail soft to today's plain look
+  // (see dashboard/council/houses/battle), never crash the screen.
+  //
+  // schoolDaysLeft reuses walkSchoolDays in COUNT mode so the countdown can
+  // never disagree with the school-day math freezeHouse used to set `until`
+  // in the first place — one implementation, read both directions.
+  getFreezeInfo(houseId) {
+    const until = store.frozenUntil(houseId);
+    const now = Date.now();
+    if (!until || until <= now) {
+      return { frozen: false, until: null, schoolDaysLeft: 0, label: '' };
+    }
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const untilDay = new Date(until); untilDay.setHours(0, 0, 0, 0);
+    // Expiry lands later TODAY (e.g. a same-day admin thaw time) — no day to count.
+    if (untilDay.getTime() === today.getTime()) {
+      return { frozen: true, until, schoolDaysLeft: 0, label: 'thaws today' };
+    }
+    const schoolDaysLeft = walkSchoolDays(today.getTime(), { untilMs: untilDay.getTime() });
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    let label;
+    if (untilDay.getTime() === tomorrow.getTime()) {
+      label = 'thaws tomorrow';
+    } else if (schoolDaysLeft === 1) {
+      // Only one school day stands between now and thaw, but a weekend sits
+      // in the way — name the day instead of saying "1 school day".
+      const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      label = `thaws ${WEEKDAY_NAMES[untilDay.getDay()]}`;
+    } else {
+      label = `thaws in ${schoolDaysLeft} school days`;
+    }
+    return { frozen: true, until, schoolDaysLeft, label };
   },
 
   getShopItems() {
