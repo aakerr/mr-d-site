@@ -5975,7 +5975,11 @@ function injectStyles() {
   .admin-shop-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.85rem;}
   .admin-shop-thumb{flex-shrink:0;width:48px;height:48px;border-radius:.6rem;background:var(--color-card2);border:1px solid var(--color-line);display:flex;align-items:center;justify-content:center;overflow:hidden;}
   .admin-shop-emoji{font-size:1.6rem;line-height:1;}
-  .admin-shop-thumb-img{width:100%;height:100%;object-fit:cover;}
+  /* Item art renders WHOLE here, same rule the shop card frame follows: cover
+     was cropping the edges off a wide crest in a square 48px box, so the row
+     thumbnail disagreed with the card the class actually sees. 4px of inset,
+     even on all four sides, keeps the art off the frame. */
+  .admin-shop-thumb-img{width:100%;height:100%;object-fit:contain;padding:4px;box-sizing:border-box;}
   .admin-shop-effect{font-size:.76rem;color:var(--color-text-soft);margin-top:4px;font-weight:600;}
   .admin-shop-cost{flex-shrink:0;width:56px;text-align:center;font-weight:800;font-size:1.35rem;color:#f59e0b;line-height:1;}
   .admin-shop-cost small{display:block;font-size:.6rem;font-weight:700;color:var(--color-text-soft);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
@@ -5988,7 +5992,7 @@ function injectStyles() {
   .admin-eff-label{font-weight:700;color:var(--color-text);}
   .admin-eff-explain{grid-column:2;font-size:.8rem;color:var(--color-text-soft);line-height:1.35;}
   .admin-shop-imgprev{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--color-line);border-radius:.7rem;background:var(--color-page);}
-  .admin-shop-imgprev-img{width:56px;height:56px;object-fit:cover;border-radius:.5rem;border:1px solid var(--color-line);}
+  .admin-shop-imgprev-img{width:56px;height:56px;object-fit:contain;padding:4px;box-sizing:border-box;border-radius:.5rem;border:1px solid var(--color-line);background:var(--color-card2);}
 
   /* video & assets (potw card) */
   .admin-drops-one{grid-template-columns:1fr;max-width:420px;}
