@@ -105,7 +105,7 @@ const accentKey = (house) => (house ? house.accent : 'default');
 
 /** Tray footprint for a given canvas aspect ratio (ported from Tray.tsx).
  *  The aspect is capped well below the smartboard's 16:9 so the tray stays
- *  comparatively narrow — combined with CAMERA_FILL this leaves clear space on
+ *  comparatively narrow — combined with FILL this leaves clear space on
  *  the left and right of the tray inside the stage box. Physics walls are built
  *  from the same w/d, so dice can never leave the visible tray. */
 function traySize(aspect) {
@@ -119,7 +119,7 @@ function traySize(aspect) {
 // between instances, so several sims can run concurrently in different hosts.
 // (The only cross-instance state is the immutable die-geometry cache in
 // geometry.js, which is read-only and deliberately never disposed per-instance.)
-export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs, dieScale } = {}) {
+export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs, dieScale, ghostTray = false, view = {} } = {}) {
   const DIE_SCALE = Number.isFinite(dieScale) && dieScale > 0 ? dieScale : DIE_SCALE_DEFAULT;
   const fateEnabled = !!fate;
   // Nudges would desync the visible roll from the fate pre-sim, so they are
@@ -150,7 +150,13 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
   // --- scene / camera -----------------------------------------------------
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  const VIEW_DIR = new THREE.Vector3(0, 1.25, 1).normalize();
+  // ghostTray callers (the Die of Destiny screen rolling on a painted tray)
+  // can retune the camera to match the painting's perspective: `view.elev`
+  // raises/lowers the eye (default 1.25), `view.fill`/`view.targetY` override
+  // the framing constants.
+  const VIEW_DIR = new THREE.Vector3(0, Number.isFinite(view.elev) ? view.elev : 1.25, 1).normalize();
+  const FILL = Number.isFinite(view.fill) ? view.fill : CAMERA_FILL;
+  const TARGET_Y = Number.isFinite(view.targetY) ? view.targetY : CAMERA_TARGET_Y;
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.65);
   const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x2a2f3a, 0.35);
@@ -239,17 +245,25 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     world.addBody(floorBody);
     trayBodies.push(floorBody);
 
-    // Felt floor mesh.
+    // Felt floor mesh — or, for a ghost tray, an invisible shadow-catcher: the
+    // painted backdrop supplies the tray the eye sees, and this plane exists
+    // only so the dice still throw real soft shadows onto "it".
     const floorMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, 0.3, d),
-      new THREE.MeshStandardMaterial({ color: CONFIG.trayColor, roughness: 0.95 }),
+      ghostTray ? new THREE.PlaneGeometry(w * (ghostTray === 'debug' ? 1 : 1.6), d * (ghostTray === 'debug' ? 1 : 1.6)) : new THREE.BoxGeometry(w, 0.3, d),
+      ghostTray === 'debug'
+        ? new THREE.MeshBasicMaterial({ color: 0xff3366, transparent: true, opacity: 0.35 })
+        : ghostTray ? new THREE.ShadowMaterial({ opacity: 0.38 })
+                    : new THREE.MeshStandardMaterial({ color: CONFIG.trayColor, roughness: 0.95 }),
     );
-    floorMesh.position.set(0, -0.15, 0);
+    if (ghostTray) { floorMesh.rotation.x = -Math.PI / 2; floorMesh.position.set(0, 0.001, 0); }
+    else floorMesh.position.set(0, -0.15, 0);
     floorMesh.receiveShadow = true;
     scene.add(floorMesh);
     trayMeshes.push(floorMesh);
 
-    // Visible rim.
+    // Visible rim — skipped entirely for a ghost tray (the painting's gold
+    // frame IS the rim; the physics walls above keep the dice inside it).
+    if (ghostTray) return;
     const RIM_H = 0.5, RIM_T = 0.42;
     const rims = [
       [[w + RIM_T * 2, RIM_H, RIM_T], [0, RIM_H / 2, -d / 2 - RIM_T / 2]],
@@ -275,7 +289,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     camera.updateProjectionMatrix();
     // Sample the tray's extreme corners (rim footprint) at the felt and a little
     // above it, then binary-search the camera distance so the farthest-projecting
-    // corner lands at CAMERA_FILL of the frame on whichever axis binds. This keeps
+    // corner lands at FILL of the frame on whichever axis binds. This keeps
     // the whole rim on-screen with margin at ANY aspect (no cropping/spill).
     const hw = trayW / 2 + 0.6;
     const hd = trayD / 2 + 0.6;
@@ -283,7 +297,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const sy of [0, 1.4]) {
       _fitPts.push(new THREE.Vector3(sx * hw, sy, sz * hd));
     }
-    const target = new THREE.Vector3(0, CAMERA_TARGET_Y, 0);
+    const target = new THREE.Vector3(0, TARGET_Y, 0);
     let lo = 4, hi = 140;
     for (let it = 0; it < 46; it++) {
       const dist = (lo + hi) / 2;
@@ -295,7 +309,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
         const q = p.clone().project(camera);
         maxN = Math.max(maxN, Math.abs(q.x), Math.abs(q.y));
       }
-      if (maxN > CAMERA_FILL) lo = dist; else hi = dist;
+      if (maxN > FILL) lo = dist; else hi = dist;
     }
     camera.position.copy(VIEW_DIR).multiplyScalar(hi).add(target);
     camera.lookAt(target);

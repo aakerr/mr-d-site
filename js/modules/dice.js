@@ -30,15 +30,18 @@ function getProphecy(num) {
 function createStyles() {
   return `
     <style>
+      /* FULL-BLEED CHAMBER. The stage (and the painting inside it) covers the
+         whole module; the mode buttons and ROLL float over it. Keeping the
+         painting inside the stage — rather than on this container — locks the
+         painted tray and the invisible physics tray to the same box, so the
+         camera calibration can never drift from the art at any viewport. */
       .dice-container {
-        display: flex; flex-direction: column; height: 100%; width: 100%;
-        gap: 0.85rem; padding: 1.25rem 1.5rem; background: #0b0f19; color: #f9fafb;
-        font-family: system-ui, -apple-system, sans-serif; overflow-y: auto;
-        /* Reserve the scrollbar gutter so overlays/content never introduce a
-           scrollbar that would shrink the stage width. */
-        scrollbar-gutter: stable;
+        position: relative; height: 100%; width: 100%; overflow: hidden;
+        background: #0b0f19; color: #f9fafb;
+        font-family: system-ui, -apple-system, sans-serif;
       }
-      .dice-modes { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+      .dice-modes { position: absolute; top: 0.9rem; left: 50%; transform: translateX(-50%);
+        z-index: 6; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
       .dice-mode-btn {
         min-width: 120px; padding: 1rem 1.5rem; min-height: 64px;
         border: 2px solid #374151; background: #1f2937; color: #f9fafb;
@@ -62,12 +65,25 @@ function createStyles() {
       /* 3D stage — fixed 16:9 box; all result/celebration/plaque UI overlays it
          so nothing below can ever resize the canvas. */
       .dice-stage {
-        position: relative; width: 100%; max-width: 960px; margin: 0 auto;
-        aspect-ratio: 16 / 9; min-height: 420px; flex-shrink: 0;
-        border-radius: 1rem; border: 1px solid #374151; overflow: hidden;
-        background: radial-gradient(circle at 50% 35%, #182135 0%, #0b0f19 75%);
-        box-shadow: inset 0 0 60px rgba(0,0,0,0.6);
+        position: absolute; inset: 0; overflow: hidden; background: #06080e;
         cursor: pointer; touch-action: manipulation;
+      }
+      /* THE ART BOX. The painting was composed for the full 1920x1080 SCREEN —
+         including the strip the app's top bar covers — so the box anchors to
+         the VIEWPORT, not the module area: a 16:9 plate the size of the screen,
+         with the top bar overlaying its top edge exactly as the artist framed
+         it. On the smartboard that is pixel-for-pixel the design; on any other
+         window it letterboxes. The dice canvas lives inside this same box, so
+         the painted tray and the physics tray hold one alignment everywhere,
+         and the camera is calibrated once against this box. */
+      .dice-art {
+        position: fixed; left: 50%; transform: translateX(-50%);
+        top: max(0px, calc((100vh - 100vw * 9 / 16) / 2));
+        width: min(100vw, calc(100vh * 16 / 9));
+        height: min(100vh, calc(100vw * 9 / 16));
+        z-index: 0;
+        background: linear-gradient(180deg, rgba(6,8,14,.3), rgba(6,8,14,.08) 30%, rgba(6,8,14,.12)),
+          url('images/die-of-destiny.jpg') center center/cover no-repeat, #0b0f19;
       }
       .dice-canvas-host { position: absolute; inset: 0; }
       .dice-unavailable-note {
@@ -87,7 +103,7 @@ function createStyles() {
 
       /* In-tray result number: bottom-center of the stage, over the 3D scene. */
       .dice-tray-result {
-        position: absolute; left: 50%; bottom: 0.55rem; transform: translateX(-50%);
+        position: absolute; left: 50%; bottom: 8.4rem; transform: translateX(-50%);
         z-index: 5; pointer-events: none; white-space: nowrap;
         font-size: clamp(1.6rem, 4.5vw, 2.6rem); font-weight: 800; color: #fde68a;
         font-variant-numeric: tabular-nums;
@@ -207,8 +223,10 @@ function createStyles() {
       .dice-prophecy-title { font-weight: bold; color: #fcd34d; }
       .dice-prophecy-desc { font-size: 0.85rem; color: #9ca3af; }
 
-      /* Controls under the stage — ROLL sits immediately below the box. */
-      .dice-controls { display: flex; justify-content: center; }
+      /* Controls float over the full-bleed chamber: ROLL bottom-center,
+         the prophecy link tucked under it. */
+      .dice-controls { position: absolute; bottom: 3.9rem; left: 50%;
+        transform: translateX(-50%); z-index: 6; display: flex; justify-content: center; }
       .dice-roll-btn {
         padding: 1rem 3rem; min-height: 64px;
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
@@ -219,7 +237,8 @@ function createStyles() {
       }
       .dice-roll-btn:active:not(:disabled) { transform: scale(0.95); }
       .dice-roll-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      .dice-extra { display: flex; justify-content: center; }
+      .dice-extra { position: absolute; bottom: 1rem; left: 50%;
+        transform: translateX(-50%); z-index: 6; display: flex; justify-content: center; }
       .dice-prophecy-btn {
         padding: 0.5rem 1rem; min-height: 44px; background: transparent;
         border: 1px solid #4b5563; color: #9ca3af; border-radius: 0.375rem;
@@ -561,8 +580,10 @@ export default {
           <button class="dice-mode-btn d20-special" data-mode="d20">d20 — Die of Destiny</button>
         </div>
         <div class="dice-stage">
-          <div class="dice-canvas-host"></div>
-          <div class="dice-tray-result"></div>
+          <div class="dice-art">
+            <div class="dice-canvas-host"></div>
+            <div class="dice-tray-result"></div>
+          </div>
           <div class="dice-plaque-backdrop"></div>
         </div>
         <div class="dice-controls">
@@ -591,7 +612,10 @@ export default {
     try {
       const { createDiceSim } = await import('./dice3d/sim.js');
       if (token !== mountToken) return;
-      sim = createDiceSim({ container: host, audio });
+      sim = createDiceSim({ container: host, audio, ghostTray: true,
+        // Camera matched by eye to the painted tray's perspective — tune these
+        // three numbers if the backdrop art ever changes.
+        view: { elev: 0.55, fill: 0.58, targetY: 4.9 }, dieScale: 2.3 });
       // Tint the dice with the active house accent (null = All → defaults).
       sim.setHouse(store.getActiveHouse());
       // Recolor live when the teacher switches core in the top bar (no remount).
