@@ -206,17 +206,17 @@ If HP mode is ever brought back into use, do these first:
 
 - [x] **2.1** `js/modules/dashboard.js:379`: full innerHTML rebuild on every store change resets
   panel scroll. Adopt quests.js's targeted-update pattern (quests.js:832-841).
-- [ ] **2.2** `js/modules/shop.js:1506, 912`: shop lacks the pressed-pointer render deferral
+- [x] **2.2** `js/modules/shop.js:1506, 912`: shop lacks the pressed-pointer render deferral
   houses.js built (houses.js:1329-1388) — taps get eaten by re-renders. Port it (or extract
   the deferral into core and use it in both).
-- [ ] **2.3** `js/modules/shop.js:934-953`: toasts/banners are children of `rootEl` and die on
+- [x] **2.3** `js/modules/shop.js:934-953`: toasts/banners are children of `rootEl` and die on
   re-render; houses.js mounts its toast host on `<body>` (houses.js:1102-1104). Port.
 - [x] **2.4** `js/modules/quests.js:872-896`: `--board-w` never updates on window resize; add a
   (debounced) resize listener calling `syncBoardWidth`.
 - [x] **2.5** `js/modules/council.js:443-448`: touch tap to unpause the ribbon is immediately
   re-paused by the synthetic `mouseenter`. Handle pointer events exclusively (ignore
   mouse events when `pointerType !== 'mouse'` was seen).
-- [ ] **2.6 (superseded by 2.21 — do 2.21 instead).** `js/modules/admin.js:4180-4183, 4493`:
+- [x] **2.6 (superseded by 2.21 — do 2.21 instead).** `js/modules/admin.js:4180-4183, 4493`:
   Admin revokes the media.js-cached flyover object URL — opening and cancelling the editor
   silences the destination's flyover until reload. This bug lives in the per-destination
   flyover block that 2.21 removes entirely; fix it only if 2.21 is postponed (by marking the
@@ -236,7 +236,7 @@ If HP mode is ever brought back into use, do these first:
   - Migration: existing per-destination `flyoverUrl` values and `potw:<key>:flyover` blobs
     are retired — ignore them in code (leave blobs harmlessly in IndexedDB or sweep them).
   - This removes the surface that bug 2.6 lives in.
-- [ ] **2.7** `js/modules/shop.js:40-42` + `js/core/media.js:37`: `mediaUrlCache` serves revoked
+- [x] **2.7** `js/modules/shop.js:40-42` + `js/core/media.js:37`: `mediaUrlCache` serves revoked
   URLs after art replacement. Invalidate on `media.put` (emit an event or expose a version).
 - [x] **2.8** `js/modules/battle.js:2318-2363`: Catapult's second victim's defense resolves
   publicly but stays "Hidden" — add the `combatRevealed` pairKey like the first target
@@ -253,15 +253,15 @@ If HP mode is ever brought back into use, do these first:
 - [x] **2.12** `js/modules/dice.js:428-443`: a refused (frozen-house) award still burns the
   roll's single award in All-Cores mode — let the teacher redirect. (Code comment at 414-421
   already claims this is how it works; make the code match.)
-- [ ] **2.13** `js/modules/battle.js:1989-1990` and `js/modules/admin.js:5125-5127`: silent
+- [x] **2.13** `js/modules/battle.js:1989-1990` and `js/modules/admin.js:5125-5127`: silent
   failure paths (mini-shop purchase failure; "take item" that took nothing) — toast the
   failure.
-- [ ] **2.14** `js/modules/admin.js:3909-3919`: the "⚠ Intro video file missing — re-upload it"
+- [x] **2.14** `js/modules/admin.js:3909-3919`: the "⚠ Intro video file missing — re-upload it"
   badge instructs a retired flow; reword to "pick a new intro video in this destination's
   editor".
-- [ ] **2.15** `js/modules/admin.js:4950`: planner event delete is the only unconfirmed delete
+- [x] **2.15** `js/modules/admin.js:4950`: planner event delete is the only unconfirmed delete
   in Admin; add the standard confirm.
-- [ ] **2.16** Small Admin copy fixes: week-clash winner is first-added, not last
+- [x] **2.16** Small Admin copy fixes: week-clash winner is first-added, not last
   (admin.js:4214 vs store.js:2190); `awardSentence` hardcodes "Camelot" (admin.js:2253);
   lock card promises prefilled PIN boxes that are empty after the first cycle
   (admin.js:3452 + 3440); blanked quest penalty saves 0 instead of the promised default
@@ -272,7 +272,7 @@ If HP mode is ever brought back into use, do these first:
   ("Week NaN of 9" in the top bar); fall back to "Set term dates in Admin".
 - [x] **2.18** `js/core/registry.js:35`: wrap `next.mount` in try/catch with a visible fallback
   ("This screen failed to load") so one bad module doesn't brick navigation.
-- [ ] **2.19** `js/modules/potw.js:844-859`: guard `quickFacts`/`primarySources`/`quiz` maps
+- [x] **2.19** `js/modules/potw.js:844-859`: guard `quickFacts`/`primarySources`/`quiz` maps
   (default `[]`) so a hand-edited/restored profile can't brick the Launch button; and reset
   `overlayEl` on template failure.
 - [x] **2.20** First-run PIN: `js/core/firstrun.js:220` pre-fills `DEFAULT_PIN='0314'` — anyone
