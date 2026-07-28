@@ -808,6 +808,12 @@ function injectStyles() {
   .duel-two-cancel:hover{background:#374151;}
 
   /* mini shop — buy without leaving Battle Day */
+  /* A raised Shroud is a condition, not an item in a slot — it gets its own
+     look so nobody tries to spend it twice. */
+  .duel2-util-active{border-color:rgba(148,163,184,.7)!important;
+    background:linear-gradient(180deg,rgba(100,116,139,.28),rgba(51,65,85,.18))!important;}
+  .duel2-util-active .duel2-util-state{color:#cbd5e1;font-weight:800;}
+
   .duel-shop-overlay{position:fixed;inset:0;z-index:75;background:rgba(7,9,18,.72);
     display:flex;align-items:center;justify-content:center;padding:clamp(.75rem,3vw,2rem);
     animation:battle-curtain .18s ease-out both;overflow-y:auto;}
@@ -1542,11 +1548,15 @@ function utilitySlotHtml(store, houseId, itemId, interactiveOpts) {
   }
   const heldLabel = held > 1 ? `×${held} held` : 'Held';
   if (interactiveOpts) {
-    return `<button type="button" class="duel2-util-slot duel2-util-held duel2-util-interactive" data-stone-peek
+    // `state` is what the slot SAYS when it can be used ("Tap to peek"), and
+    // falls back to the plain held count when it cannot — a button that offers
+    // an action it will then refuse is worse than one that just shows a count.
+    return `<button type="button" class="duel2-util-slot duel2-util-held duel2-util-interactive"
+        ${interactiveOpts.attr || 'data-stone-peek'}
         ${interactiveOpts.enabled ? '' : 'disabled'} title="${esc(interactiveOpts.title || '')}">
       <span class="duel2-util-emoji">${esc(emoji)}</span>
       <span class="duel2-util-name">${esc(name)}</span>
-      <span class="duel2-util-state">${esc(interactiveOpts.enabled ? 'Tap to peek' : heldLabel)}</span>
+      <span class="duel2-util-state">${esc(interactiveOpts.enabled ? (interactiveOpts.state || 'Tap to use') : heldLabel)}</span>
     </button>`;
   }
   return `<div class="duel2-util-slot duel2-util-held">
@@ -1556,11 +1566,50 @@ function utilitySlotHtml(store, houseId, itemId, interactiveOpts) {
   </div>`;
 }
 
+// An ACTIVE shroud is not an item any more — it is a condition. It gets its own
+// chip so a house that has already raised one cannot be sold the idea of
+// raising another, and so the class can see it is up.
+function shroudSlotHtml(store, houseId) {
+  const cat = store.getShopItems().find((i) => i.id === 'shroud');
+  const emoji = (cat && cat.emoji) || '🌫️';
+  const name = (cat && cat.name) || 'The Shroud of Secrecy';
+  if (store.isShrouded(houseId)) {
+    const ts = store.shroudedUntil(houseId);
+    const until = ts ? new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    return `<div class="duel2-util-slot duel2-util-held duel2-util-active" title="No Stone of Seeing can look at this house until then">
+      <span class="duel2-util-emoji">${esc(emoji)}</span>
+      <span class="duel2-util-name">${esc(name)}</span>
+      <span class="duel2-util-state">🌫️ Up${until ? ` until ${esc(until)}` : ''}</span>
+    </div>`;
+  }
+  const held = store.countOwned(houseId, 'shroud');
+  return utilitySlotHtml(store, houseId, 'shroud', held ? {
+    attr: `data-raise-shroud="${Number(houseId)}"`, enabled: true, state: 'Tap to raise',
+    title: 'Raise the Shroud — no Stone of Seeing can look at this house for a week',
+  } : null);
+}
+
+// The Time Turner can only be offered when there is something to take back.
+function timeTurnerSlotHtml(store, houseId) {
+  const held = store.countOwned(houseId, 'timeturner');
+  if (!held) return utilitySlotHtml(store, houseId, 'timeturner', null);
+  const gate = store.canTimeTurn(houseId);
+  const last = store.lastStrikeOn(houseId);
+  return utilitySlotHtml(store, houseId, 'timeturner', {
+    attr: `data-time-turn="${Number(houseId)}"`,
+    enabled: !!gate.ok,
+    state: 'Tap to undo',
+    title: gate.ok
+      ? `Take back ${last && last.itemName ? last.itemName : 'the last attack'} on this house`
+      : (gate.reason || 'Nothing to take back yet'),
+  });
+}
+
 function utilityRowHtml(store, houseId, stoneOpts) {
   return `<div class="duel2-util-row">
     ${utilitySlotHtml(store, houseId, 'stone', stoneOpts)}
-    ${utilitySlotHtml(store, houseId, 'shroud')}
-    ${utilitySlotHtml(store, houseId, 'timeturner')}
+    ${shroudSlotHtml(store, houseId)}
+    ${timeTurnerSlotHtml(store, houseId)}
   </div>`;
 }
 
@@ -1716,6 +1765,15 @@ function wireMrDDuel() {
   const stoneBtn = rootEl.querySelector('[data-stone-peek]');
   if (stoneBtn) stoneBtn.addEventListener('click', peekWithStone);
 
+  // Both cards carry a utility row, so these are scoped by house id rather
+  // than by which side of the board they happen to be on.
+  rootEl.querySelectorAll('[data-raise-shroud]').forEach((btn) => {
+    btn.addEventListener('click', () => raiseShroudFor(Number(btn.getAttribute('data-raise-shroud'))));
+  });
+  rootEl.querySelectorAll('[data-time-turn]').forEach((btn) => {
+    btn.addEventListener('click', () => timeTurnFor(Number(btn.getAttribute('data-time-turn'))));
+  });
+
   rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
     btn.addEventListener('click', () => {
       teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
@@ -1749,6 +1807,73 @@ async function peekWithStone() {
   if (!result.ok) { toast(result.reason || 'The Stone of Seeing found nothing.'); return; }
   ctxRef.audio.sfx('coin');
   if (result.shrouded) toast(`🌫️ ${target.name} is shrouded — the Stone shows nothing (still spent).`);
+}
+
+// The Shroud of Secrecy: spent to put a house out of sight for a week. Nothing
+// visible happens to THEM — the effect is entirely on other houses' Stones,
+// which is exactly why the slot has to say plainly that it is up, and until
+// when, or a class has no way to know 500 points bought anything.
+async function raiseShroudFor(houseId) {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const house = store.HOUSES[houseId];
+  if (!house || store.isShrouded(houseId)) return;
+  if (store.countOwned(houseId, 'shroud') < 1) return;
+
+  resolving = true;
+  const ok = await lock.requireUnlock('use this item');
+  if (!rootEl) { resolving = false; return; }
+  if (!ok) { resolving = false; return; }
+
+  const result = store.raiseShroud(houseId);
+  resolving = false;
+  if (!rootEl) return;
+  renderDuel();
+  if (!result.ok) { toast(result.reason || 'The Shroud could not be raised.'); return; }
+  ctxRef.audio.sfx('coin');
+  const until = result.until
+    ? new Date(result.until).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+    : 'next week';
+  toast(`🌫️ ${house.name} is shrouded until ${until}. No Stone of Seeing can look at them.`);
+}
+
+// The Time Turner: spent to take back the last attack that landed on a house.
+// The undo DELETES the strike's ledger entries rather than paying compensation,
+// so the history reads as though it never happened.
+async function timeTurnFor(houseId) {
+  if (!rootEl || resolving) return;
+  const store = ctxRef.store;
+  const house = store.HOUSES[houseId];
+  if (!house) return;
+  const gate = store.canTimeTurn(houseId);
+  if (!gate.ok) { toast(gate.reason || 'There is nothing to take back.'); return; }
+
+  resolving = true;
+  const ok = await lock.requireUnlock('use this item');
+  if (!rootEl) { resolving = false; return; }
+  if (!ok) { resolving = false; return; }
+
+  const before = store.getTotal(houseId, 'term');
+  const result = store.useTimeTurner(houseId);
+  resolving = false;
+  if (!rootEl) return;
+  renderDuel();
+  if (!result.ok) { toast(result.reason || 'The Time Turner could not be used.'); return; }
+  ctxRef.audio.sfx('coin');
+
+  // Roll the restored points back up on whichever card this house is showing on,
+  // so the undo is watched rather than merely announced.
+  const side = challengerHouse() && challengerHouse().id === houseId ? 'challenger'
+    : (targetId === houseId ? 'defender' : null);
+  if (side && !prefersReducedMotion()) {
+    const crest = rootEl.querySelector(`[data-crest="${side}"]`);
+    if (crest && result.restored > 0) spawnFx(crest, 'duel-fx-tally duel-fx-tally-gain', 2200, `+${result.restored}`);
+    animatePoints(side, before, store.getTotal(houseId, 'term'), DUEL2_DRAIN_MS);
+  }
+  const bits = [];
+  if (result.restored > 0) bits.push(`${result.restored} points came back`);
+  if (result.unfroze) bits.push('the freeze is lifted');
+  toast(`⏳ ${house.name} turned back time — ${bits.join(' and ') || 'the attack never happened'}.`);
 }
 
 // =============================================================================

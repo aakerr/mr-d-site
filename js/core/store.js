@@ -1548,6 +1548,7 @@ export const store = {
       const days = Math.max(1, Math.round(Number(rolled) || 1));
       store.freezeHouse(targetId, days);
       out.frozenDays = days;
+      store.recordStrike(targetId, { attackerId, itemId, itemName: item.name, txIds: [], froze: true });
       emit();
       return out;
     }
@@ -1564,13 +1565,16 @@ export const store = {
     });
     out.damage = hit ? Math.abs(hit.delta) : 0;
     out.rolledFor = total;   // what it would have taken, for the ledger-curious
+    const txIds = hit ? [hit.id] : [];
     if (pv.steals) {
       // You cannot loot more than they had. Stealing the rolled amount rather
       // than the amount actually taken would mint points out of nothing every
       // time a poor house got hit.
       const got = store.addPoints(attackerId, out.damage, { reason: `${item.name} on ${target?.name || 'a house'}`, tag: 'attack' });
       out.stolen = got ? got.delta : 0;
+      if (got) txIds.push(got.id);
     }
+    store.recordStrike(targetId, { attackerId, itemId, itemName: item.name, txIds, froze: false });
     emit();
     return out;
   },
@@ -1644,17 +1648,50 @@ export const store = {
     return { ok: true, until: state.shrouded[houseId] };
   },
   isShrouded(houseId) { return (((state.shrouded || {})[houseId]) || 0) > Date.now(); },
+  shroudedUntil(houseId) { return (((state.shrouded || {})[houseId]) || 0); },
 
-  // Time Turner: "change their items after they are attacked". With only one
-  // defense held there is nothing to swap TO, so in practice it is a second
-  // chance — spent to cancel an attack that has already got through. The
-  // teacher decides whether to use it when the attack lands.
-  canTimeTurn(houseId) { return store.countOwned(houseId, 'timeturner') > 0; },
+  // Time Turner: "go back and change your items after you have been attacked."
+  // With only one defense held there is nothing to swap TO, so in practice it
+  // is a second chance — it takes back the attack that just got through.
+  //
+  // The undo works by DELETING the ledger entries the strike wrote, rather than
+  // awarding compensating points. That matters twice over: the history reads as
+  // though the strike never happened (no confusing "+700 Time Turner" line for
+  // a class to argue about), and it still works on a house that has since been
+  // frozen, which a positive award would not.
+  //
+  // Kept per house, because the Catapult hits two and either may want to undo.
+  recordStrike(houseId, info) {
+    if (!state.lastStrike || typeof state.lastStrike !== 'object') state.lastStrike = {};
+    state.lastStrike[houseId] = { ...info, ts: Date.now() };
+  },
+  lastStrikeOn(houseId) { return (state.lastStrike || {})[houseId] || null; },
+
+  canTimeTurn(houseId) {
+    if (store.countOwned(houseId, 'timeturner') < 1) {
+      return { ok: false, reason: 'That house does not have a Time Turner.' };
+    }
+    const last = store.lastStrikeOn(houseId);
+    if (!last) {
+      return { ok: false, reason: 'Nothing has hit that house yet — there is nothing to take back.' };
+    }
+    return { ok: true, strike: last };
+  },
   useTimeTurner(houseId) {
-    if (!store.canTimeTurn(houseId)) return { ok: false, reason: 'That house does not have a Time Turner.' };
+    const gate = store.canTimeTurn(houseId);
+    if (!gate.ok) return gate;
+    const last = gate.strike;
+    let restored = 0;
+    for (const id of last.txIds || []) {
+      const tx = state.transactions.find((t) => t.id === id);
+      if (tx && tx.houseId === Number(houseId)) restored += Math.abs(tx.delta);
+      store.removeTransaction(id);
+    }
+    if (last.froze) store.thawHouse(houseId);
     store.consumeFromInventory(houseId, 'timeturner');
+    if (state.lastStrike) delete state.lastStrike[houseId];
     emit();
-    return { ok: true };
+    return { ok: true, restored, unfroze: !!last.froze, itemName: last.itemName || 'that attack' };
   },
 
   isFrozen(houseId) { return (((state.frozen || {})[houseId]) || 0) > Date.now(); },
