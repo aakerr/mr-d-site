@@ -2306,6 +2306,13 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
     const applySecond = () => {
       if (!second || secondDone) return null;
       secondDone = true;
+      // The second house's defense resolves publicly the moment this lands —
+      // the whole room sees whether it countered. Mark the pair revealed the
+      // same way the first target was in step 2, so their card shows what is
+      // actually held instead of staying "Hidden" after the redraw. Done here,
+      // inside the closure, so every path that lands the hit (ceremony or an
+      // End Battle abort) reveals it.
+      combatRevealed.add(pairKey(challenger.id, second.id));
       return store.applyDuelAttack({
         attackerId: challenger.id, targetId: second.id, itemId: item.id, rolled: roll.total, consume: false });
     };
@@ -2394,7 +2401,25 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
           if (aborted()) { applySecond(); return; }
         }
         // Its own block check — the second house's defenses are its own.
+        // What they hold is captured BEFORE the hit resolves: a correct
+        // counter is consumed by applyDuelAttack, and the reveal card must
+        // show the item that decided the outcome, not the empty slot it
+        // left behind.
+        const heldDef2 = store.getInventory(second.id)
+          .map(({ item: it }) => it).find((it) => it.slot === 'defense') || null;
         const out2 = applySecond();
+        // Step 2 again, for the second house: their defense is revealed at
+        // the moment of the strike, with the same card the first defender got
+        // — resolving it silently left the class guessing what just happened.
+        const revealed2 = out2.blocked ? out2.blockedBy : heldDef2;
+        const revealHost2 = crest2 ? crest2.closest('.duel-side') : null;
+        if (revealHost2) {
+          spawnFxHtml(revealHost2, 'duel-reveal-card', DUEL2_REVEAL_MS + 400, revealed2
+            ? `<span class="duel-reveal-emoji">${esc(revealed2.emoji || '🛡️')}</span><span class="duel-reveal-name">${esc(revealed2.name)}</span>`
+            : `<span class="duel-reveal-emoji">💥</span><span class="duel-reveal-name">Undefended!</span>`);
+          ctxRef.audio.sfx('coin');
+          await delay(DUEL2_REVEAL_MS);
+        }
         if (crest2 && !reduced) {
           spawnFx(crest2, `duel-fx-flash duel-fx-flash-${out2.blocked ? 'blue' : 'red'}`, 500);
           shakeCrest(crest2);
