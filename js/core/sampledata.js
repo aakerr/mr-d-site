@@ -175,7 +175,15 @@ export function buildSampleState() {
   // (its shipped points, 10–50, predate the Magic Shop's rescale to
   // 400–1500), then finish a handful and leave one live per class.
   const catalog = Array.isArray(state.quests?.catalog) ? state.quests.catalog : [];
-  catalog.forEach((q) => { q.points = Math.max(100, Math.round(Number(q.points) || 20) * 10); });
+  // Guard against loading sample data twice: this reads the CURRENT live
+  // catalog, so a naive unconditional ×10 would re-scale an already-scaled
+  // catalog into the thousands on a second load. Only quests still sitting
+  // at the shipped 10–50 scale get the multiplier; anything already at or
+  // above the rescaled floor (100) is left as-is.
+  catalog.forEach((q) => {
+    const p = Math.round(Number(q.points) || 20);
+    if (p < 100) q.points = Math.max(100, p * 10);
+  });
 
   const shuffled = catalog.slice().sort(() => Math.random() - 0.5);
   const completedPicks = shuffled.slice(0, Math.min(6, shuffled.length));
