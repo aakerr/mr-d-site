@@ -21,11 +21,12 @@ import { prefersReducedMotion } from './util.js';
 const NEUTRAL_ACCENT = '#f59e0b';
 const NEUTRAL_ACCENT_SOFT = 'rgba(245,158,11,0.35)';
 
-// 7.2 — the "saved ✓" pulse needs one small keyframe the shared theme.css
-// doesn't carry, so it's injected here the same way dashboard.js injects its
-// own STYLE block: owned by the module that uses it, never duplicated.
-const SAVED_PULSE_STYLE_ID = 'shell-saved-pulse-styles';
-const SAVED_PULSE_STYLE = `
+// A couple of small rules the shared theme.css doesn't carry, injected here
+// the same way dashboard.js injects its own STYLE block: owned by the module
+// that uses them, never duplicated into theme.css.
+const SHELL_STYLE_ID = 'shell-extra-styles';
+const SHELL_STYLE = `
+/* 7.2 — the "saved ✓" pulse on the backup cloud button. */
 @keyframes shell-saved-fade {
   0%   { opacity: 0; transform: scale(0.75); }
   18%  { opacity: 1; transform: scale(1); }
@@ -40,12 +41,25 @@ const SAVED_PULSE_STYLE = `
   animation: shell-saved-fade 1.5s ease both;
 }
 .shell-saved-pulse-static { animation: none; opacity: 1; }
+
+/* FIX-PLAN 5.5 — quiet mode's in-app twin of theme.css's OS-level
+   "@media (prefers-reduced-motion: reduce)" rule, gated on the <html
+   data-quiet> attribute applyThemeSettings() sets instead of an OS setting —
+   same freeze, same universal selector, so it reaches every animation in
+   the app (this file's seasonal particles included) with no other module
+   needing to know quiet mode exists. */
+html[data-quiet] *, html[data-quiet] *::before, html[data-quiet] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
 `;
-function ensureSavedPulseStyle() {
-  if (document.getElementById(SAVED_PULSE_STYLE_ID)) return;
+function ensureShellStyle() {
+  if (document.getElementById(SHELL_STYLE_ID)) return;
   const s = document.createElement('style');
-  s.id = SAVED_PULSE_STYLE_ID;
-  s.textContent = SAVED_PULSE_STYLE;
+  s.id = SHELL_STYLE_ID;
+  s.textContent = SHELL_STYLE;
   document.head.appendChild(s);
 }
 
@@ -146,7 +160,7 @@ export function initShell(ctx) {
     return;
   }
   initialized = true;
-  ensureSavedPulseStyle();
+  ensureShellStyle();
 
   // Make the speaker toggle actually silence things today (see applySoundGate).
   try { applySoundGate(audio, store); } catch (e) { console.warn('shell: sound gate failed', e); }
@@ -231,7 +245,18 @@ export function initShell(ctx) {
     const theme = (settings && settings.theme) || { mode: 'dark', seasonal: false };
     document.documentElement.dataset.mode = theme.mode === 'light' ? 'light' : 'dark';
 
-    if (theme.seasonal) {
+    // FIX-PLAN 5.5 — projector-safe quiet mode. The `data-quiet` attribute on
+    // <html> mirrors theme.css's `@media (prefers-reduced-motion: reduce)`
+    // rule (see SAVED_PULSE_STYLE's sibling below) app-wide, so every CSS
+    // animation in the app freezes on this app-level switch the same way it
+    // already does on the OS-level one — not just the seasonal particles,
+    // though those are the one thing this file renders itself and so get an
+    // extra belt-and-braces check just below.
+    let quiet = false;
+    try { quiet = store.getQuietMode(); } catch (e) { quiet = false; }
+    document.documentElement.toggleAttribute('data-quiet', quiet);
+
+    if (theme.seasonal && !quiet) {
       const season = seasonForDate();
       document.documentElement.dataset.season = season;
       renderSeasonParticles(season);
@@ -778,6 +803,25 @@ export function initShell(ctx) {
       setTimeout(() => el.remove(), 5200);
     } catch (e) { /* cosmetic only — never block point logging */ }
   }
+
+  // FIX-PLAN 5.6 — the once-daily safety-net download is a mechanical event
+  // (a file lands in Downloads) unless something says so; backup.js fires
+  // 'mrd:backup-download' and never renders anything itself (it doesn't own
+  // any UI). Styled exactly like spawnNotice's toast, held for the shorter
+  // 2s the design calls for — this is good news, not a warning that needs
+  // time to read.
+  function spawnScribeToast() {
+    try {
+      const el = document.createElement('div');
+      el.className = 'point-toast point-toast-notice';
+      el.textContent = "📜 The scribe has archived this week's ledger";
+      el.style.top = 'calc(var(--topbar-height) + 10px)';
+      el.style.right = '90px';
+      fabRoot.appendChild(el);
+      setTimeout(() => el.remove(), 2000);
+    } catch (e) { /* cosmetic only — the download already happened either way */ }
+  }
+  window.addEventListener('mrd:backup-download', spawnScribeToast);
 
   // Resolves true iff the points were actually applied. The lock gates the
   // APPLY, not the panel opening (see file header note near the import) — so

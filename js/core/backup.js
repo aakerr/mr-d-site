@@ -195,18 +195,28 @@ function maybeDailyDownload() {
   // on every subsequent keystroke — one attempt per day, win or lose.
   lastDownloadDate = today;
   try { localStorage.setItem(DL_KEY, today); } catch (e) { /* storage full — the banner covers it */ }
+  const filename = `mrd-backup-${today}.json`;
   try {
     const blob = new Blob([stateText()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mrd-backup-${today}.json`;
+    a.download = filename;
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     // Revoke late: revoking synchronously can cancel the download in some builds.
     setTimeout(() => { try { URL.revokeObjectURL(url); a.remove(); } catch (e) {} }, 30000);
     lastDownloadTs = Date.now();
+    // FIX-PLAN 5.6: this is a mechanical event (a file lands in Downloads with
+    // nobody watching) unless something says so. shell.js is lead-owned for
+    // toasts, so this file just announces the fact — a plain DOM CustomEvent,
+    // no import either way — and shell.js decides how to say it.
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('mrd:backup-download', { detail: { filename } }));
+      }
+    } catch (e) { /* the download already succeeded; a toast is not worth failing over */ }
   } catch (e) {
     console.warn('backup: daily download failed', e);
   }
