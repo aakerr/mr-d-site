@@ -69,6 +69,7 @@ let dragOverHandler = null;
 let dragLeaveHandler = null;
 let dropHandler = null;
 let inputHandler = null;
+let keyHandler = null;
 const { timers, later, clearTimers } = makeTimerSet('admin');
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
 // Pending debounced volume commits, keyed so the master slider and each
@@ -360,6 +361,16 @@ function renderPanel() {
   const inner = panelView === 'day' ? dayEditorHTML() : eventFormHTML();
   let panel = host.querySelector('.admin-panel');
   if (!panel) {
+    // The scrim is born with the panel and dies with it. Before it existed the
+    // drawer opened over a board that still LOOKED live: the tab bar sat there
+    // in full colour, half of it underneath a 440px drawer, and tapping it did
+    // nothing a teacher could see. A dimmed backdrop says the rest of the
+    // screen is asleep, and clicking it wakes it — the standard slide-over
+    // contract, which Escape now honours too (see the keydown handler).
+    const scrim = document.createElement('div');
+    scrim.className = 'admin-panel-scrim';
+    scrim.dataset.action = 'panel-close';
+    host.appendChild(scrim);
     panel = document.createElement('div');
     panel.className = 'admin-panel';
     host.appendChild(panel);   // animation runs only on this fresh element
@@ -5775,6 +5786,12 @@ function injectStyles() {
 
   /* side panel */
   #admin-panel-root:empty{display:none;}
+  /* One step below .admin-panel's z-index:70 so the drawer sits on top of it,
+     and one step below .admin-modal-bg's 80 so a modal still covers both.
+     Lighter than the modal scrim (.5 against .65): this dims a screen you are
+     still working over, rather than one you have left entirely. */
+  .admin-panel-scrim{position:fixed;inset:0;z-index:69;background:rgba(0,0,0,.5);
+    backdrop-filter:blur(2px);animation:admin-fade .25s ease both;}
   .admin-panel{position:fixed;top:0;right:0;height:100vh;width:min(440px,100vw);z-index:70;
     background:var(--color-card);border-left:1px solid var(--color-line);box-shadow:-16px 0 50px rgba(0,0,0,.5);
     display:flex;flex-direction:column;animation:admin-slide-in .25s ease both;}
@@ -6259,7 +6276,7 @@ function injectStyles() {
   .admin-video-url{font-family:monospace;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 
   @media (prefers-reduced-motion:reduce){
-    .admin-panel,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
+    .admin-panel,.admin-panel-scrim,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
   }`;
   document.head.appendChild(s);
 }
@@ -6428,6 +6445,18 @@ export default {
       else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
       else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
     };
+    // Escape closes the Day Planner drawer — the other half of the slide-over
+    // contract the scrim starts. Deliberately does nothing while a modal is
+    // open over the drawer: the modal owns the foreground, and dismissing the
+    // thing behind it would be the wrong answer to that keypress.
+    keyHandler = (e) => {
+      if (e.key !== 'Escape' || !panelView) return;
+      const modal = el('admin-modal-root');
+      if (modal && modal.firstChild) return;
+      closePanel();
+    };
+    document.addEventListener('keydown', keyHandler);
+
     rootEl.addEventListener('dragover', dragOverHandler);
     rootEl.addEventListener('dragleave', dragLeaveHandler);
     rootEl.addEventListener('drop', dropHandler);
@@ -6459,6 +6488,7 @@ export default {
       if (dragLeaveHandler) rootEl.removeEventListener('dragleave', dragLeaveHandler);
       if (dropHandler) rootEl.removeEventListener('drop', dropHandler);
     }
+    if (keyHandler) { document.removeEventListener('keydown', keyHandler); keyHandler = null; }
     if (backupStatusTimer) { clearInterval(backupStatusTimer); backupStatusTimer = null; }
     revokePresUrls();
     revokeShopUrls();
