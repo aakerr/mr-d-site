@@ -1163,27 +1163,57 @@ export default {
         // of as two visible steps.
         s.awardModalOpen = false;
         const allMode = s.scope === 'all';
-        let applied = points;
         if (allMode) {
-          store.awardAll(points, { reason: label, tag: tag || 'manual' });
-        } else {
-          // The store can DECLINE (a frozen house cannot earn; a house on zero
-          // has nothing to lose) or TRIM a deduction to what is really there.
-          // Announcing the number he asked for regardless would tell the class
-          // points moved when they did not.
-          const id = Number(s.scope);
-          const why = store.explainRefusal(id, points);
-          const tx = why ? null : store.addPoints(id, points, { reason: label, tag: tag || 'manual' });
-          if (!tx) {
-            showToast(toastHost, why || 'That change could not be recorded.');
+          // awardAll writes what it can and returns the transactions it made;
+          // a frozen house is skipped and a deduction is trimmed per house.
+          // The toast reports what LANDED — "+10 to three houses" with the
+          // skipped house named, never a cheer for points that never moved.
+          const made = store.awardAll(points, { reason: label, tag: tag || 'manual' });
+          const skipped = Object.values(store.HOUSES).filter((h) => !made.some((t) => t.houseId === h.id));
+          // explainRefusal's sentences end with their own "Nothing was
+          // recorded." — accurate alone, contradictory appended to a partial
+          // success that DID record three houses. Trim it; the skip is clear.
+          const whys = skipped
+            .map((h) => (store.explainRefusal(h.id, points) || `${h.name} was skipped.`).replace(/\s*Nothing was recorded\.$/, ''))
+            .join(' ');
+          if (!made.length) {
+            // Every house refused → awardAll never emitted, so no re-render is
+            // coming from the store. Render here or the modal stays on screen
+            // with awardModalOpen already false and Escape doing nothing.
+            showToast(toastHost, whys || 'Nothing was recorded.');
+            doRender();
             return;
           }
-          applied = tx.delta;
+          ctx.audio.sfx(points > 0 ? 'coin' : 'thud');
+          // One floating number can only be honest when every house got the
+          // same delta; when trims differ, the toast carries the detail.
+          const uniform = made.every((t) => t.delta === made[0].delta);
+          if (uniform) floatFeedback(el.querySelector('#hse-award-anchor'), made[0].delta);
+          const count = ['no', 'one', 'two', 'three', 'all four'][made.length] || String(made.length);
+          const landed = uniform
+            ? `${signed(made[0].delta)} ${label} → ${skipped.length ? `${count} house${made.length === 1 ? '' : 's'}` : 'all four houses'}`
+            : made.map((t) => `${signed(t.delta)} ${store.HOUSES[t.houseId].name}`).join(', ');
+          showToast(toastHost, skipped.length ? `${landed} — ${whys}` : landed);
+          return;
+        }
+        // The store can DECLINE (a frozen house cannot earn; a house on zero
+        // has nothing to lose) or TRIM a deduction to what is really there.
+        // Announcing the number he asked for regardless would tell the class
+        // points moved when they did not.
+        const id = Number(s.scope);
+        const why = store.explainRefusal(id, points);
+        const tx = why ? null : store.addPoints(id, points, { reason: label, tag: tag || 'manual' });
+        if (!tx) {
+          // A refusal makes no store write, so no emit will re-render for us —
+          // without this doRender() the modal would linger on screen while
+          // awardModalOpen already says closed, leaving Escape a dead key.
+          showToast(toastHost, why || 'That change could not be recorded.');
+          doRender();
+          return;
         }
         ctx.audio.sfx(points > 0 ? 'coin' : 'thud');
-        floatFeedback(el.querySelector('#hse-award-anchor'), applied);
-        const target = allMode ? 'all four houses' : store.HOUSES[Number(s.scope)].name;
-        showToast(toastHost, `${signed(applied)} ${label} → ${target}`);
+        floatFeedback(el.querySelector('#hse-award-anchor'), tx.delta);
+        showToast(toastHost, `${signed(tx.delta)} ${label} → ${store.HOUSES[id].name}`);
       });
     };
 
