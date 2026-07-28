@@ -186,7 +186,7 @@ function injectStyles() {
   .battle-landing{position:relative;height:100%;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;overflow:hidden;gap:1.4rem;
     background:
-      radial-gradient(ellipse 46% 60% at 50% 46%,rgba(5,6,12,.62),rgba(5,6,12,0) 100%),
+      radial-gradient(ellipse 48% 62% at 50% 46%,rgba(5,6,12,.74),rgba(5,6,12,0) 100%),
       linear-gradient(180deg,rgba(4,5,10,.72) 0%,rgba(4,5,10,.28) 34%,rgba(4,5,10,.30) 62%,rgba(4,5,10,.58) 100%),
       url('images/four-armies.jpg') center 38%/cover no-repeat,#0b0f19;}
   /* Short red rules flanking the eyebrow, as on the poster comp. */
@@ -302,23 +302,29 @@ function injectStyles() {
      transparent fill, which is exactly the underglow wanted here. */
   .battle-stamp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
-    font-weight:800;font-size:clamp(2rem,6vw,4.5rem);color:#fca5a5;
+    font-weight:800;font-size:clamp(2.4rem,7vw,5.4rem);color:#fca5a5;
     text-shadow:0 0 26px rgba(239,68,68,.6),0 4px 10px rgba(0,0,0,.8);}
-  .battle-stamp span{display:inline-block;opacity:0;animation:battle-letter-stamp .35s ease both;
-    background:linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
+  /* Two background layers under one text clip: the moving glint on top, the
+     forged steel beneath. The glint layer is viewport-FIXED and 200vw wide, so
+     every letter-span samples the same gradient in screen space — the light
+     reads as one band travelling across the whole wordmark, not ten little
+     bands crossing ten letters. It runs once, after the swords land, and its
+     final frame parks the band off the right edge of the viewport. */
+  .battle-stamp span{display:inline-block;opacity:0;
+    animation:battle-letter-stamp .35s ease both,battle-text-glint 1.1s ease-out 1.7s 1 both;
+    background:
+      linear-gradient(115deg,transparent 46%,rgba(255,255,255,.85) 50%,transparent 54%),
+      linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
+    background-size:200vw 100%,auto;
+    background-attachment:fixed,scroll;
+    background-position:-110vw 0,0 0;
     -webkit-background-clip:text;background-clip:text;color:transparent;
     -webkit-text-stroke:1px rgba(15,23,42,.35);}
-  /* One light glint sweeps the title just after the swords land — a bright
-     band soft-lighted across the stamp box, so it catches the letters without
-     needing to clip to them. Runs once. */
-  .battle-stamp::after{content:'';position:absolute;inset:-12% -6%;pointer-events:none;
-    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%);
-    mix-blend-mode:soft-light;transform:translateX(-130%);
-    animation:battle-glint .9s ease-out 1.7s 1 both;}
-  /* The band FADES as it exits: with fill:both the final frame holds for the
-     rest of the cinematic, and a bare translateX parked the bright band just
-     past the title's right edge — a white streak hanging beside the letters. */
-  @keyframes battle-glint{85%{opacity:1;}to{transform:translateX(150%);opacity:0;}}
+  @keyframes battle-text-glint{
+    from{background-position:-110vw 0,0 0;}
+    to{background-position:10vw 0,0 0;}
+  }
+
   @keyframes battle-letter-stamp{
     0%{opacity:0;transform:scale(3) rotate(-8deg);}
     60%{opacity:1;transform:scale(.9) rotate(2deg);}
