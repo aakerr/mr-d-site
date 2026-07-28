@@ -593,8 +593,19 @@ function goHome() {
   try { ctxRef && ctxRef.registry && ctxRef.registry.home(); } catch (e) { console.warn('potw:', e); }
 }
 
+// A quick link's URL is teacher-typed text about to become an href. Escaping
+// alone does not help here — "javascript:…" is a perfectly escaped attribute
+// value that still executes on click. Absolute URLs must be http(s); anything
+// carrying another scheme gets no href and renders as an inert label.
+function safeLinkUrl(url) {
+  const u = String(url || '').trim();
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) return u;   // no scheme — relative, fine
+  return /^https?:/i.test(u) ? u : null;
+}
+
 function quickLinkHTML(title, url) {
-  return `<a class="potw-quick-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+  const safe = safeLinkUrl(url);
+  return `<a class="potw-quick-btn"${safe ? ` href="${esc(safe)}" target="_blank" rel="noopener noreferrer"` : ''}>
     <span aria-hidden="true">🔗</span><span class="potw-quick-label">${esc(title)}</span><span class="potw-quick-out" aria-hidden="true">↗</span>
   </a>`;
 }
@@ -913,7 +924,8 @@ function buildLessonHTML() {
 
 // ---- Resources: URL links + stored assets (potw:<key>:asset:<n>) -------------
 function linkCardHTML(l) {
-  return `<a class="potw-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">
+  const safe = safeLinkUrl(l.url);   // same rule as the header quick links
+  return `<a class="potw-link"${safe ? ` href="${esc(safe)}" target="_blank" rel="noopener noreferrer"` : ''}>
     <span class="potw-link-ico" aria-hidden="true">🔗</span><span>${esc(l.title || l.url)}</span>
   </a>`;
 }
