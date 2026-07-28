@@ -56,7 +56,7 @@ let inputHandler = null;
 const timers = new Set();
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
 
-let activeTab = 'planner';            // 'planner' | 'settings' | 'potw'
+let activeTab = 'planner';            // 'planner' | 'quests' | 'shop' | 'potw' | 'battle' | 'help' | 'settings'
 const cal = { year: 0, month: 0 };    // currently-viewed calendar month
 let panelView = null;                 // null | 'day' | 'form'  (right side panel)
 let panelDate = null;                 // 'YYYY-MM-DD' the day editor is showing
@@ -84,7 +84,6 @@ let pendingPdf = null;                // { key, file, rest } awaiting the presen
 let musicPreview = null;              // { el, screen } — the one background-music preview clip playing, if any
 let combatPreviewSel = { attacker: 1, defender: 2 };  // Battle rules card: which two houses the live prize preview compares
 
-const AMBER = '#f59e0b';
 const DEFAULT_CAM = { lat: 32.5363, lng: 44.4223, altitude: 150, range: 2000, tilt: 60, heading: 45 };
 
 // Event type registry — label + colour + rendering hints.
@@ -1540,7 +1539,7 @@ function renderHpShopModal() {
     const e = EFFECTS[k];
     const on = f.effectKind === k;
     return `<label class="admin-eff-opt${on ? ' on' : ''}">
-      <input type="radio" name="admin-eff" value="${k}" data-action="shop-eff" ${on ? 'checked' : ''} />
+      <input type="radio" name="admin-eff" value="${k}" ${on ? 'checked' : ''} />
       <span class="admin-eff-label">${e.label}</span>
       <span class="admin-eff-explain">${e.explain}</span>
     </label>`;
@@ -1652,7 +1651,7 @@ function renderDuelShopModal() {
     const e = DUEL_EFFECTS[k];
     const on = f.effectKind === k;
     return `<label class="admin-eff-opt${on ? ' on' : ''}">
-      <input type="radio" name="admin-eff" value="${k}" data-action="shop-eff" ${on ? 'checked' : ''} />
+      <input type="radio" name="admin-eff" value="${k}" ${on ? 'checked' : ''} />
       <span class="admin-eff-label">${e.label}</span>
       <span class="admin-eff-explain">${esc(e.explain)}</span>
     </label>`;
@@ -4111,28 +4110,10 @@ async function verifyPotwMedia() {
 
 // (The theme-song upload concept is retired — intro videos are presets now.)
 
-function mediaBodyHTML(mkey, info) {
-  if (info) {
-    return `
-      <div class="admin-drop-file">
-        <span class="admin-drop-name" title="${esc(info.name)}">${esc(info.name)}</span>
-        <span class="admin-drop-size">${humanSize(info.size)}</span>
-      </div>
-      <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="media-remove" data-mkey="${esc(mkey)}">Remove</button>`;
-  }
-  return `<span class="admin-drop-prompt">⬇ Drop file here, or click to browse</span>`;
-}
-
 // Populate every drop zone's current state from IndexedDB (async, safe if the
 // tab changed underneath — missing nodes are simply skipped).
 async function refreshPotwMedia() {
   if (activeTab !== 'potw' || !rootEl) return;
-  const bodies = [...rootEl.querySelectorAll('.admin-drop-body[data-mkey]')];
-  for (const b of bodies) {
-    const mkey = b.dataset.mkey;
-    const info = await media.info(mkey);
-    if (b.isConnected) b.innerHTML = mediaBodyHTML(mkey, info);
-  }
   // presentation PDF size badges on the destination cards
   const sizes = [...rootEl.querySelectorAll('.admin-pres-size[data-mkey]')];
   for (const sp of sizes) {
@@ -4235,14 +4216,6 @@ function fileIcon(type, name) {
   if (/\.(pptx?|key)$/.test(n)) return '📊';
   if (/\.(xlsx?|csv|numbers)$/.test(n)) return '📈';
   return '📎';
-}
-
-async function handleMediaFile(mkey, file) {
-  if (!mkey || !file) return;
-  if (file.type && !/^video\//.test(file.type)) { toast("That doesn't look like a video file."); return; }
-  const res = await media.put(mkey, file);
-  toast(res ? `Video stored (${humanSize(res.size)}).` : 'Could not store the file.');
-  refreshPotwMedia();
 }
 
 // Store one or more resource files sequentially under potw:<key>:asset:<n>.
@@ -4976,7 +4949,7 @@ function helpLink(topic, label = 'How this works') {
   return `<button type="button" class="admin-help-link" data-action="help-topic" data-topic="${esc(topic)}">❓ ${esc(label)}</button>`;
 }
 
-function openHelpTopic(topic, { category = false } = {}) {
+function openHelpTopic(topic) {
   helpState = 'loading';
   if (activeTab === 'help') renderBody({ force: true });
   loadHelpApi().then((mod) => {
@@ -4987,8 +4960,7 @@ function openHelpTopic(topic, { category = false } = {}) {
       return;
     }
     try {
-      if (category && typeof mod.openHelpAt === 'function') mod.openHelpAt(topic);
-      else mod.openHelp(topic);
+      mod.openHelp(topic);
       helpState = 'ok';
     } catch (e) {
       console.warn('admin: help failed to open', e);
@@ -5461,11 +5433,6 @@ function onClick(e) {
       break;
     }
     case 'media-browse': { const z = btn.closest('.admin-drop'); const inp = z?.querySelector('input.admin-file'); if (inp) inp.click(); break; }
-    case 'media-remove': {
-      const mkey = btn.dataset.mkey;
-      media.delete(mkey).then(() => { toast('File removed.'); refreshPotwMedia(); });
-      break;
-    }
     case 'asset-remove': {
       const mkey = btn.dataset.mkey;
       media.delete(mkey).then(() => { toast('Resource removed.'); refreshPotwMedia(); });
@@ -6198,7 +6165,6 @@ export default {
         else if (inp.dataset.presdrop) handlePresDrop(inp.dataset.presdrop, files[0]);
         else if (inp.dataset.assets) handleAssetFiles(inp.dataset.assets, files);
         else if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
-        else handleMediaFile(inp.dataset.mkey, files[0]);
       }
       inp.value = ''; // allow re-picking the same file
     };
@@ -6278,7 +6244,6 @@ export default {
       else if (z.dataset.presdrop) handlePresDrop(z.dataset.presdrop, files[0]);
       else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
       else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
-      else handleMediaFile(z.dataset.mkey, files[0]);
     };
     rootEl.addEventListener('dragover', dragOverHandler);
     rootEl.addEventListener('dragleave', dragLeaveHandler);
