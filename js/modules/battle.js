@@ -2005,6 +2005,21 @@ function wireMiniShop() {
   });
 }
 
+// The arena's own toast sits at z-index 72 and the mini-shop overlay at 75 —
+// a refusal spoken down there would be invisible behind the modal the buyer
+// is actually looking at. Park the same toast inside the overlay instead
+// (fixed-position children stack within it, so it rides on top).
+function miniShopToast(text) {
+  if (!miniShopEl) { toast(text); return; }
+  const existing = miniShopEl.querySelector('.duel-toast');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.className = 'duel-toast';
+  el.textContent = text;
+  miniShopEl.appendChild(el);
+  later(() => { try { el.remove(); } catch (e) {} }, 2200);
+}
+
 async function buyMiniShopItem(itemId) {
   if (miniShopBuyInFlight || !miniShopOpen) return;
   const store = ctxRef.store;
@@ -2012,7 +2027,9 @@ async function buyMiniShopItem(itemId) {
   const buyerId = miniShopBuyerId;
   if (!item || buyerId == null) return;
   const gate = store.duelCanBuy(buyerId, item.id);
-  if (!gate.ok) { renderMiniShop(); return; }
+  // A refusal has to be SAID — a tap that just repaints the shop reads as a
+  // broken button, and the store's reason is written to be read out.
+  if (!gate.ok) { renderMiniShop(); miniShopToast(gate.reason || 'That cannot be bought right now.'); return; }
 
   // Same gate the Magic Shop itself uses before spending a house's points.
   miniShopBuyInFlight = true;
@@ -2022,7 +2039,15 @@ async function buyMiniShopItem(itemId) {
     if (!allowed) return;                    // refused — no charge
 
     const ok = store.purchase(buyerId, item.cost, item.name);
-    if (!ok) { renderMiniShop(); return; }
+    if (!ok) {
+      // purchase only says no when the points on the button went stale —
+      // the total changed under the shop. The re-render fixes the numbers;
+      // this says why nothing was bought.
+      renderMiniShop();
+      const held = store.getTotal(buyerId, 'term');
+      miniShopToast(`${store.HOUSES[buyerId]?.name || 'That house'} holds ${held} pts now — ${item.name} costs ${item.cost}. Nothing was bought.`);
+      return;
+    }
     store.addToInventory(buyerId, item.id);
     ctxRef.audio.sfx('coin');
     renderMiniShop();
