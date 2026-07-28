@@ -22,7 +22,7 @@ import council from './modules/council.js';
 const mapsKey = store.getSettings?.().mapsApiKeyOverride || CONFIG.MAPS_API_KEY;
 const maps = document.createElement('script');
 maps.async = true;
-maps.src = `https://maps.googleapis.com/maps/api/js?key=${mapsKey}&v=beta&libraries=maps3d`;
+maps.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&v=beta&libraries=maps3d`;
 document.head.appendChild(maps);
 
 // A term of points lives in localStorage, which Chrome is entitled to evict
