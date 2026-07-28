@@ -268,47 +268,119 @@ function renderStandings(state, store) {
     </div>`;
 }
 
+// 6.5 — itinerary times are bare strings ("8:05", "1:45") with no AM/PM. This
+// app's school day only ever spans 8am to ~2:30pm, so the ambiguous hours
+// (1-6) are always the after-lunch stretch and everything else (7-12) is
+// already unambiguous — the shipped data runs 8:05 straight through 2:30 on
+// exactly that rule. Converting to minutes-since-midnight on it turns "which
+// core is next" into a plain numeric comparison against the real clock.
+function schoolMinutes(timeStr) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(timeStr || '').trim());
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h < 7) h += 12;
+  return h * 60 + min;
+}
+
+// Which core's day starts next, by the clock — wrapping back to whichever
+// core starts earliest once the last one has already begun. Returns null
+// only when no core has a single timed itinerary item to compare, which is
+// the one case still worth a shrug.
+function findNextCore(store) {
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const candidates = [1, 2, 3, 4]
+    .map((core) => {
+      const first = store.getItinerary(core)[0];
+      const mins = first ? schoolMinutes(first.time) : null;
+      return mins == null ? null : { core, mins, time: first.time };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.mins - b.mins);
+  if (!candidates.length) return null;
+  return candidates.find((c) => c.mins >= nowMinutes) || candidates[0];
+}
+
+function itineraryItemsHtml(items) {
+  return items.length ? items.map((it, i) => `
+    <div class="flex items-start gap-2.5 shrink-0">
+      <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.7vh,1.6rem); height:clamp(1.25rem,2.7vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
+      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(it.text)}</span>
+    </div>`).join('') : '<div class="text-gray-500 italic">Nothing scheduled.</div>';
+}
+
+function homeworkItemsHtml(items) {
+  return items.length ? items.map((hw) => `
+    <div class="flex items-center gap-2.5 shrink-0">
+      <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla dash-hw-badge" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
+      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(hw.text)}</span>
+    </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>';
+}
+
+// The "Up next" strip shared by both All-Cores panels: a house-accented label
+// naming the core whose day starts soonest, plus the tap target that switches
+// the board to it (same store.setActiveCore() path as the top-bar switcher).
+function upNextHeaderHtml(store, next) {
+  const house = store.HOUSES[next.core];
+  const acc = house ? house.accent : '';
+  return `<div class="text-xs font-bold uppercase tracking-wide mb-1 acc-text" style="--acc:${acc}">Up next: Core ${next.core} &middot; ${escapeHtml(next.time)}</div>`;
+}
+
 function renderItinerary(state, store) {
   if (state.activeCore === 'all') {
+    const next = findNextCore(store);
+    if (!next) {
+      return `
+        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
+          ${sectionHeader('calendar', 'Daily Itinerary')}
+          <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
+            Pick a house core to see today's schedule.
+          </div>
+        </div>`;
+    }
+    const info = store.getItineraryInfo(next.core);
     return `
-      <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
+      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
         ${sectionHeader('calendar', 'Daily Itinerary')}
-        <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
-          Pick a house core to see today's schedule.
-        </div>
+        ${upNextHeaderHtml(store, next)}
+        ${info.sample ? sampleCaption() : ''}
+        <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${itineraryItemsHtml(info.items)}</div>
       </div>`;
   }
   const info = store.getItineraryInfo();
-  const items = info.items;
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
       ${sectionHeader('calendar', 'Daily Itinerary')}
       ${info.sample ? sampleCaption() : ''}
-      <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
-        ${items.length ? items.map((it, i) => `
-          <div class="flex items-start gap-2.5 shrink-0">
-            <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.7vh,1.6rem); height:clamp(1.25rem,2.7vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
-            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(it.text)}</span>
-          </div>`).join('') : '<div class="text-gray-500 italic">Nothing scheduled.</div>'}
-      </div>
+      <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${itineraryItemsHtml(info.items)}</div>
     </div>`;
 }
 
 function renderHomework(state, store) {
-  const info = state.activeCore === 'all' ? { items: [], sample: false } : store.getHomeworkInfo();
-  const items = info.items;
+  if (state.activeCore === 'all') {
+    const next = findNextCore(store);
+    if (!next) {
+      return `
+        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
+          ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
+          <div class="text-gray-400 italic">Pick a house core to see assignments.</div>
+        </div>`;
+    }
+    const info = store.getHomeworkInfo(next.core);
+    return `
+      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
+        ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
+        ${info.sample ? sampleCaption() : ''}
+        <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${homeworkItemsHtml(info.items)}</div>
+      </div>`;
+  }
+  const info = store.getHomeworkInfo();
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
       ${info.sample ? sampleCaption() : ''}
-      <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
-        ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
-          (items.length ? items.map((hw) => `
-          <div class="flex items-center gap-2.5 shrink-0">
-            <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla dash-hw-badge" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
-            <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(hw.text)}</span>
-          </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>')}
-      </div>
+      <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${homeworkItemsHtml(info.items)}</div>
     </div>`;
 }
 
@@ -393,6 +465,12 @@ export default {
           .catch((err) => console.warn('hero tuner unavailable:', err?.message || err));
         return;
       }
+      // 6.5 — All-Cores mode's itinerary/homework panels preview whichever
+      // core's day starts next; tapping either one switches the board to it,
+      // the same store call the top-bar core switcher uses.
+      const nextCoreEl = e.target.closest('[data-nextcore]');
+      if (nextCoreEl) { ctx.store.setActiveCore(Number(nextCoreEl.dataset.nextcore)); return; }
+
       const btn = e.target.closest('[data-nav]');
       if (!btn) return;
       const id = btn.getAttribute('data-nav');
