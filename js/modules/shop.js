@@ -253,10 +253,14 @@ function injectStyles() {
      cards actually landed in it, so a lone last card just sat in the grid's
      first column, hugging the left edge under a row of empty cells. Flex-wrap
      has no such phantom cells: justify-content applies per wrapped LINE, so a
-     partial last row centers itself while a full row of 240-300px cards fills
-     out identically to the old grid (same min/max, same gap). */
+     partial last row centers itself while a full row fills out identically to
+     the old grid. The basis has to be the 300px MAX, not the 240 min: that's
+     what the grid's own auto-fit(minmax()) used to decide how many 300px
+     columns fit per row, and matching it here keeps a full row's column count
+     (and therefore its pixels) unchanged — min-width:240 is what still lets a
+     row shrink that far on a narrow screen. */
   .shop-grid{display:flex;flex-wrap:wrap;gap:1.1rem;align-items:stretch;justify-content:center;}
-  .shop-grid > .shop-card{flex:1 1 240px;max-width:300px;}
+  .shop-grid > .shop-card{flex:1 1 300px;min-width:240px;max-width:300px;}
   .shop-empty{max-width:600px;margin:0 auto;text-align:center;color:#9ca3af;font-style:italic;padding:2rem;
     border:1px dashed #4c1d95;border-radius:1.25rem;}
   /* Every card is a stretched grid cell laid out as a flex column, so equal-height
