@@ -11,6 +11,7 @@
 // directly, via store.applyAttack itself, unchanged.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { lock } from '../core/lock.js';
+import { media } from '../core/media.js';
 import { createDiceSim } from './dice3d/sim.js';
 // The shared escaper (see escape.js for why there is exactly one). This file
 // never distinguished content from attribute positions — escapeHtml covers
@@ -75,6 +76,26 @@ let miniShopEl = null;        // shop popup, mounted in #overlay-root
 let miniShopOpen = false;
 let miniShopBuyerId = null;   // which house the popup is buying for
 let miniShopBuyInFlight = false;
+// Mini-shop art — mirrors shop.js's resolveItemImage/itemArtHtml precedence
+// (plain path, or a teacher-uploaded `media:<key>` art, falling back to the
+// emoji) so a house browsing from the arena sees the same painted art the
+// full Magic Shop screen shows, not a second emoji-only catalog nobody kept
+// in sync. Its own cache rather than importing shop.js's private one — this
+// file owns only itself, per the module contract.
+const miniShopMediaUrlCache = new Map(); // mediaKey -> url string | null (null = resolved, no file)
+const miniShopMediaFetching = new Map(); // mediaKey -> in-flight token, same eviction-safe pattern as shop.js
+
+// media.js announces every put/delete with this event (see shop.js's own
+// listener for the full reasoning). Registered once at module scope, not per
+// mount: the cache outlives mounts, so its invalidation must too. Only
+// repaints if the mini shop is actually open right now.
+window.addEventListener('mrd:media-changed', (e) => {
+  const key = e && e.detail ? e.detail.key : null;
+  if (key == null) return;
+  miniShopMediaUrlCache.delete(key);
+  miniShopMediaFetching.delete(key);
+  if (miniShopOpen && !miniShopBuyInFlight) renderMiniShop();
+});
 let diceSim = null;           // live createDiceSim instance, if a roll is mounted
 let diceOverlayEl = null;     // dice roll overlay, mounted in #overlay-root
 
@@ -865,6 +886,14 @@ function injectStyles() {
   .duel-shop-item{display:flex;flex-direction:column;gap:.3rem;border-radius:1rem;
     border:1px solid #374151;background:#111827;padding:.7rem .8rem;}
   .duel-shop-item-head{display:flex;align-items:center;gap:.5rem;}
+  /* Fixed-size slot so a row's height never depends on whether the item has
+     painted art (images/shop/*.png) or falls back to its emoji. contain +
+     padding, never cover — same owner spec shop.js's card art follows (see
+     its .shop-card-img comment): the WHOLE image must sit inside the frame
+     with breathing room on every side, not cropped by a taller/wider source. */
+  .duel-shop-item-art{width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .duel-shop-item-img{width:100%;height:100%;object-fit:contain;padding:3px;box-sizing:border-box;
+    border-radius:.6rem;box-shadow:0 2px 8px rgba(0,0,0,.4);}
   .duel-shop-item-emoji{font-size:1.7rem;flex-shrink:0;}
   .duel-shop-item-name-wrap{flex:1;min-width:0;}
   .duel-shop-item-name{font-weight:800;font-size:.9rem;color:#f9fafb;line-height:1.2;}
@@ -1865,6 +1894,60 @@ async function timeTurnFor(houseId) {
   toast(`⏳ ${house.name} turned back time — ${bits.join(' and ') || 'the attack never happened'}.`);
 }
 
+// Returns a resolved <img> src (string), null (no image / resolution failed),
+// or undefined (a media: lookup is still in flight — caller shows the emoji
+// for now; onReady fires once the async lookup settles so the mini shop can
+// redraw with the real art). Mirrors shop.js's resolveItemImage exactly.
+function resolveMiniShopItemImage(item, onReady) {
+  const raw = item.image;
+  if (!raw) return null;
+  if (raw.startsWith('media:')) {
+    const key = raw.slice(6);
+    if (miniShopMediaUrlCache.has(key)) return miniShopMediaUrlCache.get(key);
+    if (!miniShopMediaFetching.has(key)) {
+      const token = {};
+      miniShopMediaFetching.set(key, token);
+      const settle = (url) => {
+        if (miniShopMediaFetching.get(key) !== token) return; // superseded/evicted mid-flight
+        miniShopMediaUrlCache.set(key, url || null);
+        miniShopMediaFetching.delete(key);
+        onReady && onReady();
+      };
+      media.url(key).then(settle).catch(() => settle(null));
+    }
+    return undefined;
+  }
+  return raw; // plain URL / path
+}
+
+// Fixed-size art slot (painted art if resolved, emoji otherwise) so every
+// row's head keeps the same height whether or not the item has artwork.
+function miniShopItemArtHtml(item) {
+  const resolved = resolveMiniShopItemImage(item, () => { if (miniShopOpen) renderMiniShop(); });
+  if (resolved) {
+    return `<div class="duel-shop-item-art"><img src="${esc(resolved)}" alt="" class="duel-shop-item-img"
+      data-fallback-emoji="${esc(item.emoji || '✨')}" /></div>`;
+  }
+  return `<div class="duel-shop-item-art"><span class="duel-shop-item-emoji">${esc(item.emoji || '✨')}</span></div>`;
+}
+
+// If a row's artwork 404s, swap in the emoji instead of leaving a broken-image
+// icon. Wired fresh after every render, same as shop.js's
+// wireCardImageFallbacks — a JS listener rather than an inline onerror, so a
+// teacher-typed emoji containing a quote can never break out of an attribute.
+function wireMiniShopArtFallbacks(root) {
+  root.querySelectorAll('img.duel-shop-item-img[data-fallback-emoji]').forEach((img) => {
+    img.addEventListener('error', () => {
+      const holder = img.parentElement;
+      if (!holder) return;
+      const fallback = document.createElement('span');
+      fallback.className = 'duel-shop-item-emoji';
+      fallback.textContent = img.getAttribute('data-fallback-emoji') || '✨';
+      holder.replaceChildren(fallback);
+    }, { once: true });
+  });
+}
+
 // =============================================================================
 // MINI SHOP — buy without leaving Battle Day. Same spend path the Magic Shop
 // itself uses (store.purchase + store.addToInventory), gated by
@@ -1921,7 +2004,7 @@ function renderMiniShop() {
           return `
           <div class="duel-shop-item">
             <div class="duel-shop-item-head">
-              <span class="duel-shop-item-emoji">${esc(item.emoji || '✨')}</span>
+              ${miniShopItemArtHtml(item)}
               <div class="duel-shop-item-name-wrap">
                 <div class="duel-shop-item-name">${esc(item.name)}${held ? ` <span class="duel-shop-item-held">×${held} held</span>` : ''}</div>
                 <div class="duel-shop-item-slot">${esc((item.slot || 'utility').toUpperCase())}</div>
@@ -1940,6 +2023,7 @@ function renderMiniShop() {
   host.appendChild(miniShopEl);
   fxNodes.add(miniShopEl);
   wireMiniShop();
+  wireMiniShopArtFallbacks(miniShopEl);
 }
 
 function wireMiniShop() {
