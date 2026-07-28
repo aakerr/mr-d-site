@@ -24,6 +24,10 @@ let profile = null;           // active POTW profile snapshot
 let activeKey = null;         // active POTW profile key (for media lookups)
 let globe = null;             // Stage 0 three.js globe controller ({ dispose })
 let mapReadyPromise = null;   // resolves true (map usable) | false (fallback)
+let mapBackdropEl = null;     // themed art UNDER the map, so the stage is never black
+let mapGaveUp = false;        // this voyage stopped waiting for tiles that never came
+let mapsAuthFailed = false;   // Maps called gm_authFailure (bad key, quota, billing)
+let authHookInstalled = false;
 let advanced = false;         // reached the reveal (intro handed off to map)
 let usingFallback = false;    // intro fell back to the song
 let cardShown = false;        // reveal card is visible (may be over live video)
@@ -64,6 +68,7 @@ const PRES_IDLE_MS = 3000;        // hide presentation nav chrome after this idl
 const PRES_CACHE_MAX = 8;         // max rendered PDF page canvases kept in memory
 const PRES_DPR_CAP = 2;           // devicePixelRatio cap for crisp-but-cheap rendering
 const TEST_FLY_MS = 8000;         // TEST FLIGHT fly-to (short — the teacher reruns it while planning)
+const MAP_RENDER_MS = 10000;      // no rendering surface by now = the tiles are not coming
 
 // ---- tiny helpers ------------------------------------------------------------
 function later(fn, ms) {
@@ -704,6 +709,7 @@ function advanceToReveal() {
 // readiness promise (true = usable, false = Maps never loaded). Shared by the
 // full voyage and TEST FLIGHT so there is one copy of the map setup.
 function createMap3d() {
+  buildMapBackdrop();   // art goes down FIRST, so the map element covers it, not the reverse
   mapEl = document.createElement('gmp-map-3d');
   mapEl.setAttribute('mode', 'hybrid');
   mapEl.setAttribute('center', '40.8653,-81.8604,500'); // Smithville, OH
@@ -713,6 +719,9 @@ function createMap3d() {
   mapEl.setAttribute('default-ui-hidden', '');
   overlayEl.querySelector('.potw-map-layer').appendChild(mapEl);
 
+  watchMapsAuthFailure();
+  armMapWatchdog();
+
   // Resolve true when the custom element is usable, false if Maps never loads.
   mapReadyPromise = ('customElements' in window)
     ? Promise.race([
@@ -720,6 +729,96 @@ function createMap3d() {
         new Promise((r) => later(() => r(false), 4000)),
       ]).catch(() => false)
     : Promise.resolve(false);
+}
+
+// ---- the stage is never a black hole -----------------------------------------
+// <gmp-map-3d> is TRANSPARENT until its renderer paints, so a stage with no
+// tiles showed the overlay's own #000 — a black screen with invisible controls,
+// verified live in front of the class. Art laid down under the map at t=0 costs
+// nothing while tiles are arriving (they cover it completely) and is the whole
+// picture when they never do: the destination's own image if one is stored,
+// otherwise the drifting starfield from the Place of the Week landing screen.
+function buildMapBackdrop() {
+  const layer = overlayEl && overlayEl.querySelector('.potw-map-layer');
+  if (!layer || mapBackdropEl) return;
+  mapBackdropEl = document.createElement('div');
+  mapBackdropEl.className = 'potw-map-backdrop';
+  mapBackdropEl.setAttribute('aria-hidden', 'true');
+  mapBackdropEl.innerHTML = `<div class="potw-map-art"></div><div class="potw-stars"></div>`;
+  layer.appendChild(mapBackdropEl);
+
+  const held = mapBackdropEl;
+  resolveBackdropArt().then((url) => {
+    if (!url || mapBackdropEl !== held || !held.isConnected) return;
+    const art = held.querySelector('.potw-map-art');
+    if (!art) return;
+    art.style.backgroundImage = `url("${url}")`;
+    held.classList.add('has-art');
+  });
+}
+
+// The destination's header art: a path the teacher typed into the profile, else
+// the first image among this destination's uploaded resources. A URL about to
+// be spliced into a CSS url() must not carry the characters that would end it.
+function safeCssUrl(u) {
+  const s = String(u || '').trim();
+  if (!s || /["'()\\\s]/.test(s)) return '';
+  return s;
+}
+
+async function resolveBackdropArt() {
+  const typed = profile && (profile.headerImage || profile.image);
+  const fromProfile = safeCssUrl(typed);
+  if (fromProfile) return fromProfile;
+  if (previewMode || !activeKey) return '';   // TEST FLIGHT has no stored assets of its own
+  try {
+    const assets = await media.list(`potw:${activeKey}:asset:`);
+    const img = (assets || []).filter(Boolean)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      .find((a) => String(a.type || '').startsWith('image/'));
+    if (img) return safeCssUrl(await media.url(img.key));
+  } catch (e) { /* no art is not an error — the starfield is already showing */ }
+  return '';
+}
+
+// Has the map element produced a rendering surface? This is the one honest
+// signal the element offers: it has no load/error event and no ready promise,
+// but it cannot draw a single tile without first putting a sized <canvas>
+// somewhere (light DOM or shadow DOM). No canvas after ten seconds means the
+// library loaded but the map never started — the exact case the old
+// script-load guard missed, verified live: element defined, zero canvases.
+function mapHasSurface() {
+  if (!mapEl) return false;
+  const sr = mapEl.shadowRoot;
+  if (mapEl.querySelector('canvas') || (sr && sr.querySelector('canvas'))) return true;
+  // Deliberately generous: ANY internals at all count as a living map, because
+  // hiding a map that is merely slow would be the worse mistake. A map that
+  // reaches low-detail ground and stalls there is still a picture; one that
+  // built nothing is the black screen this watchdog exists for.
+  return mapEl.childElementCount > 0 || !!(sr && sr.childElementCount > 0);
+}
+
+function armMapWatchdog() {
+  mapGaveUp = false;
+  later(() => {
+    if (!overlayEl || !mapEl || mapGaveUp) return;
+    if (mapHasSurface() && !mapsAuthFailed) return;   // it lives — leave it alone
+    console.warn('potw: the 3D map drew nothing in 10s — showing the destination backdrop instead');
+    showMapFallback();
+  }, MAP_RENDER_MS);
+}
+
+// Maps calls this global when the key is rejected, the quota is spent or
+// billing lapsed. There is nothing to wait ten seconds for after that.
+function watchMapsAuthFailure() {
+  if (authHookInstalled) return;
+  authHookInstalled = true;
+  const prev = window.gm_authFailure;
+  window.gm_authFailure = function () {
+    mapsAuthFailed = true;
+    try { if (typeof prev === 'function') prev(); } catch (e) {}
+    showMapFallback();
+  };
 }
 
 // =============================================================================
@@ -810,7 +909,9 @@ function gotoFlight() {
   mapReadyPromise.then((ready) => {
     if (!overlayEl) return; // torn down mid-flight
     let flying = false;
-    if (ready && mapEl && typeof mapEl.flyCameraTo === 'function') {
+    // The watchdog may already have given this voyage's map up while the intro
+    // was still playing — in that case there is nothing to fly.
+    if (ready && !mapGaveUp && mapEl && typeof mapEl.flyCameraTo === 'function') {
       try {
         mapEl.flyCameraTo({ endCamera: destCamera(), durationMillis: flyMs });
         flying = true;
@@ -840,8 +941,15 @@ function gotoFlight() {
   });
 }
 
+// One landing place for every way the 3D map can fail — the library never
+// loaded, flyCameraTo threw, the key was refused, or the element simply never
+// drew anything. All of them end here: the map element is put away (it is
+// transparent, so hiding it merely uncovers the backdrop, and a dead element
+// stops swallowing taps) and this card names the situation over the art.
 function showMapFallback() {
   if (!overlayEl) return;
+  mapGaveUp = true;   // for the rest of THIS voyage the backdrop IS the map
+  if (mapEl) { try { mapEl.style.display = 'none'; } catch (e) {} }
   const layer = overlayEl.querySelector('.potw-map-layer');
   if (!layer || layer.querySelector('.potw-map-fallback')) return;
   const fb = document.createElement('div');
@@ -1761,6 +1869,7 @@ function closeOverlay() {
   if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
   if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
   videoEl = null; songEl = null; mapReadyPromise = null;
+  mapBackdropEl = null; mapGaveUp = false; mapsAuthFailed = false;
   advanced = false; usingFallback = false; cardShown = false;
   deckInfo = null; deckPromise = null;
   // Stage 0 launch screen remains mounted in #module-root underneath.
@@ -1804,10 +1913,20 @@ function injectStyles() {
   .potw-overlay{position:fixed;inset:0;z-index:60;background:#000;overflow:hidden;
     color:#f9fafb;font-family:Inter,system-ui,sans-serif;}
   .potw-map-layer{position:absolute;inset:0;z-index:1;}
-  .potw-map-layer gmp-map-3d{width:100%;height:100%;display:block;}
-  .potw-map-fallback{position:absolute;inset:0;display:flex;flex-direction:column;
+  .potw-map-layer gmp-map-3d{position:relative;z-index:1;width:100%;height:100%;display:block;}
+  /* themed art under the (transparent-until-drawn) map — the stage is never black */
+  .potw-map-backdrop{position:absolute;inset:0;z-index:0;overflow:hidden;
+    background:radial-gradient(ellipse at 50% 38%,#111827,#0b0f19 72%);}
+  .potw-map-art{position:absolute;inset:0;opacity:0;transition:opacity .8s ease;
+    background-size:cover;background-position:center;}
+  .potw-map-backdrop.has-art .potw-map-art{opacity:1;}
+  .potw-map-backdrop.has-art .potw-stars{display:none;}   /* art instead of stars */
+  /* scrim so the destination photo never fights the lesson panel for the eye */
+  .potw-map-backdrop.has-art::after{content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse at 50% 38%,rgba(11,15,25,.35),rgba(11,15,25,.85) 78%);}
+  .potw-map-fallback{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;padding:24px;
-    background:radial-gradient(ellipse at 50% 32%,#1f2937,#0b0f19 72%);}
+    background:radial-gradient(ellipse at 50% 32%,rgba(31,41,55,.55),rgba(11,15,25,.88) 72%);}
   .potw-fb-globe{font-size:5.5rem;animation:potw-spin 16s linear infinite;}
   .potw-fb-title{font-size:clamp(2rem,5vw,3rem);color:#f59e0b;margin-top:.5rem;
     text-shadow:0 0 30px rgba(245,158,11,.5);}
@@ -2285,6 +2404,7 @@ export default {
     if (st) st.remove();
     rootEl = null; profile = null;
     videoEl = null; songEl = null; mapReadyPromise = null;
+    mapBackdropEl = null; mapGaveUp = false; mapsAuthFailed = false;
     advanced = false; usingFallback = false; cardShown = false;
   deckInfo = null; deckPromise = null;
   },
