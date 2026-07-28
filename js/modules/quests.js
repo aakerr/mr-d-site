@@ -992,10 +992,14 @@ async function confirmModal() {
     const house = store.HOUSES[m.core];
     const quest = store.completeQuest(m.core);   // emits → re-render via subscribe
     render();
-    if (quest) {
+    if (quest && !quest.paid) {
+      // Completed, but nothing was paid — say which, and why. Cheering here
+      // would tell the class the house just scored when it did not.
+      toast(quest.unpaidReason || `“${quest.title}” is complete, but no points could be added.`);
+    } else if (quest) {
       ctxRef.audio?.sfx?.('fanfare');
-      flyPoints(rect, quest.points);
-      toast(`🎉 +${quest.points} to ${house.name} — “${quest.title}” complete!`);
+      flyPoints(rect, quest.paidPoints);
+      toast(`🎉 +${quest.paidPoints} to ${house.name} — “${quest.title}” complete!`);
     }
     return;
   }

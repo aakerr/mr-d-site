@@ -1286,7 +1286,7 @@ function targetPickerHtml(store, challenger) {
       <div class="duel-role">🎯 Choose an opponent</div>
       <div class="duel-pick-prompt">Who does ${esc(challenger.name)} attack?</div>
       <div class="duel-pick-hint">Tap a house to see their points and defenses.</div>
-      ${housePickHtml(store, others, 'data-pick-target', { attackerId: challenger.id })}
+      ${housePickHtml(store, others, 'data-pick-target', { showDefenses: false, attackerId: challenger.id })}
     </section>`;
 }
 
@@ -2400,7 +2400,7 @@ function pickSecondTarget(store, challenger, firstTarget, item) {
         <div class="duel-two-title">${esc(item.emoji || '🪨')} ${esc(item.name)} hits TWO houses</div>
         <div class="duel-two-sub">${esc(challenger.name)} has already aimed at <b>${esc(firstTarget.name)}</b>.
           Who else does it hit? They are struck one at a time.</div>
-        ${housePickHtml(store, others, 'data-second-target', { attackerId: challenger.id })}
+        ${housePickHtml(store, others, 'data-second-target', { showDefenses: false })}
         <button type="button" class="duel-two-cancel" data-second-cancel>Cancel — do not use it yet</button>
       </div>`;
     host.appendChild(el);

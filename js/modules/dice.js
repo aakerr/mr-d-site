@@ -132,6 +132,8 @@ function createStyles() {
       .dice-outcome-emoji { font-size: 2.75rem; margin-bottom: 0.4rem; }
       .dice-outcome-title { font-size: 1.85rem; font-weight: bold; color: #fcd34d; margin-bottom: 0.4rem; }
       .dice-outcome-desc { font-size: 1.15rem; color: #cbd5e1; margin-bottom: 1.25rem; }
+      /* A roll that could not be paid out — amber, so it never reads as a win. */
+      .dice-awarded-refused { color: #fbbf24; font-weight: 700; line-height: 1.4; }
       .dice-point-btn {
         padding: 0.85rem 2rem; min-height: 52px; background: #f59e0b; color: #1a1a1a;
         border: none; border-radius: 0.5rem; font-size: 1.05rem; font-weight: 700;
@@ -423,12 +425,26 @@ function showOutcomePlaque(el, prophecy, variant) {
     if (!mounted) return;               // module unmounted while the pad was open
     if (!ok || awardedThisRoll) return;  // refused, or already awarded some other way
 
-    store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
+    // A frozen house cannot earn, and addPoints declines without a word. The
+    // roll still happened and is still spent — but the board must not claim an
+    // award that was never made.
+    const why = store.explainRefusal(houseId, points);
+    const tx = why ? null : store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
     awardedThisRoll = true;
+    if (!tx) {
+      if (area) {
+        area.textContent = '';
+        const msg = document.createElement('div');
+        msg.className = 'dice-awarded dice-awarded-refused';
+        msg.textContent = why || 'Those points could not be added.';
+        area.appendChild(msg);
+      }
+      return;
+    }
     audio?.sfx?.('coin');
     if (!area) return;
 
-    const awarded = `<div class="dice-awarded">✓ Awarded ${ptsLabel(points)} to ${h.name}</div>`;
+    const awarded = `<div class="dice-awarded">✓ Awarded ${ptsLabel(tx.delta)} to ${h.name}</div>`;
 
     // MYTHIC TRIUMPH: the winning house now claims a relic. If a teacher has
     // deleted the mythic items in Admin, skip the step and just keep the points.

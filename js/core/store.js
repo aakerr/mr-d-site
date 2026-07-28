@@ -289,7 +289,11 @@ function defaultCombat() {
     gapShare: 50,       // % of the gap, for 'gap'
     prizePercent: 25,   // % of their total, for 'percent'
     prizeFlat: 150,     // points, for 'flat'
-    punchingDown: false,// may a house attack one with FEWER points?
+    punchingDown: false,// HP mode: may a house attack one with FEWER points?
+    // Mr. D's rules keep their own answer, and his is YES. His game has four
+    // houses played by every period; blocking the leader would take the class
+    // in front most often out of Battle Day altogether.
+    duelPunchDown: true,
     hpBase: 100,        // everyone starts here
     hpPer500: 10,       // extra HP per 500 points held
     // The ± buttons on Battle Day's teacher-scoring row. This was hardcoded to
@@ -976,6 +980,7 @@ export const store = {
     // At 0 the buttons would be dead controls, so the floor is 1.
     next.teacherScore = clamp(next.teacherScore, 1, MAX_DELTA, d.teacherScore);
     next.punchingDown = !!next.punchingDown;
+    next.duelPunchDown = next.duelPunchDown !== false;
     store.updateSettings({ combat: next });
   },
 
@@ -1027,7 +1032,15 @@ export const store = {
   canAttack(attackerId, defenderId) {
     if (attackerId === defenderId) return { ok: false, reason: 'A house cannot attack itself.' };
     const c = store.getCombat();
-    if (!c.punchingDown && store.getTotal(defenderId, 'term') < store.getTotal(attackerId, 'term')) {
+    // Punching-down arrived as a HIT POINTS rule and leaked into Mr. D's, where
+    // it did real damage: with the shared default (punching down not allowed)
+    // the house in FIRST place could not attack anybody at all, and the toggle
+    // that would have fixed it was hidden while his rules were running. The
+    // leader was locked out of Battle Day with no way for a teacher to let them
+    // back in. Mr. D wants it ON, so his rules carry their own setting — see
+    // duelPunchDown — and the switch for it sits in his own Battle Day panel.
+    const allowed = store.getCombatMode() === 'duel' ? store.getCombat().duelPunchDown !== false : c.punchingDown;
+    if (!allowed && store.getTotal(defenderId, 'term') < store.getTotal(attackerId, 'term')) {
       return { ok: false, reason: 'They have fewer points than you — punching down is switched off in Admin.' };
     }
     return { ok: true, reason: '' };
@@ -1611,11 +1624,27 @@ export const store = {
     if (store.countOwned(viewerId, 'stone') < 1) {
       return { ok: false, reason: 'That house does not have a Stone of Seeing.' };
     }
+    // THE SHROUD FIRES BY ITSELF. The same four houses are played by every
+    // class period, so first, second and third period can all send a Stone at
+    // fourth period's house before fourth period has even walked in the room.
+    // A Shroud that had to be raised by hand could never protect them — they
+    // would be looked at while they were in another lesson. So a held Shroud
+    // goes up the moment the first Stone is aimed at that house, on its own,
+    // and then covers every Stone that follows for as long as it lasts. Only
+    // one Shroud is ever spent, however many houses come looking.
+    let auto = false;
+    if (!store.isShrouded(targetId) && store.countOwned(targetId, 'shroud') > 0) {
+      store.raiseShroud(targetId);
+      auto = true;
+    }
     if (store.isShrouded(targetId)) {
       store.consumeFromInventory(viewerId, 'stone');
       emit();
-      return { ok: true, shrouded: true, items: [],
-        reason: `${HOUSES[targetId]?.name || 'That house'} is under a Shroud of Secrecy — the Stone shows nothing. It is still used up.` };
+      const who = HOUSES[targetId]?.name || 'That house';
+      return { ok: true, shrouded: true, autoRaised: auto, items: [],
+        reason: auto
+          ? `🌫️ ${who}'s Shroud of Secrecy went up by itself! The Stone shows nothing — and it is still used up.`
+          : `${who} is under a Shroud of Secrecy — the Stone shows nothing. It is still used up.` };
     }
     store.consumeFromInventory(viewerId, 'stone');
     // Remembered, not just returned. Every screen re-renders on any store
@@ -2105,8 +2134,13 @@ export const store = {
     if (!quest) return null;
     delete state.quests.active[core];
     state.quests.completed.push({ id: `qc-${Date.now()}`, questId: quest.id, title: quest.title, core: Number(core), ts: Date.now(), points: quest.points });
-    store.addPoints(core, quest.points, { reason: `Quest complete: ${quest.title}`, tag: 'quest' });
-    return quest;
+    // The quest is archived either way — it WAS completed. But whether the
+    // points landed is a separate question: a frozen house cannot earn, and
+    // addPoints declines silently. Callers need to know so they can say so
+    // instead of cheering a payout that never happened.
+    const why = store.explainRefusal(core, quest.points);
+    const tx = why ? null : store.addPoints(core, quest.points, { reason: `Quest complete: ${quest.title}`, tag: 'quest' });
+    return { ...quest, paid: !!tx, paidPoints: tx ? tx.delta : 0, unpaidReason: tx ? '' : (why || '') };
   },
 
   getCompletedQuests({ core = null, limit = 20 } = {}) {

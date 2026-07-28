@@ -965,7 +965,13 @@ function confirmQuestComplete(core) {
   const quest = store.completeQuest(core);
   closeModal();
   renderBody();
-  if (quest) { toast(`🎉 +${quest.points} to ${house.name} — “${quest.title}” complete!`); ctxRef.audio?.sfx?.('fanfare'); }
+  if (quest && !quest.paid) {
+    // Archived as complete, but nothing was paid — a frozen house cannot earn.
+    toast(quest.unpaidReason || `“${quest.title}” is complete, but no points could be added.`);
+  } else if (quest) {
+    toast(`🎉 +${quest.paidPoints} to ${house.name} — “${quest.title}” complete!`);
+    ctxRef.audio?.sfx?.('fanfare');
+  }
 }
 
 function openQuestFailModal(core) {
@@ -2615,6 +2621,10 @@ function renderBattleDay() {
     </div>`;
 }
 
+// The one place a version number lives. It is shown in Settings so a teacher on
+// the phone can read it out — a git tag is invisible from the classroom.
+const APP_VERSION = '1.01';
+
 function renderSettings() {
   const store = ctxRef.store;
   const s = store.getSettings();
@@ -2760,6 +2770,11 @@ function renderSettings() {
             <p class="admin-danger-text">Reset <b>all points, transactions, planner events, settings and Place-of-the-Week profiles</b> to factory defaults. This cannot be undone.</p>
             <button class="admin-btn admin-btn-lg admin-btn-nuke" data-action="reset-open">Reset all points &amp; data…</button>
           </div>` : ''}
+      </div>
+
+      <div class="admin-version">
+        Mr. D's Classroom OS <b>v${esc(APP_VERSION)}</b>
+        <span class="admin-version-hint">If you ever need to ask for help with something odd, read this number out — it says exactly which version you are running.</span>
       </div>
     </div>`;
 }
@@ -3178,6 +3193,15 @@ function duelStatePanelHTML() {
         Everything a house is currently carrying or currently suffering, and a way to undo any of it. <b>Frozen</b> means the Legendary Ice Axe landed on them: they cannot earn points and cannot attack until it lifts \u2014 but they can still be attacked and can still lose points, so being frozen is a punishment and not a hiding place. The freeze counts <b>school days</b> and skips weekends, so a roll of 6 can run more than a week of real time; if that turns out to be too harsh, tap <b>Un-freeze</b> and they can score again immediately. <b>Shrouded</b> means they spent a Shroud of Secrecy: any Stone of Seeing used against them shows nothing at all (and is still used up). Below that is every item each house is holding. If a class bought the wrong thing, or you handed one out by mistake, tap <b>Take back</b> to remove one \u2014 the points they paid are <b>not</b> refunded automatically, so if you meant to undo the purchase entirely, give the points back with the \u00b1 button as well.
       </div>
       <div class="admin-shield-list">${rowsHtml}</div>
+
+      <label class="admin-flabel" style="margin-top:20px">Who may attack whom</label>
+      <div class="admin-toggle-row">
+        <button class="admin-toggle${store.getCombat().duelPunchDown !== false ? ' on' : ''}"
+          data-action="duel-punchdown" role="switch"
+          aria-checked="${store.getCombat().duelPunchDown !== false}"><span class="admin-toggle-knob"></span></button>
+        <span class="admin-mini" style="margin:0">Allow attacking a house with FEWER points <span class="admin-faint">— on by default</span></span>
+      </div>
+      <div class="admin-mini">Leave this <b>on</b> and any house may attack any other, whatever the standings say — which is how Mr. D plays it. Turn it <b>off</b> and a house may only attack one that currently has <b>more</b> points than them, which stops the leading class farming the last-placed class week after week. Be warned that switching it off also means the house in first place cannot attack at all until somebody overtakes them.</div>
     </div>`;
 }
 
@@ -5059,6 +5083,13 @@ function onClick(e) {
     case 'lock-now': lock.lockNow(); renderBody({ force: true }); toast('Locked.'); break;
     case 'lock-minutes': lock.setMinutes(Number(btn.dataset.minutes)); renderBody({ force: true }); toast(`Auto-relock set to ${btn.dataset.minutes} minutes.`); break;
 
+    case 'duel-punchdown': {
+      const cur = store.getCombat().duelPunchDown !== false;
+      store.updateCombat({ duelPunchDown: !cur });
+      renderBody({ force: true });
+      toast(!cur ? 'Any house may now attack any other.' : 'A house may now only attack one with MORE points.');
+      break;
+    }
     case 'duel-thaw': {
       const hid = Number(btn.dataset.house);
       const house = store.HOUSES[hid];
@@ -5474,6 +5505,9 @@ function injectStyles() {
   .admin-panel-body::-webkit-scrollbar{width:8px;}
   .admin-panel-body::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:8px;}
   .admin-panel-foot{flex-shrink:0;padding:14px 20px;border-top:1px solid var(--color-card2);}
+  .admin-version{margin-top:14px;text-align:center;font-size:12px;color:#94a3b8;line-height:1.5;}
+  .admin-version b{color:#cbd5e1;}
+  .admin-version-hint{display:block;max-width:44ch;margin:2px auto 0;font-size:11px;color:#64748b;}
   .admin-foot-split{display:flex;gap:10px;}
   .admin-foot-split .admin-btn{flex:1;}
 
