@@ -103,7 +103,13 @@ function createStyles() {
 
       /* In-tray result number: bottom-center of the stage, over the 3D scene. */
       .dice-tray-result {
-        position: absolute; left: 50%; bottom: 8.4rem; transform: translateX(-50%);
+        /* Seated on the felt, just inside the near gold frame — a %-anchor
+           against the 16:9 art box, so it stays on the velvet at every size.
+           The soft black ellipse behind it keeps the gold digits readable on
+           the red. */
+        position: absolute; left: 50%; bottom: 15.5%; transform: translateX(-50%);
+        padding: 0.05em 0.75em;
+        background: radial-gradient(ellipse closest-side, rgba(0,0,0,.62), rgba(0,0,0,0));
         z-index: 5; pointer-events: none; white-space: nowrap;
         font-size: clamp(1.6rem, 4.5vw, 2.6rem); font-weight: 800; color: #fde68a;
         font-variant-numeric: tabular-nums;
