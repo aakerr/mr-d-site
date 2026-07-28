@@ -650,7 +650,7 @@ function renderQuests() {
       <div class="admin-q-row">
         <div class="admin-q-pts">${q.points}<small>pts</small></div>
         <div class="admin-q-main">
-          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${store.questIcon(q)}</span> ${esc(q.title)}</div>
+          <div class="admin-q-title"><span title="${esc(store.questType(q).label)} — ${esc(store.questType(q).blurb)}">${esc(store.questIcon(q))}</span> ${esc(q.title)}</div>
           <div class="admin-q-desc">${esc(q.desc || '')}</div>
           <div class="admin-shop-plain">${esc(questSentence(q))}</div>
           <div class="admin-q-statusrow">${status}</div>

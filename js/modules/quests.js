@@ -606,7 +606,7 @@ function heroHtml(store, core) {
           <span class="quest-hero-timer">⏱ accepted ${esc(activeFor(q.startedTs))} ago</span>
         </div>
         <div class="quest-hero-head">
-          <span class="quest-hero-icon">${store.questIcon(q)}</span>
+          <span class="quest-hero-icon">${esc(store.questIcon(q))}</span>
           <h2 class="quest-hero-title">${esc(q.title)}</h2>
         </div>
         <p class="quest-hero-desc">${esc(q.desc || 'No description — ask Mr. D what this one takes.')}</p>
@@ -668,7 +668,7 @@ function boardHtml(store, core) {
     return `
       <div class="quest-card${canAccept ? '' : ' quest-card-locked'}" style="--h:${sa.color};--hs:${sa.soft}">
         <div class="quest-card-top">
-          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${ctxRef.store.questIcon(q)}</span>
+          <span class="quest-type-icon" title="${esc(qt(q).label)} — ${esc(qt(q).blurb)}" aria-label="${esc(qt(q).label)}">${esc(ctxRef.store.questIcon(q))}</span>
           <div class="quest-card-text">
             <div class="quest-card-title">${esc(q.title)}</div>
             <div class="quest-card-desc">${esc(q.desc || '')}</div>
@@ -732,7 +732,7 @@ function deedsHtml(store, core) {
             const src = store.getQuestCatalog().find((q) => q.id === c.questId);
             return `
               <div class="quest-deed" style="--h:${h ? h.accent : '#6b7280'}">
-                <span class="quest-deed-icon">${store.questIcon(src)}</span>
+                <span class="quest-deed-icon">${esc(store.questIcon(src))}</span>
                 <div class="quest-deed-main">
                   <div class="quest-deed-title">${esc(c.title)}</div>
                   <div class="quest-deed-meta">${esc(h ? h.name : '')} · ${esc(shortWhen(c.ts))}</div>
