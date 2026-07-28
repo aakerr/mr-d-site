@@ -271,7 +271,11 @@ function injectStyles() {
   .shop-card-broken{border-color:#7f1d1d;border-style:dashed;opacity:.85;}
   .shop-card-emoji{font-size:3.4rem;filter:drop-shadow(0 4px 14px rgba(167,139,250,.5));line-height:1;}
   .shop-card-art{width:84px;height:84px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
-  .shop-card-img{width:100%;height:100%;object-fit:cover;border-radius:1rem;box-shadow:0 4px 14px rgba(167,139,250,.45);}
+  /* contain + padding, never cover: the art must sit WHOLE inside the frame
+     with breathing room on every side (owner spec: at least 3px). cover
+     cropped the tall Sword of Destiny and the Shield's corners. */
+  .shop-card-img{width:100%;height:100%;object-fit:contain;padding:4px;box-sizing:border-box;
+    border-radius:1rem;box-shadow:0 4px 14px rgba(167,139,250,.45);}
   .shop-card-name{font-weight:800;font-size:1.2rem;color:#e9d5ff;width:100%;flex-shrink:0;
     line-height:1.25;height:3rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
     overflow:hidden;}
