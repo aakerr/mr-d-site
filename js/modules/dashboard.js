@@ -1,7 +1,7 @@
 // dashboard.js — Daily Morning Dashboard (home screen)
 // Owned module. Follows ARCHITECTURE.md contract.
 
-import { escapeHtml } from '../core/escape.js';
+import { escapeHtml, escapeAttr } from '../core/escape.js';
 
 const STYLE_ID = 'dash-styles';
 const STYLE = `
@@ -108,7 +108,7 @@ function fmtDateLong() {
 
 // Portrait, transparent-bg house shield — always contain-fit, never cropped.
 function houseImg(house, cls, extraAttrs = '') {
-  return `<img src="${house.image}" alt="${house.name} crest" class="${cls}" ${extraAttrs}
+  return `<img src="${escapeAttr(house.image)}" alt="${escapeAttr(house.name)} crest" class="${cls}" ${extraAttrs}
     onerror="this.onerror=null;this.style.display='none';" />`;
 }
 
@@ -153,7 +153,7 @@ function renderHero(state, store) {
           ${houses.map((h) => `
             <div class="flex flex-col items-center gap-1.5">
               ${houseImg(h, 'h-12 xl:h-16 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
-              <span class="text-xs xl:text-sm font-bold acc-text" style="--acc:${h.accent}">${h.name}</span>
+              <span class="text-xs xl:text-sm font-bold acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
             </div>
           `).join('')}
         </div>
@@ -165,7 +165,7 @@ function renderHero(state, store) {
     <div class="dash-hero dash-in relative overflow-hidden rounded-2xl border-2 min-h-[165px] xl:min-h-[205px] flex items-center"
          style="border-color:${h.accent}; --dash-glow:${h.accentSoft};">
       <div class="absolute inset-0 bg-gradient-to-br from-card2 to-card"></div>
-      <img src="${h.heroImage}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
+      <img src="${escapeAttr(h.heroImage)}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
            onerror="this.onerror=null;this.style.display='none';" />
       <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-black/10"></div>
       <!-- The three lines stay TIGHT together — a couple of px between each,
@@ -214,7 +214,7 @@ function renderHero(state, store) {
                smaller than the shield's height, something has to give, and the
                gaps he specified are the part worth holding exactly. -->
           <h1 class="font-display font-extrabold tracking-wide text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]" style="font-size:var(--name-fs)">
-            ${h.name.toUpperCase()}!
+            ${escapeHtml(h.name.toUpperCase())}!
           </h1>
           <p class="text-white/90 italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]" style="font-size:var(--motto-fs);line-height:1;margin-top:calc(var(--gap-bot) - 0.1758 * var(--name-fs) - 0.1308 * var(--motto-fs))">&ldquo;${escapeHtml(h.motto)}&rdquo;</p>
         </div>
@@ -246,7 +246,7 @@ function renderStandings(state, store) {
               ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
-                  <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${t.house.name}</span>
+                  <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${escapeHtml(t.house.name)}</span>
                   <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
                 </div>
                 <div class="mt-[clamp(2px,0.4vh,6px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
