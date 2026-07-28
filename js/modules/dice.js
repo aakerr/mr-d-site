@@ -103,15 +103,15 @@ function createStyles() {
 
       /* In-tray result number: bottom-center of the stage, over the 3D scene. */
       .dice-tray-result {
-        /* Seated on the felt, just inside the near gold frame — a %-anchor
-           against the 16:9 art box, so it stays on the velvet at every size.
-           The soft black ellipse behind it keeps the gold digits readable on
-           the red. */
-        position: absolute; left: 50%; bottom: 15.5%; transform: translateX(-50%);
-        padding: 0.05em 0.75em;
-        background: radial-gradient(ellipse closest-side, rgba(0,0,0,.62), rgba(0,0,0,0));
+        /* Placed to the owner's mock: centered beneath the crystal ball, on
+           the dark pedestal front — the black ellipse melts into the shadow
+           there and the gold digit reads from the back row. %-anchored to the
+           16:9 art box so the seat holds at every size. */
+        position: absolute; left: 50%; bottom: 46.5%; transform: translateX(-50%);
+        padding: 0.02em 0.7em;
+        background: radial-gradient(ellipse closest-side, rgba(0,0,0,.68), rgba(0,0,0,0));
         z-index: 5; pointer-events: none; white-space: nowrap;
-        font-size: clamp(1.6rem, 4.5vw, 2.6rem); font-weight: 800; color: #fde68a;
+        font-size: clamp(2.6rem, 7vw, 4.4rem); font-weight: 800; color: #fde68a;
         font-variant-numeric: tabular-nums;
         text-shadow: 0 2px 10px rgba(0,0,0,0.95), 0 0 22px rgba(252,211,77,0.35);
       }
