@@ -9,7 +9,6 @@
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
 import { escapeHtml as esc, escapeAttr } from '../core/escape.js';
 import { media } from '../core/media.js';
-import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
 import { lock } from '../core/lock.js';
 import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
@@ -198,8 +197,9 @@ function injectStyles() {
   style.id = STYLE_ID;
   style.textContent = `
   .shop-root{position:relative;height:100%;overflow-y:auto;scrollbar-gutter:stable both-edges;padding:1.25rem clamp(1rem,3vw,2rem) 2rem;
-    background:radial-gradient(ellipse at 50% -10%,rgba(88,28,135,.4),#0b0f19 55%),
-      radial-gradient(ellipse at 100% 100%,rgba(76,29,149,.22),transparent 60%),#0b0f19;}
+    background:radial-gradient(ellipse at 50% -10%,rgba(88,28,135,.35),rgba(11,15,25,.5) 55%),
+      linear-gradient(180deg,rgba(6,8,14,.4),rgba(6,8,14,.25) 40%,rgba(6,8,14,.35)),
+      url('images/magic-shop.jpg') center 30%/cover no-repeat fixed,#0b0f19;}
   /* The wizard mark sits OUTSIDE the centred text block, so the title and
      subtitle centre on each other rather than on "icon + title". */
   /* The TEXT centres on the screen; the mark hangs to its left and an equal
@@ -243,7 +243,7 @@ function injectStyles() {
     font-size:1.15rem;padding:2.5rem 2rem;border:1px dashed #4c1d95;border-radius:1.25rem;}
 
   /* sections */
-  .shop-section{max-width:1200px;margin:0 auto 1.75rem;}
+  .shop-section{max-width:1320px;margin:0 auto 1.75rem;}
   .shop-section-title{font-family:'Cinzel',Georgia,serif;font-weight:800;font-size:1.15rem;
     color:#e9d5ff;letter-spacing:.04em;margin-bottom:.75rem;text-align:center;
     text-shadow:0 0 16px rgba(167,139,250,.4);}
@@ -260,7 +260,7 @@ function injectStyles() {
      (and therefore its pixels) unchanged — min-width:240 is what still lets a
      row shrink that far on a narrow screen. */
   .shop-grid{display:flex;flex-wrap:wrap;gap:1.1rem;align-items:stretch;justify-content:center;}
-  .shop-grid > .shop-card{flex:1 1 300px;min-width:240px;max-width:300px;}
+  .shop-grid > .shop-card{flex:1 1 300px;min-width:280px;max-width:310px;}
   .shop-empty{max-width:600px;margin:0 auto;text-align:center;color:#9ca3af;font-style:italic;padding:2rem;
     border:1px dashed #4c1d95;border-radius:1.25rem;}
   /* Every card is a stretched grid cell laid out as a flex column, so equal-height
@@ -327,7 +327,7 @@ function injectStyles() {
      exactly what this layout exists to remove for a teacher standing at the
      board. Each card still prints its own kind-tag (Attack/Defense/Wildcard/
      Unavailable), so the category read survives without a section header. */
-  .shop-carousel-outer{max-width:1200px;margin:0 auto 1.75rem;
+  .shop-carousel-outer{max-width:1320px;margin:0 auto 1.75rem;
     height:clamp(460px,58vh,520px);display:flex;
     --carousel-card-w:clamp(215px,18vw,250px);--carousel-card-maxh:440px;}
 
@@ -453,7 +453,7 @@ function injectStyles() {
 
   /* mythic rewards — a full section matching the others in weight, not fine
      print. Not buyable, but reads deliberately from across the room. */
-  .shop-mythic-section{max-width:1200px;margin:0 auto 1.75rem;}
+  .shop-mythic-section{max-width:1320px;margin:0 auto 1.75rem;}
   .shop-mythic-heading{font-family:'Cinzel',Georgia,serif;font-weight:800;
     font-size:clamp(1.3rem,2.9vw,1.7rem);color:#fde68a;letter-spacing:.04em;
     margin-bottom:.9rem;text-align:center;text-shadow:0 0 20px rgba(251,191,36,.45);}
@@ -762,17 +762,9 @@ function render(s) {
   const items = store.getShopItems();
   const mythic = items.filter((it) => it.mythicOnly && !itemIssues(store, it).length);
 
-  // The shop is open all week — Friday is the battle ritual, not the only
-  // trading day — so the masthead sells the rhythm rather than a day.
-  const headerHtml = `
-    <div class="shop-header">
-      <img class="shop-header-mark" src="images/icon-market.png" alt="" onerror="this.style.visibility='hidden'" />
-      <div class="shop-headings">
-        <div class="shop-title font-display"><span class="mh-ink">THE MAGIC SHOP</span></div>
-        <div class="shop-subtitle"><span class="mh-ink">Stock up all week. Settle it on Friday.</span></div>
-      </div>
-      <span class="shop-header-spacer" aria-hidden="true"></span>
-    </div>`;
+  // No masthead: the painted shopfront behind the cards already names the
+  // place, and the rule line under the treasury carries the weekly rhythm
+  // ("stock up all week, settle it on Friday") where it matters.
 
   let bodyHtml;
   if (!buyer) {
@@ -830,19 +822,11 @@ function render(s) {
 
   rootEl.innerHTML = `
     <div class="shop-root">
-      ${headerHtml}
       ${bodyHtml}
     </div>
     ${confirmModalHtml(store, s)}
   `;
   wireCardImageFallbacks(rootEl);
-  fitMastheadWhenReady({
-    icon: rootEl.querySelector('.shop-header-mark'),
-    titleInk: rootEl.querySelector('.shop-title .mh-ink'),
-    subInk: rootEl.querySelector('.shop-subtitle .mh-ink'),
-    headings: rootEl.querySelector('.shop-headings'),
-    pill: rootEl.querySelector('.shop-treasury'),
-  });
   if (layout === 'carousel') {
     carouselTeardown = wireCarousel(rootEl, { restoreLeft: prevCarouselScrollLeft });
   }

@@ -19,7 +19,6 @@
 // Everything is sized with clamp(…vh…) so it reads from the back of the room
 // at 1280x720 and doesn't turn into a wall of text at 1920x1080.
 
-import { fitMastheadWhenReady } from '../core/masthead.js';
 import { lock } from '../core/lock.js';
 import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
 import { escapeHtml as esc } from '../core/escape.js';
@@ -131,7 +130,9 @@ function injectStyles() {
      every other gap in the stack. */
   .quest-root{--rgap:clamp(8px,1.4vh,18px);height:100%;display:flex;flex-direction:column;gap:var(--rgap);
     padding:clamp(8px,1.4vh,16px) clamp(12px,1.8vw,26px) clamp(10px,1.6vh,20px);
-    background:radial-gradient(ellipse at 50% -20%,rgba(245,158,11,.13),transparent 60%),var(--color-page,#0b0f19);
+    background:radial-gradient(ellipse at 50% -20%,rgba(245,158,11,.1),transparent 60%),
+      linear-gradient(180deg,rgba(6,8,14,.5),rgba(6,8,14,.35) 40%,rgba(6,8,14,.45)),
+      url('images/quest-hall.jpg') center 25%/cover no-repeat fixed,var(--color-page,#0b0f19);
     color:var(--color-text,#f9fafb);overflow:hidden;box-sizing:border-box;}
 
   /* ---- masthead (mirrors the Magic Shop header) ---- */
@@ -280,7 +281,7 @@ function injectStyles() {
   /* Same rule as .shop-grid — cards match the Magic Shop's 300px exactly, which
      lands 3 across at 1280 instead of four narrower ones. */
   .quest-grid{flex:1;min-height:0;overflow-y:auto;display:grid;gap:1.1rem;
-    grid-template-columns:repeat(auto-fit,minmax(240px,300px));align-content:start;
+    grid-template-columns:repeat(auto-fit,minmax(300px,380px));align-content:start;
     /* Padding SYMMETRIC on purpose: the tracks are centred inside this box, so
        a one-sided pad would shift them off the --board-w axis below by half of
        it and the hero would no longer line up with the cards. */
@@ -312,7 +313,7 @@ function injectStyles() {
   .quest-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.7em;}
   /* The kind-of-task mark. Sized off the title so it reads as a sibling of the
      words, and flex-shrink:0 so a long title never squashes it. */
-  .quest-type-icon{flex:0 0 auto;line-height:1.2;font-size:clamp(1.05rem,2.2vh,1.45rem);}
+  .quest-type-icon{flex:0 0 auto;line-height:1.2;font-size:clamp(2.25rem,4.65vh,3.15rem);}
   .quest-card-title{font-weight:800;color:#f9fafb;line-height:1.2;font-size:clamp(1.1rem,2.3vh,1.55rem);
     flex:1 1 auto;min-width:0;}
   .quest-card-pts{flex-shrink:0;text-align:center;font-weight:800;line-height:1;color:#fde68a;
@@ -583,11 +584,14 @@ function crest(house, cls) {
 // without re-checking that precedence — the art must never jump ahead of a
 // quest's own icon.
 function questMarkHtml(store, q) {
-  if (q && q.icon) return esc(q.icon);
+  // Category art ALWAYS leads — the owner's spec is icons per KIND, not per
+  // quest. A quest's own emoji is only the fallback when the kind has no art
+  // (and the ultimate fallback is the kind's emoji).
   const t = store.questType(q);
-  return t.art
-    ? `<img class="quest-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc(t.icon)}'" />`
-    : esc(t.icon);
+  if (t.art) {
+    return `<img class="quest-icon-mark" src="${esc(t.art)}" alt="" onerror="this.outerHTML='${esc((q && q.icon) || t.icon)}'" />`;
+  }
+  return esc((q && q.icon) || t.icon);
 }
 
 // The single most important thing a student needs to understand about a quest
@@ -601,24 +605,12 @@ function repeatChip(q) {
 // =============================================================================
 // RENDER
 // =============================================================================
-function headerHtml(store, core) {
-  const house = core === 'all' ? null : store.HOUSES[core];
-  // The tagline is fixed rather than per-house: it is measured to size the
-  // points pill, so it must not change width when the core is switched.
-  return `
-    <div class="quest-head">
-      <img class="quest-head-icon" src="images/icon-quest.png" alt="" onerror="this.style.visibility='hidden'" />
-      <div class="quest-headings">
-        <div class="quest-head-title"><span class="mh-ink">THE CLASS QUEST BOARD</span></div>
-        <div class="quest-head-sub"><span class="mh-ink">Take up a quest. Earn the glory. Serve the school.</span></div>
-      </div>
-      <span class="quest-head-spacer" aria-hidden="true"></span>
-    </div>`;
-  // The crests-and-pill row that used to sit here is gone. It cost 35px to
-  // state something the top bar already says, and the number only MATTERS for
-  // the couple of seconds after an award — so the total now lives in the Hall
-  // of Deeds, which is where the completion animation already lands.
-}
+// The masthead ("THE CLASS QUEST BOARD" + tagline) is gone the same way the
+// crests-and-pill row before it went: it spent header space naming a screen
+// the class already recognises — the quest-hall art and the board itself say
+// where you are. (The crests row cost 35px to state something the top bar
+// already says; the total lives in the Hall of Deeds, where the completion
+// animation already lands.)
 
 function heroHtml(store, core) {
   const house = store.HOUSES[core];
@@ -900,19 +892,11 @@ function render() {
   if (carTeardown) { carTeardown(); carTeardown = null; }
   rootEl.innerHTML = `
     <div class="quest-root">
-      ${headerHtml(store, core)}
       ${core === 'all' ? allCoresHtml(store) : heroHtml(store, core)}
       ${boardHtml(store, core)}
       ${deedsHtml(store, core)}
     </div>
     ${modalHtml(store)}`;
-  fitMastheadWhenReady({
-    icon: rootEl.querySelector('.quest-head-icon'),
-    titleInk: rootEl.querySelector('.quest-head-title .mh-ink'),
-    subInk: rootEl.querySelector('.quest-head-sub .mh-ink'),
-    headings: rootEl.querySelector('.quest-headings'),
-    // No pill any more — the masthead fitter tolerates a null here.
-  });
 
   if (noteFocused) {
     const freshNote = rootEl.querySelector('#quest-modal-note');
