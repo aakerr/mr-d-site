@@ -113,14 +113,14 @@ and provides `explainRefusal()` (store.js:1283-1302). Four call sites ignore thi
   and display that.
 
 ### Ledger/undo invariant violations
-- [ ] **1.7** `js/modules/houses.js:1018, 1261-1293` + `store.js:1958`: removing a past +N entry
+- [x] **1.7** `js/modules/houses.js:1018, 1261-1293` + `store.js:1958`: removing a past +N entry
   can push a house's total negative — the zero floor is only enforced on writes. In
   `removeTransaction` (or its confirm path), refuse or explicitly warn when the removal takes
   a total below 0.
-- [ ] **1.8** `js/core/store.js:1732-1747`: Time Turner deletes the attacker's loot credit even
+- [x] **1.8** `js/core/store.js:1732-1747`: Time Turner deletes the attacker's loot credit even
   if it's been spent — total goes negative. Clamp the undo (insert a compensating entry rather
   than deleting, or floor at zero and say so).
-- [ ] **1.9** `js/core/store.js:1594-1609, 1722-1731`: Time Turner is offered (and consumed) for
+- [x] **1.9** `js/core/store.js:1594-1609, 1722-1731`: Time Turner is offered (and consumed) for
   a strike that took nothing (`txIds: []`), and `lastStrike` persists across sessions so next
   week's class can undo last week. `canTimeTurn` should require `txIds.length || froze`;
   `endBattle` should clear `lastStrike`.
@@ -141,7 +141,7 @@ and provides `explainRefusal()` (store.js:1283-1302). Four call sites ignore thi
 - [ ] **1.13** `js/modules/dice.js:544-638`: async `mount()` races unmount — a quick
   Dice→Home navigation leaks a WebGL context and a permanent store subscription, and throws on
   dead DOM. After each `await`, bail if the module has been unmounted (token/flag pattern).
-- [ ] **1.14** `js/core/store.js:1875-1881`: `applyAttack` returns intended damage, not the
+- [x] **1.14** `js/core/store.js:1875-1881`: `applyAttack` returns intended damage, not the
   trimmed deduction — HP-mode steals mint points from nothing (battle.js:2685-2691 credits
   `result.applied`; a 100-pt steal on a 40-pt house credits 100). Return the real written
   delta (duel mode already caps loot this way, store.js:1601-1604).
@@ -161,14 +161,14 @@ If HP mode is ever brought back into use, do these first:
   right; it isn't).
 
 ### Input/editing traps in Admin
-- [ ] **1.17** `js/modules/admin.js:6091-6098`: battle-rule number fields persist on every
+- [x] **1.17** `js/modules/admin.js:6091-6098`: battle-rule number fields persist on every
   `input` tick, so a cleared field saves the clamp floor (hpBase=1, gapShare=0). Commit on
   `change`/blur, or skip persisting while the field is empty.
-- [ ] **1.18** `js/modules/admin.js:1826-1848`: switching a duel item's kind files the old
+- [x] **1.18** `js/modules/admin.js:1826-1848`: switching a duel item's kind files the old
   kind's counter checkboxes into the new kind's field; when the catalog has no attack items
   the corrupt list is saved. Read the *previous* kind for the sync, or resync from staged
   state instead of the DOM.
-- [ ] **1.19** `js/modules/admin.js:4020-4035`: the PDF-intent dialog's ✕ and backdrop both map
+- [x] **1.19** `js/modules/admin.js:4020-4035`: the PDF-intent dialog's ✕ and backdrop both map
   to "store as resource" — cancelling still stores the files. Give ✕/backdrop a true cancel
   action that discards the staged files.
 
