@@ -245,11 +245,27 @@ function injectStyles() {
   .battle-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
     animation:battle-flash-pop .35s ease .55s both;}
   @keyframes battle-flash-pop{0%{opacity:0;}30%{opacity:.85;}100%{opacity:0;}}
+  /* FORGED STEEL. The letters carry a blade-metal gradient clipped to the
+     glyphs; the old flat pink stays as the pre-clip color so any browser that
+     can't clip still shows the original treatment. The red text-shadow reads
+     as heat coming off the metal — it draws the glyph silhouette behind the
+     transparent fill, which is exactly the underglow wanted here. */
   .battle-stamp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(2rem,6vw,4.5rem);color:#fca5a5;
     text-shadow:0 0 30px rgba(239,68,68,.8),0 4px 10px rgba(0,0,0,.8);}
-  .battle-stamp span{display:inline-block;opacity:0;animation:battle-letter-stamp .35s ease both;}
+  .battle-stamp span{display:inline-block;opacity:0;animation:battle-letter-stamp .35s ease both;
+    background:linear-gradient(180deg,#f9fafb 0%,#dbe2ec 30%,#93a1b4 48%,#5d6b7e 53%,#b4bfce 72%,#eef2f7 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    -webkit-text-stroke:1px rgba(15,23,42,.35);}
+  /* One light glint sweeps the title just after the swords land — a bright
+     band soft-lighted across the stamp box, so it catches the letters without
+     needing to clip to them. Runs once. */
+  .battle-stamp::after{content:'';position:absolute;inset:-12% -6%;pointer-events:none;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%);
+    mix-blend-mode:soft-light;transform:translateX(-130%);
+    animation:battle-glint .9s ease-out 1.7s 1 both;}
+  @keyframes battle-glint{to{transform:translateX(130%);}}
   @keyframes battle-letter-stamp{
     0%{opacity:0;transform:scale(3) rotate(-8deg);}
     60%{opacity:1;transform:scale(.9) rotate(2deg);}
@@ -313,6 +329,9 @@ function injectStyles() {
     transition:transform .15s ease,filter .15s ease;touch-action:manipulation;}
   .battle-shop-btn:active,.battle-end-btn:active{transform:scale(.96);}
   .battle-btn-mark{height:1.25em;width:auto;object-fit:contain;flex-shrink:0;}
+  /* The same mark inside the (non-flex) duel banner and mini-shop titles. */
+  .duel-title .battle-btn-mark,.duel-shop-title .battle-btn-mark{display:inline-block;
+    vertical-align:-0.28em;margin-right:.3em;max-width:none;}
   .battle-shop-btn{background:linear-gradient(135deg,#a855f7,#7e22ce);color:#faf5ff;
     box-shadow:0 8px 26px rgba(168,85,247,.4);}
   .battle-end-btn{background:transparent;border-color:#4b5563;color:#e5e7eb;}
@@ -1392,7 +1411,7 @@ function renderHpDuel() {
       <div class="battle-embers">${emberField()}</div>
       <div class="duel-topbar">
         <div class="duel-topbar-inner">
-          <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR OPPONENT</div>
+          <div class="duel-title font-display"><img class="battle-btn-mark" src="images/icon-battle.png" alt="" onerror="this.style.display='none'" />BATTLE DAY — CHOOSE YOUR OPPONENT</div>
         <div class="duel-topbar-actions">
           <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
           <button type="button" class="battle-end-btn">🏳️ End Battle</button>
@@ -1720,7 +1739,7 @@ function renderMrDDuel() {
       <div class="battle-embers">${emberField()}</div>
       <div class="duel-topbar">
         <div class="duel-topbar-inner">
-          <div class="duel-title font-display">⚔️ BATTLE DAY — CHOOSE YOUR OPPONENT</div>
+          <div class="duel-title font-display"><img class="battle-btn-mark" src="images/icon-battle.png" alt="" onerror="this.style.display='none'" />BATTLE DAY — CHOOSE YOUR OPPONENT</div>
         <div class="duel-topbar-actions">
           <button type="button" class="battle-shop-btn"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</button>
           <button type="button" class="battle-end-btn">🏳️ End Battle</button>
@@ -1928,7 +1947,7 @@ function renderMiniShop() {
   miniShopEl.innerHTML = `
     <div class="duel-shop-modal">
       <button type="button" class="duel-shop-close" data-shop-close aria-label="Close the shop">✕</button>
-      <div class="duel-shop-title font-display">🛒 Magic Shop</div>
+      <div class="duel-shop-title font-display"><img class="battle-btn-mark" src="images/icon-market.png" alt="" onerror="this.style.display='none'" />Magic Shop</div>
       <div class="duel-shop-houses">
         ${houses.map((h) => `
           <button type="button" class="duel-shop-house${h.id === buyer.id ? ' duel-shop-house-active' : ''}"
