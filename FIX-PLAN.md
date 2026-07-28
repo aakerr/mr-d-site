@@ -204,16 +204,16 @@ If HP mode is ever brought back into use, do these first:
 
 ## Phase 2 — Fit and finish (visible, lower stakes)
 
-- [ ] **2.1** `js/modules/dashboard.js:379`: full innerHTML rebuild on every store change resets
+- [x] **2.1** `js/modules/dashboard.js:379`: full innerHTML rebuild on every store change resets
   panel scroll. Adopt quests.js's targeted-update pattern (quests.js:832-841).
 - [ ] **2.2** `js/modules/shop.js:1506, 912`: shop lacks the pressed-pointer render deferral
   houses.js built (houses.js:1329-1388) — taps get eaten by re-renders. Port it (or extract
   the deferral into core and use it in both).
 - [ ] **2.3** `js/modules/shop.js:934-953`: toasts/banners are children of `rootEl` and die on
   re-render; houses.js mounts its toast host on `<body>` (houses.js:1102-1104). Port.
-- [ ] **2.4** `js/modules/quests.js:872-896`: `--board-w` never updates on window resize; add a
+- [x] **2.4** `js/modules/quests.js:872-896`: `--board-w` never updates on window resize; add a
   (debounced) resize listener calling `syncBoardWidth`.
-- [ ] **2.5** `js/modules/council.js:443-448`: touch tap to unpause the ribbon is immediately
+- [x] **2.5** `js/modules/council.js:443-448`: touch tap to unpause the ribbon is immediately
   re-paused by the synthetic `mouseenter`. Handle pointer events exclusively (ignore
   mouse events when `pointerType !== 'mouse'` was seen).
 - [ ] **2.6 (superseded by 2.21 — do 2.21 instead).** `js/modules/admin.js:4180-4183, 4493`:
@@ -238,19 +238,19 @@ If HP mode is ever brought back into use, do these first:
   - This removes the surface that bug 2.6 lives in.
 - [ ] **2.7** `js/modules/shop.js:40-42` + `js/core/media.js:37`: `mediaUrlCache` serves revoked
   URLs after art replacement. Invalidate on `media.put` (emit an event or expose a version).
-- [ ] **2.8** `js/modules/battle.js:2318-2363`: Catapult's second victim's defense resolves
+- [x] **2.8** `js/modules/battle.js:2318-2363`: Catapult's second victim's defense resolves
   publicly but stays "Hidden" — add the `combatRevealed` pairKey like the first target
   (battle.js:2204).
-- [ ] **2.9** `js/core/store.js:1622-1634`: a second freeze shortens an existing longer freeze;
+- [x] **2.9** `js/core/store.js:1622-1634`: a second freeze shortens an existing longer freeze;
   take `max(current, new)`.
-- [ ] **2.10** `js/core/store.js:1455-1473`: `setCombatMode` strands `frozen`/`shrouded`/
+- [x] **2.10** `js/core/store.js:1455-1473`: `setCombatMode` strands `frozen`/`shrouded`/
   `revealed`/`lastStrike` with no UI in HP mode; clear them (announcing it in the confirm) or
   surface them in HP mode.
-- [ ] **2.11** `js/modules/battle.js:2694-2697, 2830-2832`: suppress the "+0 pts" victory
+- [x] **2.11** `js/modules/battle.js:2694-2697, 2830-2832`: suppress the "+0 pts" victory
   fanfare (skip the prize line when prize is 0). Also decide whether HP-mode steal loot
   should count before `awardBattleWin` shrinks the gap prize (battle.js:2689-2697) — make it
   match the advertised prize.
-- [ ] **2.12** `js/modules/dice.js:428-443`: a refused (frozen-house) award still burns the
+- [x] **2.12** `js/modules/dice.js:428-443`: a refused (frozen-house) award still burns the
   roll's single award in All-Cores mode — let the teacher redirect. (Code comment at 414-421
   already claims this is how it works; make the code match.)
 - [ ] **2.13** `js/modules/battle.js:1989-1990` and `js/modules/admin.js:5125-5127`: silent
@@ -268,14 +268,14 @@ If HP mode is ever brought back into use, do these first:
   (admin.js:925); cleared term-start silently keeps the old value with a success toast
   (admin.js:3227); stale `'rock'` fallback label on POTW cards (admin.js:3750, 3757 — use
   `CONFIG.POTW_DEFAULT_VIDEO_ID`).
-- [ ] **2.17** `js/core/store.js:1987-1992`: guard `getTermInfo` against invalid `termStart`
+- [x] **2.17** `js/core/store.js:1987-1992`: guard `getTermInfo` against invalid `termStart`
   ("Week NaN of 9" in the top bar); fall back to "Set term dates in Admin".
-- [ ] **2.18** `js/core/registry.js:35`: wrap `next.mount` in try/catch with a visible fallback
+- [x] **2.18** `js/core/registry.js:35`: wrap `next.mount` in try/catch with a visible fallback
   ("This screen failed to load") so one bad module doesn't brick navigation.
 - [ ] **2.19** `js/modules/potw.js:844-859`: guard `quickFacts`/`primarySources`/`quiz` maps
   (default `[]`) so a hand-edited/restored profile can't brick the Launch button; and reset
   `overlayEl` on template failure.
-- [ ] **2.20** First-run PIN: `js/core/firstrun.js:220` pre-fills `DEFAULT_PIN='0314'` — anyone
+- [x] **2.20** First-run PIN: `js/core/firstrun.js:220` pre-fills `DEFAULT_PIN='0314'` — anyone
   who has seen the repo knows it. Ship the field empty and require a choice.
 
 ---
