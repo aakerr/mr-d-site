@@ -53,13 +53,6 @@ html, body { background: var(--color-page); }
 *::-webkit-scrollbar-thumb:hover { background: #4b5563; }
 
 /* ============ shared keyframes ============ */
-@keyframes float-up {
-  0%   { opacity: 0; transform: translateY(6px) scale(0.9); }
-  15%  { opacity: 1; transform: translateY(0)   scale(1); }
-  75%  { opacity: 1; transform: translateY(-28px) scale(1); }
-  100% { opacity: 0; transform: translateY(-46px) scale(0.95); }
-}
-
 @keyframes float-down {
   0%   { opacity: 0; transform: translateY(-6px) scale(0.9); }
   15%  { opacity: 1; transform: translateY(0)    scale(1); }
@@ -80,11 +73,6 @@ html, body { background: var(--color-page); }
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
   50%      { box-shadow: 0 0 24px 6px var(--accent-soft); }
-}
-
-@keyframes accent-sweep {
-  0%   { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
 }
 
 @keyframes season-drift {
@@ -167,35 +155,6 @@ html, body { background: var(--color-page); }
 .shell-subline {
   line-height: 1.2;
   transition: color var(--transition-fast);
-}
-
-/* Help "?" and sound toggle — same 48px hit area as the admin glyph, but a
-   step more visible than it: the key is for the teacher only, while help and
-   sound are things anyone at the board may reasonably want to reach. */
-.shell-icon-btn {
-  min-height: 48px; min-width: 44px;
-  opacity: 0.72;
-  color: var(--color-text-soft);
-  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
-}
-.shell-icon-btn:hover,
-.shell-icon-btn:focus-visible,
-.shell-icon-btn:active {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-text);
-}
-html[data-mode="light"] .shell-icon-btn:hover,
-html[data-mode="light"] .shell-icon-btn:focus-visible,
-html[data-mode="light"] .shell-icon-btn:active { background: rgba(0, 0, 0, 0.06); }
-.shell-icon-btn:active { transform: scale(0.94); }
-
-.shell-help-glyph {
-  display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 999px;
-  border: 1.5px solid currentColor;
-  font-family: 'Cinzel', Georgia, serif;
-  font-weight: 800; font-size: 15px; line-height: 1;
 }
 
 /* subtle teacher admin access — deliberately low-key, not a student affordance */
