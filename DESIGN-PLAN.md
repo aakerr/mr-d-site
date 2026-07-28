@@ -252,3 +252,19 @@ good — keep all of it. The problems are concentration and placement, not style
 - **7.1** The recap lives on the Council podium (no new screen), shown on Mondays and
   on demand.
 - **8.3** HP mode's fate is decided at end of term, not now.
+
+## Phase 10 — Owner decisions from the closing batch (2026-07-28)
+
+- [ ] **10.1 Iconography unification (approved):** quests align to the painted scroll art
+  (board title 📜, empty-state 🧭, modal-title 🗺️ → icon-quest.png treatment); the
+  All-Houses pill/chips swap 🏰 for images/class-shield.png; POTW's in-module 🌍 marks
+  (launch button, small chrome — NOT the big theatrical globe, which stays as the 3D
+  fallback) adopt icon-potw.png.
+- [ ] **10.2 Council artwork:** approved, but needs a painted scales piece from the owner
+  (same handoff as the forged sword). Wire it into the Council header + any scales chrome
+  when it lands in images/.
+- [x] **10.3 Economy scales:** stay as-is (owner call — slow accumulation toward big
+  purchases is the intended pacing). CONFIG.ECONOMY's comment already names the families.
+- [x] **10.4 HP-mode retirement:** confirmed — decide at end of term (~2026-08-24): still
+  on Mr. D's rules then → removal pass; HP mode used by then → fix its economy instead.
+- [ ] **10.5 Shop grid:** center partial last rows in the item sections (approved).
