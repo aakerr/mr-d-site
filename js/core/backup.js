@@ -25,6 +25,7 @@ let connected = false;    // handle present AND read-write permission granted
 let lastSaveTs = 0;
 let lastDownloadTs = 0;   // last daily safety-net download (see maybeDailyDownload)
 let lastError = null;
+let lastRestoreFile = null;   // which file restoreLatest() actually used
 let lastDailyDate = null; // 'YYYY-MM-DD' of the most recent daily snapshot
 let debounceTimer = null;
 let initialized = false;
@@ -163,14 +164,33 @@ function downloadEnabled() {
   try { return store.getSettings().backupDownload !== false; } catch (e) { return true; }
 }
 
+// Cheap proxy for "the teacher has put work into this". Deliberately generous:
+// a spurious backup costs one small file in Downloads, a missing one costs a day.
+function hasAnythingWorthKeeping() {
+  try {
+    const st = store.getState();
+    if ((st.transactions || []).length > 0) return true;
+    if ((st.planner?.events || []).length > 0) return true;
+    if (Object.keys(st.quests?.active || {}).length > 0) return true;
+    if ((st.quests?.completed || []).length > 0) return true;
+    if (Object.keys(st.inventory || {}).length > 0) return true;
+    // A profile the teacher wrote, rather than the two that ship.
+    const profiles = Object.keys(st.potw?.profiles || {});
+    if (profiles.some((k) => k !== 'mesopotamia' && k !== 'egypt')) return true;
+    if (Object.keys(st.settings?.houses || {}).length > 0) return true;
+    return false;
+  } catch (e) { return false; }
+}
+
 function maybeDailyDownload() {
   if (!downloadEnabled()) return;
   const today = dateStr();
   if (lastDownloadDate === today) return;
   // Nothing worth saving yet — don't hand him an empty file on a fresh install.
-  let hasData = false;
-  try { hasData = (store.getState().transactions || []).length > 0; } catch (e) { hasData = false; }
-  if (!hasData) return;
+  // But "worth saving" is not only points: an afternoon spent building quests,
+  // planning the term or writing a Place of the Week is a day's work that used
+  // to get no backup at all, because the ledger happened to be untouched.
+  if (!hasAnythingWorthKeeping()) return;
   // Claim the day BEFORE writing. If the download throws, we still don't retry
   // on every subsequent keystroke — one attempt per day, win or lose.
   lastDownloadDate = today;
@@ -269,6 +289,7 @@ export const backup = {
 
   status() {
     return {
+      lastRestoreFile,
       supported: supported(),
       connected,
       hasHandle: !!dirHandle,
@@ -323,15 +344,30 @@ export const backup = {
     if (!dirHandle) { lastError = 'No backup folder connected.'; return null; }
     try {
       if (!(await verifyPermission(dirHandle, true))) { lastError = 'Folder permission denied.'; return null; }
-      const fh = await dirHandle.getFileHandle(LIVE_FILE, { create: false });
-      const file = await fh.getFile();
-      const data = JSON.parse(await file.text());
-      if (!data || typeof data !== 'object' || !('version' in data) || !('transactions' in data)) {
-        lastError = 'The folder does not contain a valid backup.';
-        return null;
+      // The live file first, then the dated snapshots, newest first. This used
+      // to read ONLY mrd-live-backup.json and report "no valid backup" while a
+      // folder full of perfectly good mrd-backup-YYYY-MM-DD.json files sat
+      // beside it — the one moment a teacher needs this to work is the moment
+      // the live file is the thing that got damaged.
+      const candidates = [LIVE_FILE, ...(await datedSnapshotNames())];
+      let lastReason = 'No backup file found in the folder yet.';
+      for (const name of candidates) {
+        try {
+          const fh = await dirHandle.getFileHandle(name, { create: false });
+          const data = JSON.parse(await (await fh.getFile()).text());
+          if (!data || typeof data !== 'object' || !('version' in data) || !('transactions' in data)) {
+            lastReason = `${name} is not a valid backup.`;
+            continue;
+          }
+          lastError = null;
+          lastRestoreFile = name;      // so Admin can say WHICH file it used
+          return data;
+        } catch (e) {
+          if (!(e && e.name === 'NotFoundError')) lastReason = `${name} could not be read.`;
+        }
       }
-      lastError = null;
-      return data;
+      lastError = lastReason;
+      return null;
     } catch (e) {
       lastError = (e && e.name === 'NotFoundError') ? 'No backup file found in the folder yet.' : ((e && e.message) || String(e));
       console.warn('backup: restore read failed', e);
@@ -339,6 +375,18 @@ export const backup = {
     }
   },
 };
+
+// Dated snapshots in the folder, newest first. Named mrd-backup-YYYY-MM-DD.json
+// by maybeDailyDownload and doWrite, so a lexical sort is a date sort.
+async function datedSnapshotNames() {
+  const names = [];
+  try {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === 'file' && /^mrd-backup-\d{4}-\d{2}-\d{2}\.json$/.test(name)) names.push(name);
+    }
+  } catch (e) { console.warn('backup: could not list the folder', e); }
+  return names.sort().reverse();
+}
 
 async function writeNow() {
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }

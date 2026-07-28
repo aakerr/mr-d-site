@@ -25,6 +25,16 @@ maps.async = true;
 maps.src = `https://maps.googleapis.com/maps/api/js?key=${mapsKey}&v=beta&libraries=maps3d`;
 document.head.appendChild(maps);
 
+// A term of points lives in localStorage, which Chrome is entitled to evict
+// under storage pressure without asking anyone. Marking the origin persistent
+// makes it the last thing to go rather than the first. Fire-and-forget: it is
+// unsupported in some browsers, and a refusal changes nothing we can act on.
+if (navigator.storage && typeof navigator.storage.persist === 'function') {
+  navigator.storage.persist()
+    .then((granted) => { if (!granted) console.info('storage: persistence not granted (data may be evicted under pressure)'); })
+    .catch(() => {});
+}
+
 const ctx = { store, registry, audio };
 registry.init(ctx);
 

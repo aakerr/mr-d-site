@@ -930,8 +930,53 @@ function repairPotwVideos(st) {
   return st;
 }
 
+// TWO TABS, ONE KEY. State loads once per tab and every emit() rewrites the
+// WHOLE key, so two windows on the same machine — easy once the app is installed
+// as a PWA and also open in a normal tab — silently overwrite each other. The
+// last one to touch anything wins, and a morning's points can vanish because a
+// forgotten window was left open on a stale copy.
+//
+// There is no safe merge here: the ledger is a full array rewrite, not a diff.
+// The honest thing is to notice and stop, loudly. The tab that finds a foreign
+// write is the STALE one by definition, so it stops persisting rather than
+// racing to win.
+let staleTab = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (ev) => {
+    if (ev.key !== CONFIG.STORAGE_KEY || ev.newValue === null) return;
+    if (staleTab) return;
+    staleTab = true;
+    console.warn('store: another window wrote this app\'s data — this tab has stopped saving.');
+    try { showTwoTabNotice(); } catch (e) { /* never let the warning break the app */ }
+  });
+}
+
+function showTwoTabNotice() {
+  if (typeof document === 'undefined' || document.getElementById('store-two-tab')) return;
+  const bar = document.createElement('div');
+  bar.id = 'store-two-tab';
+  bar.setAttribute('role', 'alert');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:14px 18px;'
+    + 'background:#7f1d1d;color:#fff;font:600 15px/1.45 system-ui,sans-serif;'
+    + 'box-shadow:0 -6px 24px rgba(0,0,0,.5);display:flex;gap:14px;align-items:center;';
+  bar.innerHTML = `<span style="font-size:22px">&#9888;&#65039;</span>
+    <span style="flex:1">
+      <b>This app is open in another window.</b><br>
+      Two copies cannot both keep score — they overwrite each other. This window
+      has <b>stopped saving</b> so the other one keeps its work. Close this window
+      and carry on in the other, or reload this one to pick up where that one is.
+    </span>
+    <button type="button" style="flex:0 0 auto;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.5);
+      background:transparent;color:#fff;font:inherit;cursor:pointer">Reload this window</button>`;
+  bar.querySelector('button').addEventListener('click', () => location.reload());
+  (document.body || document.documentElement).appendChild(bar);
+}
+
 let persistFailed = false;
 function persist() {
+  // A stale tab must not write. Its in-memory state is a fork of a version the
+  // other window has already moved past.
+  if (staleTab) return;
   try {
     localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(state));
     persistFailed = false;

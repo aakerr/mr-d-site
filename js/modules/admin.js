@@ -3665,7 +3665,9 @@ async function restoreFromFolder() {
   if (!data) { toast(backup.status().lastError || 'Could not read a backup from the folder.'); return; }
   const check = looksLikeBackup(data);
   if (!check.ok) { toast(check.reason); return; }
-  openConfirm('Restore from backup folder?', 'This replaces ALL current data with the folder\'s latest backup, then reloads. If it is not the one you wanted, <b>Undo last restore</b> in this panel puts everything back.', () => {
+  const used = backup.status().lastRestoreFile;
+  openConfirm('Restore from backup folder?',
+    `This replaces ALL current data with ${used ? `<b>${esc(used)}</b>` : "the folder's latest backup"}, then reloads. If it is not the one you wanted, <b>Undo last restore</b> in this panel puts everything back.`, () => {
     if (replaceAllData(data)) location.reload();
   }, { yesLabel: 'Replace & reload' });
 }
@@ -4831,7 +4833,22 @@ async function savePotw() {
     return;
   }
   const num = (v, d) => { const n = Number(v); return Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d; };
-  const finalKey = slugify(f.isNew ? (f.key.trim() || title) : f.key);
+  // A NEW DESTINATION MUST NEVER LAND ON AN EXISTING ONE. slugify('Egypt') is
+  // 'egypt', which is already a shipped profile — and the commit steps below
+  // delete that key's stored media BEFORE savePotwProfile overwrites the
+  // profile itself. So adding a second Egypt used to silently destroy the first
+  // one: its slides, its flyover, its facts, its coordinates. Uniquify instead.
+  let finalKey = slugify(f.isNew ? (f.key.trim() || title) : f.key);
+  if (f.isNew) {
+    const taken = ctxRef.store.getPotwProfiles() || {};
+    if (taken[finalKey]) {
+      const base = finalKey;
+      let n = 2;
+      while (taken[`${base}-${n}`]) n += 1;
+      finalKey = `${base}-${n}`;
+      toast(`There is already a destination called “${title}” — saving this one as a second copy.`);
+    }
+  }
   const weekOf = f.weekOf ? mondayOfDate(f.weekOf) : '';
   const presentation = await commitPresentation(finalKey);
   if (!potwForm) return; // editor was closed mid-await
