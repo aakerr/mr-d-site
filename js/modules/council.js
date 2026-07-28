@@ -32,9 +32,16 @@ const STYLE = `
 .council-root {
   position: relative; height: 100%; width: 100%; overflow: hidden;
   display: flex; flex-direction: column;
+  /* The council hall itself — the owner's painting: four banners flanking the
+     scales tapestry, torchlit, with the whole reflective floor composed as an
+     empty stage for the podium columns to stand on. The painting is already
+     dark, so the scrims stay feather-light (the Battle Day lesson: layered
+     scrims multiply — err bright). The amber crown-glow rides on top so the
+     screen keeps its ceremonial warmth. */
   background:
-    radial-gradient(130% 70% at 50% -12%, rgba(245,158,11,0.13), transparent 62%),
-    radial-gradient(80% 55% at 50% 112%, rgba(148,163,184,0.14), transparent 65%),
+    radial-gradient(130% 70% at 50% -12%, rgba(245,158,11,0.10), transparent 62%),
+    linear-gradient(180deg, rgba(4,6,12,.42), rgba(4,6,12,.12) 32%, rgba(4,6,12,.22) 100%),
+    url('images/council-chamber.jpg') center 40%/cover no-repeat,
     linear-gradient(180deg, #0c111d 0%, #0f1526 46%, #070a12 100%);
 }
 /* Council-chamber rays fanning out from the table, pure CSS. */
