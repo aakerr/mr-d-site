@@ -699,6 +699,21 @@ export function initShell(ctx) {
     } catch (e) { /* purely cosmetic — never block point logging */ }
   }
 
+  // A refusal has to SAY so. The point toast is a two-word flash in a house
+  // colour; a declined write needs a sentence, held long enough to read, in a
+  // colour that does not look like a successful award.
+  function spawnNotice(message) {
+    try {
+      const el = document.createElement('div');
+      el.className = 'point-toast point-toast-notice';
+      el.textContent = message;
+      el.style.top = 'calc(var(--topbar-height) + 10px)';
+      el.style.right = '90px';
+      fabRoot.appendChild(el);
+      setTimeout(() => el.remove(), 5200);
+    } catch (e) { /* cosmetic only — never block point logging */ }
+  }
+
   // Resolves true iff the points were actually applied. The lock gates the
   // APPLY, not the panel opening (see file header note near the import) — so
   // this awaits requireUnlock() before touching store/reason/sound/toast.
@@ -723,7 +738,16 @@ export function initShell(ctx) {
       const reasonEl = fabRoot.querySelector('[data-fab-reason]');
       const reason = ((reasonEl && reasonEl.value) || '').trim();
       const house = currentHouse();
-      store.addPoints(selectedHouseId, delta, { reason: reason || 'Quick adjust', tag: 'quick' });
+      // addPoints can DECLINE — a frozen house cannot earn, and a house on zero
+      // has nothing left to lose. It can also TRIM a deduction to what is
+      // actually there. Playing the coin sound and flashing "+10" regardless
+      // was the app lying to a room full of children, so the result is checked.
+      const why = store.explainRefusal(selectedHouseId, delta);
+      const tx = why ? null : store.addPoints(selectedHouseId, delta, { reason: reason || 'Quick adjust', tag: 'quick' });
+      if (!tx) {
+        spawnNotice(why || 'That change could not be recorded.');
+        return false;
+      }
       // Clear the reason so the NEXT award doesn't silently inherit this one's
       // label — the panel is deliberately not re-rendered, so do it by hand.
       if (reasonEl) {
@@ -733,7 +757,9 @@ export function initShell(ctx) {
         if (document.activeElement === reasonEl) reasonEl.focus();
       }
       if (audio && typeof audio.sfx === 'function') audio.sfx(delta > 0 ? 'coin' : 'thud');
-      spawnToast(delta, house);
+      // tx.delta, not delta — a deduction trimmed at the zero floor must show
+      // the number that actually moved.
+      spawnToast(tx.delta, house);
       return true;
     } finally {
       pointsInFlight = false;

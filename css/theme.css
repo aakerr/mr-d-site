@@ -337,6 +337,29 @@ html[data-mode="light"] .shell-icon-btn:active { background: rgba(0, 0, 0, 0.06)
   animation: float-down 1.4s ease-out forwards;
 }
 
+/* A DECLINED write, not an award. The point toast is a two-word flash that
+   drifts away in 1.4s; a refusal is a sentence the teacher has to actually
+   read, so it holds still, wraps, and is amber rather than a house colour. */
+.point-toast-notice {
+  max-width: min(420px, 46vw);
+  white-space: normal;
+  line-height: 1.35;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(20, 18, 37, 0.96);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-radius: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  animation: notice-in 0.22s ease-out both;
+}
+@keyframes notice-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* ============================================================
    LIGHT MODE — driven by html[data-mode="light"], set by shell.js
    from store.getSettings().theme.mode.

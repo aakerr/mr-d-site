@@ -1166,15 +1166,27 @@ export default {
         // of as two visible steps.
         s.awardModalOpen = false;
         const allMode = s.scope === 'all';
+        let applied = points;
         if (allMode) {
           store.awardAll(points, { reason: label, tag: tag || 'manual' });
         } else {
-          store.addPoints(Number(s.scope), points, { reason: label, tag: tag || 'manual' });
+          // The store can DECLINE (a frozen house cannot earn; a house on zero
+          // has nothing to lose) or TRIM a deduction to what is really there.
+          // Announcing the number he asked for regardless would tell the class
+          // points moved when they did not.
+          const id = Number(s.scope);
+          const why = store.explainRefusal(id, points);
+          const tx = why ? null : store.addPoints(id, points, { reason: label, tag: tag || 'manual' });
+          if (!tx) {
+            showToast(toastHost, why || 'That change could not be recorded.');
+            return;
+          }
+          applied = tx.delta;
         }
         ctx.audio.sfx(points > 0 ? 'coin' : 'thud');
-        floatFeedback(el.querySelector('#hse-award-anchor'), points);
+        floatFeedback(el.querySelector('#hse-award-anchor'), applied);
         const target = allMode ? 'all four houses' : store.HOUSES[Number(s.scope)].name;
-        showToast(toastHost, `${signed(points)} ${label} → ${target}`);
+        showToast(toastHost, `${signed(applied)} ${label} → ${target}`);
       });
     };
 

@@ -1248,6 +1248,27 @@ export const store = {
     return tx;
   },
 
+  // Why addPoints would refuse, in words a teacher can act on. addPoints returns
+  // null for a write it declined, and every caller used to ignore that and play
+  // the coin sound anyway — so a frozen house got a cheerful "+10" toast in
+  // front of the class while nothing was written. This keeps the explanation in
+  // one place, next to the rules it describes, so the two cannot drift.
+  // Returns null when the write WILL go through.
+  explainRefusal(houseId, delta) {
+    delta = Math.round(Number(delta) || 0);
+    const name = HOUSES[houseId]?.name || 'That house';
+    if (!delta || !HOUSES[houseId]) return 'Nothing to award.';
+    if (delta > 0 && store.isFrozen(houseId)) {
+      const ts = store.frozenUntil(houseId);
+      const until = ts ? new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : '';
+      return `❄️ ${name} is frozen${until ? ` until ${until}` : ''} and cannot earn points yet. Nothing was recorded.`;
+    }
+    if (delta < 0 && store.getTotal(houseId, 'term') <= 0) {
+      return `${name} is already on zero — there is nothing left to take.`;
+    }
+    return null;
+  },
+
   // Returns a NUMBER, so there is no aliasing risk in handing back a cached
   // value — this is the hot one, called for every house on nearly every render.
   getTotal(houseId, scope = 'term') {
