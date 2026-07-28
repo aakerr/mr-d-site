@@ -68,7 +68,7 @@ folder autosave, daily safety-net download. The design is sound; these are the h
   if the slug exists, uniquify (`egypt-2`) or refuse with a message. This is a
   data-destruction path, hence Phase 0.
 
-- [ ] **0.9 (fixup, found in live review 2026-07-27):** `openConfirm` renders its message as
+- [x] **0.9 (fixup, found in live review 2026-07-27):** `openConfirm` renders its message as
   text, but the Phase 0.3 confirm copy embeds `<b>Undo last restore</b>` — the tags now show
   literally in the sample-data / import / folder-restore dialogs (js/modules/admin.js).
   Either strip the markup from those three messages or make openConfirm deliberately accept
@@ -82,7 +82,7 @@ Everything here produces wrong numbers, silent no-ops, or self-contradiction in 
 class. Ordered by embarrassment potential.
 
 ### Shop is broken on a fresh install
-- [ ] **1.1 DECIDED (owner, 2026-07-27): full purchase parity — two shops, one per combat
+- [x] **1.1 DECIDED (owner, 2026-07-27): full purchase parity — two shops, one per combat
   system.** `js/modules/shop.js:16, 597-606`: `KNOWN_KINDS` only knows the hit-points item
   kinds; the shipped default mode is `duel` (`store.js:140`) whose kinds are
   `damage/freeze/block/reveal/hide/timeturn/extraslot`, and duel steal items carry
@@ -179,14 +179,14 @@ If HP mode is ever brought back into use, do these first:
   action that discards the staged files.
 
 ### Escaping (stored XSS class — teacher-only input, but fix properly)
-- [ ] **1.20** Create `js/core/escape.js` with one shared `escapeHtml` + `escapeAttr` and
+- [x] **1.20** Create `js/core/escape.js` with one shared `escapeHtml` + `escapeAttr` and
   replace the five private copies (`quests.js:56`, `council.js:306`, `dashboard.js:113`,
   `carousel.js:171`, `potw.js:72`, `shop.js:93`, `houses.js:367`, battle.js, admin.js `esc`).
 - [x] **1.21** `js/modules/dashboard.js:109, 158, 219, 251`: house `name`/`image` interpolated
   raw (the one module that missed it). Escape all four sites.
 - [x] **1.22** `js/modules/admin.js:656` + `js/modules/quests.js:613, 675, 739`: quest icon
   rendered unescaped (8-char cap limits but doesn't eliminate injection). Escape.
-- [ ] **1.23** Validate `accent` (`/^#[0-9a-f]{6}$/i`) and escape `image` at save-time in
+- [x] **1.23** Validate `accent` (`/^#[0-9a-f]{6}$/i`) and escape `image` at save-time in
   `applyHouseOverrides` (`store.js:566-574`) so the ~30 render sites that interpolate them
   into `style="…"`/`src="…"` don't each need auditing (`houses.js:683` is currently the only
   site that validates). Also fix `shop.js:633-634`'s inline `onerror` string (an apostrophe
@@ -195,7 +195,7 @@ If HP mode is ever brought back into use, do these first:
   (`potw.js:599-603, 918-921`).
 
 ### Paid-for outcomes lost to navigation
-- [ ] **1.24** `js/modules/shop.js:1262, 1178-1226`: wildcard items charge immediately but apply
+- [x] **1.24** `js/modules/shop.js:1262, 1178-1226`: wildcard items charge immediately but apply
   the swing ~5s later via timeouts cleared on unmount — navigating away eats the outcome.
   Apply the swing to the store at confirm time (or persist a pending-swing record replayed on
   mount); let the animation be pure presentation.
