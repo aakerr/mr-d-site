@@ -302,27 +302,28 @@ function injectStyles() {
      transparent fill, which is exactly the underglow wanted here. */
   .battle-stamp{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
     display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
-    font-weight:800;font-size:clamp(2.4rem,7vw,5.4rem);color:#fca5a5;
-    text-shadow:0 0 26px rgba(239,68,68,.6),0 4px 10px rgba(0,0,0,.8);}
-  /* Two background layers under one text clip: the moving glint on top, the
-     forged steel beneath. The glint layer is viewport-FIXED and 200vw wide, so
-     every letter-span samples the same gradient in screen space — the light
-     reads as one band travelling across the whole wordmark, not ten little
-     bands crossing ten letters. It runs once, after the swords land, and its
-     final frame parks the band off the right edge of the viewport. */
+    font-weight:800;font-size:clamp(3.6rem,10.5vw,8.1rem);color:#e5e7eb;
+    text-shadow:0 5px 16px rgba(0,0,0,.85);}
+  /* Two background layers under one text clip: a sheen band on top, forged
+     steel beneath. Chrome ignores background-attachment:fixed inside a text
+     clip, so a single continuous band is off the table — instead every letter
+     sweeps its own band on a small cascade (same trick as the stamp-in), and
+     the eye reads light travelling across the wordmark left to right. Each
+     span's two animation-delays are set inline where the letters are built.
+     Ends parked off the letter's right edge — nothing lingers. */
   .battle-stamp span{display:inline-block;opacity:0;
-    animation:battle-letter-stamp .35s ease both,battle-text-glint 1.1s ease-out 1.7s 1 both;
+    animation:battle-letter-stamp .35s ease both,battle-text-glint .55s ease-out both;
     background:
-      linear-gradient(115deg,transparent 46%,rgba(255,255,255,.85) 50%,transparent 54%),
+      linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%),
       linear-gradient(180deg,#ffffff 0%,#e6ebf2 28%,#a7b3c4 47%,#6e7d91 52%,#c2ccd9 70%,#f4f7fb 100%);
-    background-size:200vw 100%,auto;
-    background-attachment:fixed,scroll;
-    background-position:-110vw 0,0 0;
+    background-size:260% 100%,auto;
+    background-repeat:no-repeat;
+    background-position:180% 0,0 0;
     -webkit-background-clip:text;background-clip:text;color:transparent;
     -webkit-text-stroke:1px rgba(15,23,42,.35);}
   @keyframes battle-text-glint{
-    from{background-position:-110vw 0,0 0;}
-    to{background-position:10vw 0,0 0;}
+    from{background-position:180% 0,0 0;}
+    to{background-position:-80% 0,0 0;}
   }
 
   @keyframes battle-letter-stamp{
@@ -1170,7 +1171,7 @@ function triggerCinematic() {
       <span class="battle-sword battle-sword-b"><img src="images/sword-forged.png" alt=""></span>
     </div>
     <div class="battle-stamp">
-      ${letters.map((ch, i) => `<span style="animation-delay:${0.55 + i * 0.07}s">${ch === ' ' ? '&nbsp;' : esc(ch)}</span>`).join('')}
+      ${letters.map((ch, i) => `<span style="animation-delay:${0.55 + i * 0.07}s,${1.7 + i * 0.07}s">${ch === ' ' ? '&nbsp;' : esc(ch)}</span>`).join('')}
     </div>`;
   host.appendChild(overlayEl);
 
