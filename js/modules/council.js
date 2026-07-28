@@ -245,6 +245,35 @@ const STYLE = `
 .council-col.is-drop .council-banner { animation: council-drop 760ms cubic-bezier(.36,.07,.19,.97) both; }
 .council-col.is-rise .council-banner { animation: council-rise 760ms ease both; }
 
+/* 7.5 shared frost language — ❄️ badge + subtle ice-blue tint + a thaw-day
+   label, the same three pieces on every prominent house identity app-wide
+   (dashboard standings/hero, this podium, Records tabs/header, Battle Day's
+   duel cards). Colours match battle.js's existing (until now unused)
+   .duel-def-frozen ice-blue so a frozen house reads as ONE indicator, not a
+   different look per screen. All four columns render this markup always —
+   only the hidden attribute toggle differs per house — so a frozen column never
+   gains or loses a pixel of size next to its neighbours; the tint sits at
+   the SAME painted layer the cloth-weave ::before already uses (a low-
+   opacity absolute overlay over the banner), so it never grows the box.
+   Duplicated per module rather than pulled into a shared core file — the
+   pattern the rest of the app already uses for cross-module CSS (see
+   .acc-text in dashboard.js/houses.js). */
+.council-frost-tint {
+  position: absolute; inset: 0; pointer-events: none;
+  background: rgba(30,64,175,0.30);
+}
+.council-frost-badge {
+  position: absolute; top: -2px; right: -2px; z-index: 4;
+  font-size: clamp(0.85rem, 2.2vh, 1.4rem); line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
+}
+.council-frost-label {
+  margin-top: clamp(2px, 0.5vh, 6px);
+  font-size: clamp(0.48rem, 1.15vh, 0.72rem); font-weight: 700;
+  letter-spacing: 0.02em; color: #bfdbfe; text-align: center; white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+
 /* ---------------- ribbon ---------------- */
 .council-ribbon {
   position: relative; z-index: 3; flex: 0 0 auto;
@@ -420,13 +449,16 @@ export default {
               <div class="council-crestwrap">
                 <img class="council-crest" data-crest alt="" />
                 <span class="council-crest-fallback" data-crest-fallback>&#128737;&#65039;</span>
+                <span class="council-frost-badge" data-frost-badge hidden>&#10052;&#65039;</span>
               </div>
               <div class="council-rod"></div>
               <div class="council-banner" data-banner>
+                <div class="council-frost-tint" data-frost-tint hidden></div>
                 <div class="council-name" data-name></div>
                 <div class="council-motto" data-motto></div>
                 <div class="council-points" data-points>0</div>
                 <div class="council-delta" data-delta></div>
+                <div class="council-frost-label" data-frost-label hidden></div>
                 <div class="council-base">
                   <span class="council-medal" data-medal></span>
                   <span class="council-rank" data-rank></span>
@@ -458,6 +490,9 @@ export default {
         delta: col.querySelector('[data-delta]'),
         medal: col.querySelector('[data-medal]'),
         rank: col.querySelector('[data-rank]'),
+        frostTint: col.querySelector('[data-frost-tint]'),
+        frostBadge: col.querySelector('[data-frost-badge]'),
+        frostLabel: col.querySelector('[data-frost-label]'),
       });
     });
 
@@ -618,6 +653,21 @@ export default {
         this._timers.push(t);
       }
       this._prevRank.set(h.id, rank);
+
+      // 7.5 — frost visibility. getFreezeInfo is brand new; if it is ever
+      // missing or throws (a mismatched build, say) the frost nodes just stay
+      // hidden, exactly as they render for every install today. Never let a
+      // decoration crash the podium.
+      let frost = null;
+      try { frost = store.getFreezeInfo ? store.getFreezeInfo(h.id) : null; } catch (e) { frost = null; }
+      const frozen = !!(frost && frost.frozen);
+      if (refs.frostTint) refs.frostTint.hidden = !frozen;
+      if (refs.frostBadge) refs.frostBadge.hidden = !frozen;
+      if (refs.frostLabel) {
+        refs.frostLabel.hidden = !frozen;
+        const text = frozen ? (frost.label || '') : '';
+        if (refs.frostLabel.textContent !== text) refs.frostLabel.textContent = text;
+      }
     });
 
     this.renderRibbon(false);
