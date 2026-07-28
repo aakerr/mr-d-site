@@ -49,16 +49,25 @@ unless a dependency is called out. One item = one commit.
   error/timeout, or a 10s no-render watchdog that swaps in the backdrop permanently and
   stops waiting).
 
-- [ ] **6.4 Give Council of Four a tile.**
-  `js/modules/council.js:337` sets `showTile: false` — the app's best ceremony screen is
-  reachable only via the "All Cores" entry in the house switcher (js/core/shell.js:499)
-  and is otherwise undiscoverable. Set `showTile: true` with title "Council of Four",
-  subtitle "The standings ceremony". The dashboard tile grid (dashboard.js:306) picks it
-  up automatically. Council already handles being mounted in single-house mode (it shows
-  global standings; shell.js:500 bounces `council` → home only on switcher change, which
-  is unaffected). Verify the tile row's layout still fits 7 tiles at board resolution —
-  if it crowds, show the Council tile only when `activeCore === 'all'` (the grid is
-  rebuilt per render, so a conditional filter in dashboard.js:306 is one line).
+- [ ] **6.4 REVISED (owner spec, 2026-07-27): the Records tile becomes the drill-down
+  door to the standings.** No new tile. The flow:
+  1. The Records dashboard tile keeps the gold trophy art (images/icon-points.png —
+     already wired) — but tapping it navigates to the **Council of Four podium** (the
+     "all cores" standings page the house switcher reaches), NOT the Records module.
+     Implementation: dashboard tile click for module id 'houses' routes to
+     registry.navigate('council') — special-cased in dashboard.js's tile handler, with
+     a comment naming this owner decision.
+  2. On the Council podium, tapping a house's NAME, SHIELD, or COLUMN/BAR navigates to
+     the Records module with that house's tab pre-selected. Records' house filter is
+     internal state in houses.js — add a small nav-intent handoff (e.g.
+     store-less module hook `houses.focusHouse(id)` consumed on next mount, or a
+     sessionStorage `mrd-records-focus` key houses.js reads-and-clears on mount; pick
+     whichever fits the module contract cleanly).
+  3. Records remains fully reachable: podium → house tap lands in it, and its internal
+     tabs (All Houses + per-house) still work as today.
+  Council needs pointer affordances (cursor, hover/active states on the columns) so the
+  class can see the columns are tappable. Keep the podium's ceremony intact — the tap
+  targets are additive.
 
 - [ ] **6.5 All-Cores dashboard: show the next core's schedule instead of a shrug.**
   `renderItinerary` (dashboard.js:266-273) and `renderHomework` (dashboard.js:296) print
