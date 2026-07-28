@@ -996,24 +996,32 @@ function buildLessonHTML() {
   const houses = Object.values(ctxRef.store.HOUSES);
   const points = bountyPoints();
   const quiz = quizList.map((q, qi) => {
-    // The store ledger is the source of truth: a bounty already paid for this
-    // profile+week stays locked across relaunches and across class periods.
-    const paid = ctxRef.store.getPaidBounty(activeKey, qi);
-    const winner = paid ? ctxRef.store.HOUSES[paid.houseId] : null;
+    // The store ledger is the source of truth: a bounty already decided for
+    // this profile+week stays locked across relaunches and across class
+    // periods. "Decided" is two outcomes sharing one record — a house won it,
+    // or the class was told nobody earned it (houseId:null, no ledger write).
+    const rec = ctxRef.store.getPaidBounty(activeKey, qi);
+    const winner = rec && rec.houseId != null ? ctxRef.store.HOUSES[rec.houseId] : null;
+    const decided = !!rec;
     const awards = houses.map((h) => {
       const isWinner = !!winner && winner.id === h.id;
-      const cls = `potw-award${paid ? (isWinner ? ' won' : ' awarded') : ''}`;
+      const cls = `potw-award${decided ? (isWinner ? ' won' : ' awarded') : ''}`;
       return `<button type="button" class="${cls}" data-q="${qi}" data-house="${h.id}"
-        style="--acc:${h.accent}"${paid ? ' disabled' : ''}>
+        style="--acc:${h.accent}"${decided ? ' disabled' : ''}>
          ${esc(h.name)}<small>+${points}</small>
        </button>`;
     }).join('');
     const paidNote = winner
       ? `<div class="potw-bounty-paid" data-paid="${qi}">✓ ${esc(winner.name)} won this bounty</div>`
-      : `<div class="potw-bounty-paid" data-paid="${qi}" hidden></div>`;
+      : (decided
+          ? `<div class="potw-bounty-paid closed" data-paid="${qi}">&mdash; no winner</div>`
+          : `<div class="potw-bounty-paid" data-paid="${qi}" hidden></div>`);
     return `<div class="potw-quiz">
        <div class="potw-q">${esc(q.q)}</div>
-       <button type="button" class="potw-reveal-ans" data-q="${qi}">Tap to reveal answer</button>
+       <div class="potw-q-actions">
+         <button type="button" class="potw-reveal-ans" data-q="${qi}">Tap to reveal answer</button>
+         <button type="button" class="potw-no-winner" data-q="${qi}"${decided ? ' disabled' : ''}>No winner</button>
+       </div>
        <div class="potw-ans" data-q="${qi}">${esc(q.a)}</div>
        <div class="potw-awards">${awards}</div>
        ${paidNote}
@@ -1176,6 +1184,32 @@ function wireLesson() {
     });
   });
 
+  // Quiz: close a question with nobody winning it. Before this, the only exits
+  // from a bounty question were "a house takes the points" and "four live
+  // buttons stare back for the rest of the term" — so a question the class got
+  // nowhere near stayed open forever, and the teacher had no way to say so.
+  // Nothing reaches the ledger; the question simply goes quiet. It asks for the
+  // PIN anyway, because the lesson card faces the class on a touch board and
+  // this decision cannot be taken back from there.
+  overlayEl.querySelectorAll('.potw-no-winner').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      const qi = Number(btn.dataset.q);
+      const liveOverlay = overlayEl;
+      if (!(await lock.requireUnlock('close this bounty with no winner'))) return;
+      if (overlayEl !== liveOverlay || btn.disabled) return;   // lesson closed while the pad was open
+      // Fails soft on an older store: without closeBounty nothing is recorded,
+      // so the question must stay open rather than pretend it was closed.
+      const close = ctxRef.store.closeBounty;
+      if (typeof close !== 'function') {
+        bountyNotice(qi, 'This copy of the app cannot record a no-winner close.');
+        return;
+      }
+      if (!close.call(ctxRef.store, activeKey, qi)) { lockBounty(qi, null); return; } // already decided
+      lockBounty(qi, null);
+    });
+  });
+
   // Quiz: award bounties — ONE payout per question per profile+week, enforced by
   // the store ledger (not just the DOM), so relaunching cannot pay twice.
   overlayEl.querySelectorAll('.potw-award').forEach((btn) => {
@@ -1244,18 +1278,27 @@ function bountyNotice(qi, message) {
   }, 4500);
 }
 
-// Lock a question's four buttons and show who won, from the ledger.
+// Lock a question and say how it ended, from the ledger. Two endings share this
+// path: a house won it, or it was closed with nobody winning (houseId:null).
+// Both leave the same dead buttons; only the note underneath differs.
 function lockBounty(qi, winnerBtn) {
   if (!overlayEl) return;
   const rec = ctxRef.store.getPaidBounty(activeKey, qi);
-  const winnerId = rec ? Number(rec.houseId) : (winnerBtn ? Number(winnerBtn.dataset.house) : null);
+  const closed = !!rec && rec.houseId == null;
+  const winnerId = closed ? null
+    : (rec ? Number(rec.houseId) : (winnerBtn ? Number(winnerBtn.dataset.house) : null));
   overlayEl.querySelectorAll(`.potw-award[data-q="${qi}"]`).forEach((b) => {
     b.disabled = true;
     b.classList.add(Number(b.dataset.house) === winnerId ? 'won' : 'awarded');
   });
+  const noWin = overlayEl.querySelector(`.potw-no-winner[data-q="${qi}"]`);
+  if (noWin) noWin.disabled = true;
   const note = overlayEl.querySelector(`.potw-bounty-paid[data-paid="${qi}"]`);
   const house = winnerId ? ctxRef.store.HOUSES[winnerId] : null;
-  if (note && house) { note.textContent = `✓ ${house.name} won this bounty`; note.hidden = false; }
+  if (!note) return;
+  note.classList.remove('refused');   // a decision outranks a passing refusal message
+  if (house) { note.textContent = `✓ ${house.name} won this bounty`; note.hidden = false; }
+  else if (closed) { note.textContent = '— no winner'; note.classList.add('closed'); note.hidden = false; }
 }
 
 // =============================================================================
@@ -2067,11 +2110,19 @@ function injectStyles() {
 
   .potw-quiz{padding:16px;background:#1f2937;border:1px solid #374151;border-radius:1rem;margin-bottom:14px;}
   .potw-q{color:#f9fafb;font-weight:700;font-size:1.05rem;margin-bottom:10px;line-height:1.4;}
+  .potw-q-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
   .potw-reveal-ans{min-height:44px;padding:10px 16px;border-radius:.6rem;border:1px dashed #f59e0b;
     background:transparent;color:#f59e0b;font-weight:600;cursor:pointer;margin-bottom:12px;
     transition:background .2s ease;}
+  .potw-q-actions .potw-reveal-ans{margin-bottom:0;}
   .potw-reveal-ans:hover{background:rgba(245,158,11,.12);}
   .potw-reveal-ans:disabled{opacity:.5;cursor:default;border-style:solid;}
+  /* the quiet exit: closes the question with nobody winning it */
+  .potw-no-winner{min-height:44px;padding:10px 14px;border-radius:.6rem;border:1px solid #374151;
+    background:transparent;color:#9ca3af;font-weight:600;font-size:.9rem;cursor:pointer;
+    transition:background .2s ease,color .2s ease,border-color .2s ease;}
+  .potw-no-winner:hover:not(:disabled){background:rgba(156,163,175,.12);color:#e5e7eb;border-color:#6b7280;}
+  .potw-no-winner:disabled{opacity:.35;cursor:default;}
   .potw-ans{display:none;color:#34d399;font-weight:700;margin-bottom:12px;font-size:1.05rem;}
   .potw-ans.show{display:block;}
   .potw-awards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
@@ -2089,6 +2140,7 @@ function injectStyles() {
     display:flex;align-items:center;gap:6px;}
   .potw-bounty-paid[hidden]{display:none;}
   .potw-bounty-paid.refused{color:#fbbf24;}
+  .potw-bounty-paid.closed{color:#9ca3af;font-style:italic;}
   .potw-float{position:absolute;top:-6px;left:50%;color:#f59e0b;font-weight:800;font-size:1.35rem;
     pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.6);animation:potw-float 1s ease-out forwards;}
 
