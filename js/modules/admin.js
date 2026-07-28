@@ -70,6 +70,7 @@ let dragLeaveHandler = null;
 let dropHandler = null;
 let inputHandler = null;
 let keyHandler = null;
+let scrollHandler = null;      // .admin-body scroll → fold/unfold the header
 const { timers, later, clearTimers } = makeTimerSet('admin');
 const presUrls = new Set();   // object URLs we own for presentation image thumbnails
 // Pending debounced volume commits, keyed so the master slider and each
@@ -167,11 +168,13 @@ function renderShell() {
   rootEl.innerHTML = `
     <div class="admin-wrap">
       <div class="admin-head">
-        <div class="admin-titlebar">
-          <span class="admin-key">🗝️</span>
-          <div>
-            <div class="admin-title">Teacher's Admin</div>
-            <div class="admin-sub">Plan the term, tune settings, curate the world.</div>
+        <div class="admin-headline">
+          <div class="admin-titlebar">
+            <span class="admin-key">🗝️</span>
+            <div>
+              <div class="admin-title">Teacher's Admin</div>
+              <div class="admin-sub">Plan the term, tune settings, curate the world.</div>
+            </div>
           </div>
         </div>
         <div class="admin-tabrow">
@@ -190,6 +193,51 @@ function renderShell() {
   syncSegActive();
   syncBackupStrip();
   renderBody();
+  const body = el('admin-body');
+  if (body) { scrollHandler = syncHeadCompact; body.addEventListener('scroll', scrollHandler, { passive: true }); }
+  syncHeadCompact();
+}
+
+// ---------------------------------------------------------------------------
+// The header, once you have started reading
+//
+// Title + subtitle + tab bar cost 151px of a 720p board — more than a fifth of
+// it — before a single card appears. Once .admin-body has actually scrolled,
+// the title and subtitle fold away and the tab bar stays, giving 68px of that
+// back. It comes straight down again the moment you scroll back to the top.
+//
+// Two things stop this flickering at the threshold, both measured rather than
+// guessed. First, hysteresis: it folds at 56px down and only unfolds back at
+// 16px, so a single wheel notch can never sit astride the trigger. Second, and
+// less obvious: folding the header makes the body TALLER, which shrinks its
+// maximum scrollTop — on a page with barely more to scroll than the header is
+// worth, the browser would clamp scrollTop back above the threshold, unfold,
+// and start the whole thing over. So it only ever folds when there is
+// comfortably more scrolling room than the fold itself frees.
+// ---------------------------------------------------------------------------
+const HEAD_FOLD_AT = 56;     // px scrolled before the title folds away
+const HEAD_UNFOLD_AT = 16;   // px it must come back up to before the title returns
+const HEAD_FOLD_CUSHION = 12;  // over-estimate the gain rather than under-estimate it
+let headFreedH = 0;          // measured while open — never assumed (see above)
+
+function syncHeadCompact() {
+  if (!rootEl) return;
+  const body = el('admin-body');
+  const head = rootEl.querySelector('.admin-head');
+  const headline = rootEl.querySelector('.admin-headline');
+  if (!body || !head || !headline) return;
+  const compact = head.classList.contains('compact');
+  // Re-measured every time the header is open: its own height plus the margin
+  // that folds away with it, plus a cushion for the header padding that tightens
+  // at the same time. Over-estimating only makes the guard below more cautious.
+  if (!compact) {
+    const mb = parseFloat(getComputedStyle(headline).marginBottom) || 0;
+    headFreedH = headline.getBoundingClientRect().height + mb + HEAD_FOLD_CUSHION;
+  }
+  const room = body.scrollHeight - body.clientHeight;
+  const y = body.scrollTop;
+  if (!compact && y > HEAD_FOLD_AT && room > headFreedH + HEAD_FOLD_AT) head.classList.add('compact');
+  else if (compact && y < HEAD_UNFOLD_AT) head.classList.remove('compact');
 }
 
 function syncSegActive() {
@@ -248,6 +296,8 @@ function renderBody({ force = false } = {}) {
   else if (activeTab === 'look') body.innerHTML = renderLookSound();
   else if (activeTab === 'data') body.innerHTML = renderDataSafety();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
+  // Fresh content means scrollTop is back at 0 — the header must come back down.
+  syncHeadCompact();
 }
 
 function setTab(tab) {
@@ -257,7 +307,7 @@ function setTab(tab) {
   closeModal();
   syncSegActive();
   syncBackupStrip();   // the strip's "→ Data & Safety" hint depends on where we are
-  renderBody();
+  renderBody();        // ends by re-evaluating the folded header
   // Selecting ❓ Help brings the handbook up immediately — the tab body behind
   // it is just a table of contents for jumping to another article.
   if (tab === 'help') openHelpTopic(null);   // null = open the handbook at its contents page
@@ -5668,7 +5718,22 @@ function injectStyles() {
      away from it. Every tab's content is a centred column — 820px on the settings tabs,
      wider elsewhere — so centring the header on the page lines it up with all
      of them rather than with any one tab's width. */
-  .admin-titlebar{display:flex;align-items:center;gap:14px;margin-bottom:12px;
+  /* The title/subtitle block folds away once .admin-body has scrolled (see
+     syncHeadCompact). grid-template-rows 1fr → 0fr rather than a max-height
+     guess: the track collapses to the element's OWN measured height, so the
+     motion is exact at any width and there is no jump when it lands. The 12px
+     that separates the title from the tab bar lives on the wrapper, so it
+     folds away with it — left on the titlebar it would survive the collapse
+     as 12px of stray air. */
+  .admin-headline{display:grid;grid-template-rows:1fr;margin-bottom:12px;
+    transition:grid-template-rows .2s ease,margin-bottom .2s ease,opacity .16s ease;}
+  .admin-headline>.admin-titlebar{overflow:hidden;min-height:0;}
+  .admin-head.compact .admin-headline{grid-template-rows:0fr;margin-bottom:0;opacity:0;}
+  /* Symmetric 10px top and bottom once folded — the 16/12 above is weighted for
+     a header with a title in it, and reads lopsided on a bar that is only tabs. */
+  .admin-head{transition:padding .2s ease;}
+  .admin-head.compact{padding-top:10px;padding-bottom:10px;}
+  .admin-titlebar{display:flex;align-items:center;gap:14px;
     justify-content:center;}
   .admin-key{font-size:2rem;filter:drop-shadow(0 0 12px rgba(245,158,11,.5));}
   .admin-title{font-family:Cinzel,serif;font-weight:800;font-size:1.5rem;color:#f59e0b;letter-spacing:.03em;}
@@ -6289,6 +6354,8 @@ function injectStyles() {
 
   @media (prefers-reduced-motion:reduce){
     .admin-panel,.admin-panel-scrim,.admin-modal,.admin-modal-bg,.admin-toast{animation:none;}
+    /* The header still folds — it just arrives folded instead of travelling. */
+    .admin-headline,.admin-head{transition:none;}
   }`;
   document.head.appendChild(s);
 }
@@ -6501,6 +6568,11 @@ export default {
       if (dropHandler) rootEl.removeEventListener('drop', dropHandler);
     }
     if (keyHandler) { document.removeEventListener('keydown', keyHandler); keyHandler = null; }
+    if (scrollHandler) {
+      const body = el('admin-body');
+      if (body) body.removeEventListener('scroll', scrollHandler);
+      scrollHandler = null;
+    }
     if (backupStatusTimer) { clearInterval(backupStatusTimer); backupStatusTimer = null; }
     revokePresUrls();
     revokeShopUrls();
