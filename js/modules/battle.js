@@ -308,7 +308,11 @@ function injectStyles() {
     gap:clamp(10px,2.6vh,26px);pointer-events:none;}
   .battle-stamp{display:flex;gap:clamp(4px,.8vw,10px);font-family:'Cinzel',Georgia,serif;
     font-weight:800;font-size:clamp(3.6rem,10.5vw,8.1rem);color:#e5e7eb;
-    text-shadow:0 4px 12px rgba(0,0,0,.55);}
+    /* The letters wear the swords' own light: the same warm drop-shadow halo
+       the blades carry, plus a whisper of grounding. drop-shadow (not
+       text-shadow) so the glow hugs the gradient-filled glyphs exactly the
+       way it hugs the blade art. */
+    filter:drop-shadow(0 0 22px rgba(255,180,120,.55)) drop-shadow(0 3px 6px rgba(0,0,0,.45));}
   /* Two background layers under one text clip: a sheen band on top, forged
      steel beneath. Chrome ignores background-attachment:fixed inside a text
      clip, so a single continuous band is off the table — instead every letter
@@ -320,12 +324,12 @@ function injectStyles() {
     animation:battle-letter-stamp .35s ease both,battle-text-glint .55s ease-out both;
     background:
       linear-gradient(115deg,transparent 42%,rgba(255,255,255,.9) 50%,transparent 58%),
-      linear-gradient(180deg,#ffffff 0%,#f1f4f9 30%,#cdd6e2 46%,#a2aebf 52%,#dde3ec 68%,#ffffff 100%);
+      linear-gradient(180deg,#ffffff 0%,#fafcfe 32%,#e2e8f0 47%,#bfc9d6 53%,#f0f4f8 70%,#ffffff 100%);
     background-size:260% 100%,auto;
     background-repeat:no-repeat;
     background-position:180% 0,0 0;
     -webkit-background-clip:text;background-clip:text;color:transparent;
-    -webkit-text-stroke:1px rgba(15,23,42,.26);}
+    -webkit-text-stroke:1px rgba(30,41,59,.22);}
   @keyframes battle-text-glint{
     from{background-position:180% 0,0 0;}
     to{background-position:-80% 0,0 0;}
