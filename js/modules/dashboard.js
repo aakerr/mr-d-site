@@ -277,7 +277,7 @@ function renderItinerary(state, store) {
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
       ${sectionHeader('calendar', 'Daily Itinerary')}
-      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
+      <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${items.length ? items.map((it, i) => `
           <div class="flex items-start gap-2.5 shrink-0">
             <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.7vh,1.6rem); height:clamp(1.25rem,2.7vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
@@ -292,7 +292,7 @@ function renderHomework(state, store) {
   return `
     <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
-      <div class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
+      <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">
         ${state.activeCore === 'all' ? '<div class="text-gray-400 italic">Pick a house core to see assignments.</div>' :
           (items.length ? items.map((hw) => `
           <div class="flex items-center gap-2.5 shrink-0">
@@ -332,8 +332,18 @@ function renderModuleTiles(registry) {
 function render(root, ctx) {
   const { store } = ctx;
   const state = store.getState();
+  // This screen re-renders from a string on EVERY store change, and a fresh
+  // DOM starts at scrollTop 0 — so a teacher reading halfway down the
+  // itinerary or homework panel got yanked back to the top by a point award
+  // made anywhere in the app. Same fix quests.js carries: capture each
+  // scroll container's position before the rebuild and put it back before
+  // paint. Keyed by name, not index, because the itinerary panel only has a
+  // scroll container when a house core is active — a core switch must not
+  // hand the itinerary's old position to the homework panel.
+  const kept = {};
+  root.querySelectorAll('[data-scroll]').forEach((n) => { kept[n.dataset.scroll] = n.scrollTop; });
   root.innerHTML = `
-    <div class="h-full w-full px-3 xl:px-5 pt-1.5 xl:pt-2 pb-3 xl:pb-5 flex flex-col gap-3 xl:gap-5 overflow-y-auto dash-scroll">
+    <div data-scroll="page" class="h-full w-full px-3 xl:px-5 pt-1.5 xl:pt-2 pb-3 xl:pb-5 flex flex-col gap-3 xl:gap-5 overflow-y-auto dash-scroll">
       ${renderHero(state, store)}
       <div class="dash-row grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-4">
         <div class="flex flex-col min-h-0">${renderStandings(state, store)}</div>
@@ -345,6 +355,10 @@ function render(root, ctx) {
       ${renderModuleTiles(ctx.registry)}
     </div>
   `;
+  root.querySelectorAll('[data-scroll]').forEach((n) => {
+    const top = kept[n.dataset.scroll];
+    if (top) n.scrollTop = top;
+  });
 }
 
 export default {
