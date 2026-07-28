@@ -120,6 +120,7 @@ const SFX_SLOTS = {
   // Destiny started landing with a sword hitting a shield — far too heavy, and
   // out of time with the tumble. One recording, two unrelated moments.
   diceland:  { label: 'Dice landing',        file: '',                          hint: 'The Die of Destiny settling after its roll. Uses the built-in tap — keep it short, it lands right after the rattle.' },
+  reveal:    { label: 'Result revealed',     file: '',                          hint: 'The chime as the dice total appears beneath the crystal ball. Uses the built-in bell.' },
 };
 
 // Offensive items are STOCKPILED: buying one puts it in the house's armoury

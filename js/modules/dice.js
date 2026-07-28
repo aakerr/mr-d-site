@@ -311,6 +311,11 @@ function updateTrayResult(el, text) {
   r.classList.remove('pop');
   void r.offsetWidth; // restart the pop animation
   r.classList.add('pop');
+  // The reveal chime sounds the moment the total appears — one hook covering
+  // both the 3D and fallback paths (the 3D sim itself is silent on settle,
+  // and the fallback's own call was removed so this can never double-fire).
+  // 'reveal' is its own slot: a bright bell by default, teacher-replaceable.
+  if (text) audio.sfx('reveal');
 }
 
 async function performRoll(el) {
@@ -558,7 +563,6 @@ function fallbackRoll(el, mode) {
         numEl.classList.remove('rolling');
         numEl.textContent = values.join('  ');
       }
-      audio.sfx('diceland');
       resolve(values.map((v) => ({ value: v, display: String(v) })));
     }, 1000);
   });

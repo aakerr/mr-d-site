@@ -70,6 +70,15 @@ const SFX = {
     tone({ freq: 988, type: 'square', dur: 0.09, gain: 0.15 });
     tone({ freq: 1319, type: 'square', dur: 0.25, delay: 0.09, gain: 0.15 });
   },
+  // The total appearing on the tray — a bright rising bell, deliberately
+  // rounder than coin() (sine, not square) so "the fates have spoken" never
+  // sounds like "points were awarded": that distinction matters at the board.
+  reveal() {
+    tone({ freq: 784, type: 'sine', dur: 0.22, gain: 0.2 });
+    tone({ freq: 1175, type: 'sine', dur: 0.26, delay: 0.1, gain: 0.18 });
+    tone({ freq: 1568, type: 'sine', dur: 0.5, delay: 0.2, gain: 0.14 });
+    tone({ freq: 3136, type: 'sine', dur: 0.4, delay: 0.22, gain: 0.05 });
+  },
   roll() {
     for (let i = 0; i < 6; i++) noise({ dur: 0.06, delay: i * 0.09, gain: 0.12, highpass: 800 });
   },
