@@ -438,11 +438,14 @@ function renderHeader(store, s) {
   const classTotal = houses.reduce((n, h) => n + store.getTotal(h.id, 'term'), 0);
   const on = (key) => String(s.scope) === String(key);
 
+  // The All Houses pill sat next to four painted crests wearing a plain
+  // castle emoji — sized to match its neighbours exactly (h-9, same as
+  // housePills below) so it reads as a fifth crest, not an afterthought.
   const allPill = `
     <button type="button" class="hse-pill" data-scope="all" data-on="${on('all')}"
       style="--hse-acc:#f59e0b; --hse-soft:rgba(245,158,11,0.3); ${on('all') ? 'border-color:#f59e0b;' : ''}"
       aria-pressed="${on('all')}">
-      <span class="text-xl leading-none">🏰</span>
+      ${pngWithEmojiFallback('images/class-shield.png', '🏰', 'h-9 w-auto max-w-none object-contain shrink-0', 'h-9 w-9 shrink-0 text-xl')}
       <span class="hse-pill-name">All Houses</span>
       <span class="hse-pill-total ml-1 acc-text" style="${on('all') ? '--acc:#f59e0b' : ''}">${classTotal}</span>
     </button>`;
@@ -791,7 +794,7 @@ function targetChip(store, s) {
   const soft = allMode ? 'rgba(245,158,11,0.35)' : house.accentSoft;
   return allMode
     ? `<div class="hse-target hse-allmode acc-text" style="border-color:${accent}; --acc:${accent};">
-         <span>🏰</span><span>Awarding ALL FOUR HOUSES</span>
+         ${pngWithEmojiFallback('images/class-shield.png', '🏰', 'h-6 w-auto max-w-none object-contain', 'h-6 w-6')}<span>Awarding ALL FOUR HOUSES</span>
        </div>`
     : `<div class="hse-target acc-text" style="border-color:${accent}; background:${soft}; --acc:${accent};">
          ${houseImg(house, 'h-6 w-auto object-contain')}<span>Awarding ${escapeHtml(house.name)}</span>
@@ -807,7 +810,7 @@ function renderAwardBar(store, s) {
   return `
     <div class="hse-card hse-in p-2.5 xl:p-3 flex items-center gap-3 shrink-0 flex-wrap relative" id="hse-award-anchor">
       <div class="flex items-center gap-2.5 min-w-0">
-        ${allMode ? '<span class="text-2xl leading-none">🏰</span>' : houseImg(house, 'h-8 w-auto object-contain shrink-0')}
+        ${allMode ? pngWithEmojiFallback('images/class-shield.png', '🏰', 'h-8 w-auto max-w-none object-contain shrink-0', 'h-8 w-8 shrink-0 text-2xl') : houseImg(house, 'h-8 w-auto object-contain shrink-0')}
         <div class="leading-tight min-w-0">
           <div class="hse-eyebrow">Award Routines</div>
           <div class="hse-sub truncate hse-hide-short">Awarding <b class="acc-text" style="--acc:${accent}">${escapeHtml(targetName)}</b> — presets or a custom amount</div>
