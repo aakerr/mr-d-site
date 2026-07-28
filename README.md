@@ -887,7 +887,7 @@ what's genuinely unresolved:
 - Verify your browser supports WebGL (most modern browsers do)
 
 ### Backup folder lost permission
-- Admin → ⚙️ Settings → "Reconnect Folder"
+- Admin → ⚙️ Settings → "Reconnect backup folder…"
 - Pick the folder again (browser will prompt for permission)
 - Auto-save resumes
 
