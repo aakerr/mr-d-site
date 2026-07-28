@@ -102,19 +102,19 @@ class. Ordered by embarrassment potential.
 ### Silent refusals with celebratory feedback (the store refuses, the UI cheers)
 The store's `addPoints` returns `null` (frozen house) or a trimmed transaction (zero floor),
 and provides `explainRefusal()` (store.js:1283-1302). Four call sites ignore this:
-- [ ] **1.2** `js/modules/battle.js:2862-2866` — teacher "+10" on a frozen house plays the coin
+- [x] **1.2** `js/modules/battle.js:2862-2866` — teacher "+10" on a frozen house plays the coin
   sfx and floats "+10"; nothing is written. Route through `explainRefusal` like dice.js:431.
-- [ ] **1.3** `js/modules/battle.js:2879-2881` — teacher "−10" shows the untrimmed number; on a
+- [x] **1.3** `js/modules/battle.js:2879-2881` — teacher "−10" shows the untrimmed number; on a
   house at 4 pts the ledger says −4. Use the returned tx's delta (as `applyDuelAttack` already
   does, store.js:1588-1598).
-- [ ] **1.4** `js/modules/houses.js:1170-1189` — "Award ALL FOUR HOUSES" ignores
+- [x] **1.4** `js/modules/houses.js:1170-1189` — "Award ALL FOUR HOUSES" ignores
   `store.awardAll()`'s return; a frozen house gets nothing while the toast says otherwise.
   Report per-house results ("+10 to three houses — Valhalla is frozen").
-- [ ] **1.5** `js/modules/potw.js:1056-1058` — a bounty paid to a frozen house returns `false`
+- [x] **1.5** `js/modules/potw.js:1056-1058` — a bounty paid to a frozen house returns `false`
   from `payBounty`, and `lockBounty(qi, null)` greys out ALL four buttons permanently with no
   message. Distinguish "already paid" from "refused" (change `payBounty` to return a reason),
   toast the refusal, leave the buttons live.
-- [ ] **1.6** `js/modules/admin.js:1009-1012` — quest give-up toast announces the configured
+- [x] **1.6** `js/modules/admin.js:1009-1012` — quest give-up toast announces the configured
   penalty, not the trimmed deduction; make `failQuest` (store.js:2140) return the real delta
   and display that.
 
@@ -132,19 +132,19 @@ and provides `explainRefusal()` (store.js:1283-1302). Four call sites ignore thi
   `endBattle` should clear `lastStrike`.
 
 ### Combat rules not actually enforced
-- [ ] **1.10** `js/modules/battle.js:1674-1683` + `store.js:1529-1554`: the Admin "punching
+- [x] **1.10** `js/modules/battle.js:1674-1683` + `store.js:1529-1554`: the Admin "punching
   down" toggle (`duelPunchDown`) is consumed only by `store.canAttack`, which duel mode never
   calls. Pass `attackerId` into `housePickHtml` from `targetPickerHtmlDuel` and gate
   `previewDuelAttack` on `canAttack`.
-- [ ] **1.11** `js/modules/battle.js:2885-2898`: "End Battle" mid-strike doesn't cancel the
+- [x] **1.11** `js/modules/battle.js:2885-2898`: "End Battle" mid-strike doesn't cancel the
   in-flight `resolveDuelSequence`; the strike still lands and the duel screen reappears.
   Guard `endBattle` on `resolving` (disable the button) or set a cancellation flag the
   sequence checks at each beat.
-- [ ] **1.12** `js/modules/dice3d/sim.js:615, 764-786`: `dispose()` drops the pending `roll()`
+- [x] **1.12** `js/modules/dice3d/sim.js:615, 764-786`: `dispose()` drops the pending `roll()`
   promise — navigating away mid-roll strands `resolveDuelSequence` forever (strike lost after
   the class watched the dice land). Make `dispose()` resolve pending rolls with `null`, and
   make callers treat `null` as "cancelled".
-- [ ] **1.13** `js/modules/dice.js:544-638`: async `mount()` races unmount — a quick
+- [x] **1.13** `js/modules/dice.js:544-638`: async `mount()` races unmount — a quick
   Dice→Home navigation leaks a WebGL context and a permanent store subscription, and throws on
   dead DOM. After each `await`, bail if the module has been unmounted (token/flag pattern).
 - [x] **1.14** `js/core/store.js:1875-1881`: `applyAttack` returns intended damage, not the
@@ -182,9 +182,9 @@ If HP mode is ever brought back into use, do these first:
 - [ ] **1.20** Create `js/core/escape.js` with one shared `escapeHtml` + `escapeAttr` and
   replace the five private copies (`quests.js:56`, `council.js:306`, `dashboard.js:113`,
   `carousel.js:171`, `potw.js:72`, `shop.js:93`, `houses.js:367`, battle.js, admin.js `esc`).
-- [ ] **1.21** `js/modules/dashboard.js:109, 158, 219, 251`: house `name`/`image` interpolated
+- [x] **1.21** `js/modules/dashboard.js:109, 158, 219, 251`: house `name`/`image` interpolated
   raw (the one module that missed it). Escape all four sites.
-- [ ] **1.22** `js/modules/admin.js:656` + `js/modules/quests.js:613, 675, 739`: quest icon
+- [x] **1.22** `js/modules/admin.js:656` + `js/modules/quests.js:613, 675, 739`: quest icon
   rendered unescaped (8-char cap limits but doesn't eliminate injection). Escape.
 - [ ] **1.23** Validate `accent` (`/^#[0-9a-f]{6}$/i`) and escape `image` at save-time in
   `applyHouseOverrides` (`store.js:566-574`) so the ~30 render sites that interpolate them
