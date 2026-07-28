@@ -2320,9 +2320,18 @@ export const store = {
     if (!quest) return null;
     delete state.quests.active[core];
     const penalty = Number.isFinite(quest.penalty) ? quest.penalty : Math.round(quest.points / 2);
-    if (penalty > 0) store.addPoints(core, -penalty, { reason: `Quest abandoned: ${quest.title}`, tag: 'quest' });
-    else emit();
-    return { quest, penalty };
+    // The configured penalty and the deduction that lands are two different
+    // numbers: addPoints trims at the zero floor, and on a house already at
+    // zero it declines entirely (returning null WITHOUT emitting — which is
+    // also why the emit below must run whenever there is no tx, or the
+    // quest's return to the board would never persist). Callers announce the
+    // deduction to the class, so they get appliedPenalty — what was actually
+    // written — alongside the configured number they already read.
+    const tx = penalty > 0
+      ? store.addPoints(core, -penalty, { reason: `Quest abandoned: ${quest.title}`, tag: 'quest' })
+      : null;
+    if (!tx) emit();
+    return { quest, penalty, appliedPenalty: tx ? Math.abs(tx.delta) : 0 };
   },
 
   // Quietly return a quest to the board with no penalty (teacher correction,
