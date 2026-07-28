@@ -73,6 +73,19 @@ html[data-mode="light"] .dash-hw-badge {
   .dash-row > * { min-height: 0; height: 100%; }
   .dash-col-card { height: 100%; min-height: 0; }
 }
+
+/* Module tile row: a FIXED column count (the old md:grid-cols-6) meant the
+   day the 7th tile (Wheel of Fate, 5.4) showed up, six sat in a tidy row and
+   the seventh wrapped alone onto a second line under nothing. auto-fit does
+   what a fixed count can't: it grows however many tiles fit at >=132px each
+   to fill the row evenly, and only truly wraps once there are too many for
+   the width to hold — six tiles stretch a little wider, seven fit flush, an
+   eventual eighth or ninth degrades by wrapping instead of by squeezing
+   illegibly thin. Mobile keeps the plain 3-column grid (Tailwind's
+   grid-cols-3, still in the markup) below this breakpoint. */
+@media (min-width: 768px) {
+  .dash-tiles-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+}
 `;
 
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
@@ -95,6 +108,7 @@ const MODULE_SUBTITLE_MAP = {
   battle: 'Team competitions',
   shop: 'Spend your hoard',
   dice: 'Test your luck',
+  wheel: 'Spin for a house',
 };
 
 function ensureStyle() {
@@ -391,7 +405,7 @@ function renderModuleTiles(registry) {
     <div class="dash-in">
       <div class="w-full h-[3px] rounded-full mb-3 xl:mb-4"
            style="background: linear-gradient(90deg, transparent, var(--accent, #f59e0b) 12%, var(--accent, #f59e0b) 88%, transparent);"></div>
-      <div class="grid grid-cols-3 md:grid-cols-6 gap-3 xl:gap-4 w-full">
+      <div class="grid grid-cols-3 dash-tiles-grid gap-3 xl:gap-4 w-full">
         ${tiles.map((m) => {
           const iconSrc = MODULE_ICON_MAP[m.id];
           const subtitle = MODULE_SUBTITLE_MAP[m.id];
