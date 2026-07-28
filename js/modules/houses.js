@@ -1017,23 +1017,32 @@ function renderConfirmModal(store, s) {
   const m = catMeta(catOf(t.tag));
   const warn = tagWarning(t);
   const reasonLabel = t.reason || m.name;
+  // The store refuses any removal that would drag a term total below zero
+  // (the points were earned, then spent). Showing the usual "goes from 40 to
+  // −60" preview with a live Remove button would promise a deletion the store
+  // is about to decline — so a refused entry gets the reason and no button.
+  const refusal = store.explainRemoveRefusal(t.id);
   return `
     <div class="hse-modal-bg" data-action="hse-modal-cancel"></div>
     <div class="hse-modal" role="dialog" aria-modal="true" aria-labelledby="hse-modal-title">
       <div class="hse-modal-head">
-        <div id="hse-modal-title" class="hse-modal-title">Remove this entry?</div>
+        <div id="hse-modal-title" class="hse-modal-title">${refusal ? 'This entry cannot be removed' : 'Remove this entry?'}</div>
         <button type="button" class="hse-modal-x" data-action="hse-modal-cancel" aria-label="Cancel, keep this entry">✕</button>
       </div>
       <div class="hse-modal-body">
-        <p class="hse-modal-lead">Remove &ldquo;<b>${signed(t.delta)} ${escapeHtml(reasonLabel)}</b>&rdquo; from
-          <b class="acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</b>?
-          ${escapeHtml(h.name)}&rsquo;s total will go from <b>${before}</b> to <b>${after}</b>.</p>
+        ${refusal
+          ? `<p class="hse-modal-lead">&ldquo;<b>${signed(t.delta)} ${escapeHtml(reasonLabel)}</b>&rdquo; —
+              <b class="acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</b></p>
+             <div class="hse-modal-warn">⚠️ ${escapeHtml(refusal)}</div>`
+          : `<p class="hse-modal-lead">Remove &ldquo;<b>${signed(t.delta)} ${escapeHtml(reasonLabel)}</b>&rdquo; from
+              <b class="acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</b>?
+              ${escapeHtml(h.name)}&rsquo;s total will go from <b>${before}</b> to <b>${after}</b>.</p>`}
         <div class="hse-modal-meta">Logged ${escapeHtml(new Date(t.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }))} at ${escapeHtml(fmtClock(t.ts))}</div>
-        ${warn ? `<div class="hse-modal-warn">⚠️ ${warn}</div>` : ''}
+        ${!refusal && warn ? `<div class="hse-modal-warn">⚠️ ${warn}</div>` : ''}
       </div>
       <div class="hse-modal-foot">
-        <button type="button" class="hse-modal-btn hse-modal-btn-cancel" data-action="hse-modal-cancel">Cancel</button>
-        <button type="button" class="hse-modal-btn hse-modal-btn-danger" data-action="hse-modal-confirm" data-tx="${t.id}">Remove entry</button>
+        <button type="button" class="hse-modal-btn hse-modal-btn-cancel" data-action="hse-modal-cancel">${refusal ? 'Keep this entry' : 'Cancel'}</button>
+        ${refusal ? '' : `<button type="button" class="hse-modal-btn hse-modal-btn-danger" data-action="hse-modal-confirm" data-tx="${t.id}">Remove entry</button>`}
       </div>
     </div>`;
 }
@@ -1304,7 +1313,18 @@ export default {
           const finish = () => {
             if (done) return;
             done = true;
-            store.removeTransaction(txId); // store subscribe -> doRender() with updated totals
+            // The store can refuse even now — the modal hides the Remove
+            // button for a refusable entry, but the totals may have moved
+            // between opening the confirm and this tap. Ask why BEFORE the
+            // removal: after a successful one the entry no longer exists and
+            // the explainer would only say so.
+            const why = store.explainRemoveRefusal(txId);
+            const removed = why ? false : store.removeTransaction(txId); // store subscribe -> doRender() with updated totals
+            if (!removed) {
+              showToast(toastHost, why || 'That entry could not be removed.');
+              doRender(); // no store emit on a refusal — undo the row's exit animation ourselves
+              return;
+            }
             ctx.audio.sfx('thud');          // quiet: this is a correction, not a reward
             showToast(toastHost, `Removed ${signed(tx.delta)}${house ? ` from ${house.name}` : ''}`);
           };
