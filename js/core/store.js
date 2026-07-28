@@ -45,7 +45,14 @@ function defaultDiceProphecy() {
     // every other row, and the rest of the app, says house points.
     { id: 'smallfavor',  min: 10, max: 14, emoji: '✨', title: 'Small Favor',     desc: '+2 house points',                              points: 2,   hasButton: true },
     { id: 'fortune',     min: 15, max: 19, emoji: '🔥', title: 'Fortune Smiles',  desc: '+5 house points',                              points: 5,   hasButton: true },
-    { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: '+20 points AND a Mythic Relic to defend your house!', points: 20, hasButton: true, mythic: true },
+    // NO RELIC IN THE PROMISE. Relics only exist in the hit-points catalog —
+    // defaultDuelCatalog() has none — and Mr. D's rules ship as the default. So
+    // on every shipped install a natural 20 promised a Mythic Relic, the relic
+    // chooser found an empty list, skipped itself, and the class watched a
+    // 1-in-20 roll deliver nothing but the points with no explanation. The
+    // relic is offered by the chooser when relics actually exist; the text no
+    // longer commits the app to something it may not be able to do.
+    { id: 'mythic',      min: 20, max: 20, emoji: '👑', title: 'MYTHIC TRIUMPH',  desc: 'The highest roll there is — +20 points to your house!', points: 20, hasButton: true, mythic: true },
   ];
 }
 
@@ -221,9 +228,11 @@ const SHOP_DESC_REV = 3;
 
 // Same idea for the dice prophecy table, which is saved state for the same
 // reason and went stale for the same reason.
-const DICE_DESC_REV = 1;
+const DICE_DESC_REV = 2;
 const OLD_DICE_DESCS = {
   smallfavor: ['Move your token / +2 class points'],
+  // Promised a Mythic Relic under rules that have none to give.
+  mythic: ['+20 points AND a Mythic Relic to defend your house!'],
 };
 
 // Every description these items have EVER shipped with, recovered from git
@@ -2282,7 +2291,22 @@ export const store = {
   },
 
   resetAll() {
-    state = defaultState();
+    // Three things have to happen here, and only the first one used to.
+    //
+    // applyHouseOverrides mutates the shared HOUSES objects IN PLACE, so every
+    // module holding a reference sees a rename immediately. That is what makes
+    // renaming a house work — and it means a reset which only replaces `state`
+    // leaves the previous teacher's names, colours and artwork on screen for
+    // the rest of the session, because Admin re-renders without reloading. The
+    // class would watch the houses keep their old identity after a wipe, then
+    // silently change back at the next reload. So HOUSES is restored to its
+    // shipped values too.
+    //
+    // And the repair pass runs here for the same reason it runs on load: a
+    // fresh default is not automatically self-consistent.
+    state = repairPotwVideos(defaultState());
+    const pristine = defaultHouses();
+    for (const id of Object.keys(HOUSES)) Object.assign(HOUSES[id], pristine[id]);
     bumpLedger();
     emit();
   },
