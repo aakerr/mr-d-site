@@ -2416,13 +2416,35 @@ export const store = {
     return state.potwBounties[store.bountyKey(profileKey, index)] || null;
   },
 
+  // Two shapes for one action, on purpose. payBounty keeps the legacy
+  // truthiness contract — the paying tx (truthy) on success, false otherwise —
+  // because potw.js truthiness-checks the return and an always-truthy result
+  // object would have silently made every refusal look like a payment.
+  // payBountyChecked is the honest version: it distinguishes "this bounty was
+  // already claimed" (lock the buttons, the question is done) from "addPoints
+  // refused" (the house is frozen — toast it, leave the buttons live, let the
+  // teacher pick another winner). potw.js adopts it next wave; until then both
+  // routes share one implementation so they can never disagree.
   payBounty(profileKey, index, houseId, points, label = '') {
-    if (store.isBountyPaid(profileKey, index)) return false;
+    const res = store.payBountyChecked(profileKey, index, houseId, points, label);
+    return res.ok ? res.tx : false;
+  },
+
+  // Returns { ok:true, tx }
+  //       | { ok:false, reason:'already-paid'|'refused', message }
+  payBountyChecked(profileKey, index, houseId, points, label = '') {
+    if (store.isBountyPaid(profileKey, index)) {
+      const rec = store.getPaidBounty(profileKey, index);
+      const who = rec && HOUSES[rec.houseId] ? HOUSES[rec.houseId].name : 'a house';
+      return { ok: false, reason: 'already-paid', message: `That bounty has already been claimed by ${who}.` };
+    }
     const tx = store.addPoints(houseId, points, { reason: `POTW Bounty: ${label}`.slice(0, 80), tag: 'potw' });
-    if (!tx) return false;
+    if (!tx) {
+      return { ok: false, reason: 'refused', message: store.explainRefusal(houseId, points) || 'Nothing was recorded.' };
+    }
     state.potwBounties[store.bountyKey(profileKey, index)] = { houseId: Number(houseId), ts: Date.now(), points };
     emit();
-    return true;
+    return { ok: true, tx };
   },
 
   getPotwProfiles() {
