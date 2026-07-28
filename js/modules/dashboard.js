@@ -140,6 +140,31 @@ html[data-mode="light"] .dash-hw-badge {
 @media (prefers-reduced-motion: reduce) {
   .dash-bell-pulse { animation: none; }
 }
+
+/* 7.5 shared frost language — badge + subtle ice-blue tint + a thaw-day
+   label, the same three pieces on every prominent house identity app-wide
+   (this standings list and hero, Council's podium, Records' tabs/header,
+   Battle Day's duel cards). Colours match battle.js's existing (until now
+   unused) .duel-def-frozen ice-blue so a frozen house reads as ONE
+   indicator, not a different look per screen. .dash-frost-tint is a
+   background colour, never a size — a frozen row keeps the exact height
+   and width of its neighbours. Duplicated per module rather than pulled
+   into a shared core file — the pattern this app already uses for
+   cross-module CSS (see .acc-text just above). */
+.dash-frost-tint { background: rgba(30,64,175,0.20) !important; }
+.dash-frost-badge {
+  display: inline-flex; align-items: center; gap: 0.2rem; flex-shrink: 0;
+  font-size: clamp(0.62rem, 1.3vh, 0.82rem); font-weight: 800; line-height: 1.4;
+  padding: 0.05rem 0.5rem; border-radius: 999px; white-space: nowrap;
+  background: rgba(96,165,250,0.22); border: 1px solid rgba(96,165,250,0.55); color: #bfdbfe;
+}
+.dash-frost-corner {
+  position: absolute; z-index: 20; display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.72rem; font-weight: 800; line-height: 1;
+  padding: 0.2rem 0.55rem; border-radius: 999px; white-space: nowrap;
+  background: rgba(30,64,175,0.55); border: 1px solid rgba(96,165,250,0.7); color: #bfdbfe;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+}
 `;
 
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
@@ -345,6 +370,14 @@ function pngWithEmojiFallback(src, emoji, cls, wrapCls) {
   </div>`;
 }
 
+// 7.5 — fail-soft freeze lookup shared by every render function below. If
+// getFreezeInfo is missing (older store) or throws for any reason, callers
+// get back "not frozen" and the screen renders exactly as it does today —
+// a frost decoration must never be the thing that breaks a render.
+function safeFrost(store, houseId) {
+  try { return store.getFreezeInfo ? store.getFreezeInfo(houseId) : null; } catch (e) { return null; }
+}
+
 function renderHero(state, store) {
   const activeHouse = store.getActiveHouse();
   if (state.activeCore === 'all' || !activeHouse) {
@@ -360,17 +393,27 @@ function renderHero(state, store) {
           <p class="mt-0.5 text-gray-300 text-sm xl:text-base">Choose your house core to begin the day's quest.</p>
         </div>
         <div class="flex gap-4 xl:gap-6 flex-wrap items-end">
-          ${houses.map((h) => `
+          ${houses.map((h) => {
+            const frost = safeFrost(store, h.id);
+            const frozen = !!(frost && frost.frozen);
+            // The badge sits absolute over the crest corner, not in the flex
+            // flow, so a frozen chip never grows a pixel next to its siblings.
+            return `
             <div class="flex flex-col items-center gap-1.5">
-              ${houseImg(h, 'h-12 xl:h-16 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
+              <div class="relative">
+                ${houseImg(h, 'h-12 xl:h-16 w-auto object-contain drop-shadow-[0_6px_16px_rgba(0,0,0,0.5)]')}
+                ${frozen ? `<span class="absolute -top-1 -right-1 text-xs leading-none" title="${escapeAttr(frost.label)}" aria-label="${escapeAttr(frost.label)}">❄️</span>` : ''}
+              </div>
               <span class="text-xs xl:text-sm font-bold acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
   }
 
   const h = activeHouse;
+  const frost = safeFrost(store, h.id);
+  const frozen = !!(frost && frost.frozen);
   return `
     <div class="dash-hero dash-in relative overflow-hidden rounded-2xl border-2 min-h-[165px] xl:min-h-[205px] flex items-center"
          style="border-color:${h.accent}; --dash-glow:${h.accentSoft};">
@@ -378,6 +421,12 @@ function renderHero(state, store) {
       <img src="${escapeAttr(h.heroImage)}" alt="" class="absolute inset-0 w-full h-full object-cover object-center"
            onerror="this.onerror=null;this.style.display='none';" />
       <div class="absolute inset-0 bg-gradient-to-r from-black/85 via-black/50 to-black/10"></div>
+      <!-- 7.5 — the frost tint and its corner badge are absolutely positioned
+           overlays, painted above the gradients and below nothing the box's
+           own dimensions depend on, so a frozen house's hero is pixel-for-
+           pixel the same size it always was. -->
+      ${frozen ? `<div class="absolute inset-0 dash-frost-tint pointer-events-none"></div>` : ''}
+      ${frozen ? `<div class="dash-frost-corner top-3 right-3">❄️ ${escapeHtml(frost.label)}</div>` : ''}
       <!-- The three lines stay TIGHT together — a couple of px between each,
            the way Welcome/name already sat. What reaches the shield's top and
            bottom edges is the NAME growing, not space being distributed.
@@ -449,14 +498,21 @@ function renderStandings(state, store) {
         ${totals.map((t, i) => {
           const isActive = activeCore !== 'all' && t.house.core === activeCore;
           const pct = Math.max(4, Math.round((Math.max(0, t.total) / max) * 100));
+          // 7.5 — frost is a tint + badge only, never a size: the row keeps
+          // the SAME flex-1/min-h-0 box as its three neighbours whether or
+          // not it is frozen, so the four rows stay identical height.
+          const frost = safeFrost(store, t.house.id);
+          const frozen = !!(frost && frost.frozen);
+          const borderColor = frozen ? 'rgba(96,165,250,0.6)' : (isActive ? t.house.accent : null);
           return `
-          <div class="rounded-xl border px-3 py-[clamp(2px,0.6vh,10px)] flex-1 min-h-0 flex flex-col justify-center ${isActive ? 'bg-card2' : 'border-transparent'}" ${isActive ? `style="border-color:${t.house.accent}"` : ''}>
+          <div class="rounded-xl border px-3 py-[clamp(2px,0.6vh,10px)] flex-1 min-h-0 flex flex-col justify-center ${isActive ? 'bg-card2' : 'border-transparent'} ${frozen ? 'dash-frost-tint' : ''}" ${borderColor ? `style="border-color:${borderColor}"` : ''}>
             <div class="flex items-center gap-3">
               <div class="w-7 text-center font-bold text-gray-400 text-[clamp(0.8rem,1.6vh,1rem)] shrink-0">#${i + 1}</div>
               ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
                   <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${escapeHtml(t.house.name)}</span>
+                  ${frozen ? `<span class="dash-frost-badge">❄️ ${escapeHtml(frost.label)}</span>` : ''}
                   <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
                 </div>
                 <div class="mt-[clamp(2px,0.4vh,6px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
