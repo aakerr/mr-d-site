@@ -1632,6 +1632,17 @@ export const store = {
     // them across would leave ids that the new catalog has never heard of.
     state.inventory = {};
     state.hp = {};
+    // The in-flight battle state goes with them. Freezes, Shrouds, reveals and
+    // the stored last strike are duel machinery; hit-points mode has no screen
+    // that shows any of it, let alone lifts it — a house frozen at the moment
+    // of the switch would stay refused by an invisible rule until the timer
+    // ran out on its own. A mode switch is a clean slate, both directions.
+    // (Copy follow-up: Admin's mode-switch confirm in admin.js should announce
+    // this clearing alongside the inventory/HP reset it already mentions.)
+    state.frozen = {};
+    state.shrouded = {};
+    state.revealed = {};
+    state.lastStrike = {};
     emit();
     return next;
   },
