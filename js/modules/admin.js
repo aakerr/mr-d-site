@@ -4043,7 +4043,9 @@ async function verifyPotwMedia() {
     const info = await media.info(`potw:${key}:video`);
     const hasUrlFallback = !!store.getPotwVideoUrl(profile);
     if (!info && v.dataset.relies === '1' && !hasUrlFallback && v.isConnected) {
-      v.innerHTML = '<span class="admin-arrival-badge warn">⚠ Intro video file missing — re-upload it</span>';
+      // "Re-upload it" described the retired per-destination upload flow;
+      // intro videos are presets now, chosen inside the destination's editor.
+      v.innerHTML = '<span class="admin-arrival-badge warn">⚠ Intro video file missing — pick a new intro video in this destination’s editor</span>';
     }
   }
 }
