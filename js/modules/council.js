@@ -275,6 +275,21 @@ const STYLE = `
 .council-ribbon-dot { width: 6px; height: 6px; border-radius: 999px; background: #374151; transition: background 250ms ease; }
 .council-ribbon-dot[data-on="true"] { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.7); }
 
+/* ---------------- last-week recap (7.1 / FIX-PLAN 5.3) ----------------
+   Reuses the decree-ticker's own classes (.council-ribbon*) so the strip
+   reads as the same object, not a new widget bolted on — it just sits above
+   the podium instead of below it, and has no pages to advance. The [hidden]
+   override is needed here (unlike the ribbon below, left as shipped): this
+   class also sets its own display, and an attribute selector cannot beat a
+   class selector of equal specificity from the same stylesheet by source
+   order alone, so hidden must win explicitly or the strip would show an
+   empty bar between recaps. */
+.council-recap[hidden] { display: none; }
+.council-recap-tag {
+  flex: 0 0 auto; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 0.78em; color: #9ca3af;
+}
+
 @keyframes council-shimmer {
   0%   { transform: translateX(-60%) skewX(-16deg); }
   55%  { transform: translateX(300%) skewX(-16deg); }
@@ -335,6 +350,14 @@ function heightPct(total, hi, lo, allSame) {
   return MIN_PCT + Math.max(0, Math.min(1, t)) * (MAX_PCT - MIN_PCT);
 }
 
+// A ledger reason is free text a teacher typed for one specific award — fine
+// in the ledger's own row, too long for a one-line recap strip that has to
+// share space with a house name and a delta.
+function trimReason(str, max = 46) {
+  const s = (str || '').trim();
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+}
+
 export default {
   id: 'council',
   title: 'Council of Four',
@@ -382,6 +405,11 @@ export default {
             <button type="button" data-scope="week" aria-pressed="false">This Week</button>
           </div>
         </header>
+
+        <div class="council-ribbon council-recap" data-recap hidden>
+          <span class="council-ribbon-label">Last Week</span>
+          <div class="council-ribbon-track" data-recap-track></div>
+        </div>
 
         <div class="council-arena" data-arena>
           <div class="council-table"></div>
@@ -593,6 +621,7 @@ export default {
     });
 
     this.renderRibbon(false);
+    this.renderRecap();
   },
 
   // Count the numerals up/down to their new value. `data-val` doubles as the
@@ -660,6 +689,64 @@ export default {
       track.innerHTML = html;
       track.classList.remove('fading');
     }
+  },
+
+  // 7.1 / FIX-PLAN 5.3 — "LAST WEEK" recap strip. Presentation-only: the
+  // Mon-Sun windowing and the "biggest"/"most improved" picking live in
+  // store.getLastWeekRecap(), per the plan's own instruction that council.js
+  // stay a renderer. That store method landed concurrently with this file
+  // (a sibling task) — typeof-guarded regardless, so a branch checked out
+  // before that lands just sees no strip, not a thrown error on every render.
+  renderRecap() {
+    const el = this._el;
+    if (!el) return;
+    const { store } = this._ctx;
+    const host = el.querySelector('[data-recap]');
+    if (!host) return;
+
+    if (typeof store.getLastWeekRecap !== 'function') { host.hidden = true; return; }
+    let recap = null;
+    try { recap = store.getLastWeekRecap(); } catch (e) { recap = null; }
+    if (!recap) { host.hidden = true; return; }
+
+    const { biggestAward, mostImproved, questsCompleted } = recap;
+    const parts = [];
+
+    if (biggestAward && biggestAward.delta) {
+      const h = store.HOUSES[biggestAward.houseId];
+      const sign = biggestAward.delta > 0 ? '+' : '';
+      const reason = trimReason(biggestAward.reason);
+      parts.push(`<div class="council-ribbon-item">
+        <span class="council-recap-tag">Biggest award</span>
+        <span class="council-ribbon-house" style="color:${h ? h.accent : '#f59e0b'}">${escapeHtml(h ? h.name : 'A house')}</span>
+        <span class="council-ribbon-delta" style="color:${biggestAward.delta > 0 ? '#86efac' : '#fca5a5'}">${sign}${biggestAward.delta}</span>
+        ${reason ? `<span class="council-ribbon-reason">${escapeHtml(reason)}</span>` : ''}
+      </div>`);
+    }
+
+    if (mostImproved && mostImproved.delta) {
+      const h = store.HOUSES[mostImproved.houseId];
+      const sign = mostImproved.delta > 0 ? '+' : '';
+      parts.push(`<div class="council-ribbon-item">
+        <span class="council-recap-tag">Most improved</span>
+        <span class="council-ribbon-house" style="color:${h ? h.accent : '#f59e0b'}">${escapeHtml(h ? h.name : 'A house')}</span>
+        <span class="council-ribbon-delta" style="color:${mostImproved.delta > 0 ? '#86efac' : '#fca5a5'}">${sign}${mostImproved.delta}</span>
+      </div>`);
+    }
+
+    if (questsCompleted) {
+      parts.push(`<div class="council-ribbon-item">
+        <span class="council-recap-tag">Quests completed</span>
+        <span class="council-ribbon-delta" style="color:#86efac">${questsCompleted}</span>
+      </div>`);
+    }
+
+    // Nothing happened last week (a fresh term, a break week) — the ceremony
+    // is the podium itself; an empty "LAST WEEK" bar would just be noise.
+    if (!parts.length) { host.hidden = true; return; }
+    host.hidden = false;
+    const track = host.querySelector('[data-recap-track]');
+    if (track) track.innerHTML = parts.join('');
   },
 
   unmount() {
