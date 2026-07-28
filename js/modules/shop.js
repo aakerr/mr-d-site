@@ -49,6 +49,32 @@ let carouselTeardown = null; // teardown fn from wireCarousel — torn down befo
 const timers = new Set();
 const fxNodes = new Set();  // transient combat-effect DOM nodes, force-cleaned on unmount
 
+// ---- pressed-pointer render deferral ---------------------------------------
+// Ported from houses.js, which documents the root cause in full: a store emit
+// from ANYWHERE — the top bar's quick award, another module's write — rebuilds
+// this whole screen via innerHTML. If that lands while the teacher's finger is
+// physically down on a BUY button, the pressed node is torn out of the
+// document before pointerup, and per the browsers' click-dispatch rules the
+// tap silently never becomes a click. So: never rebuild while a pointer is
+// down inside the shop; hold the render until release. A watchdog guards
+// against ever losing a pointerup (e.g. focus leaving the window mid-press)
+// and leaving the screen silently stale forever.
+let pointerDownInside = false;
+let renderDeferred = false;
+let deferWatchdog = null;
+
+function clearDeferWatchdog() {
+  if (deferWatchdog) { clearTimeout(deferWatchdog); deferWatchdog = null; }
+}
+function onShopPointerDown(e) {
+  if (rootEl && rootEl.contains(e.target)) pointerDownInside = true;
+}
+function onShopPointerRelease() {
+  pointerDownInside = false;
+  clearDeferWatchdog();
+  if (renderDeferred) { renderDeferred = false; if (currentRenderFn) currentRenderFn(); }
+}
+
 // image URL resolution cache — persists across mount/unmount, keyed by media key
 const mediaUrlCache = new Map(); // mediaKey -> url string | null (null = resolved, no file)
 const mediaFetching = new Set();
@@ -1651,6 +1677,16 @@ export default {
     };
     rootEl.addEventListener('click', clickHandler);
 
+    // Never rebuild the grid under a finger that is still physically down —
+    // see the deferral block at the top of the file. Pointer Events cover
+    // mouse/touch/pen on every browser this app targets; mousedown/mouseup
+    // are added too as a cheap belt-and-braces fallback.
+    document.addEventListener('pointerdown', onShopPointerDown, true);
+    document.addEventListener('pointerup', onShopPointerRelease, true);
+    document.addEventListener('pointercancel', onShopPointerRelease, true);
+    document.addEventListener('mousedown', onShopPointerDown, true);
+    document.addEventListener('mouseup', onShopPointerRelease, true);
+
     // Suspend store-triggered re-renders while a purchase is resolving (see
     // purchaseInFlight above) — store.purchase()/addPoints()/activateShield()
     // etc. all fire this subscribe callback, and rebuilding the DOM mid-flight
@@ -1661,7 +1697,20 @@ export default {
     // the instant the die settles, but the treasury behind the blur must not
     // move until the reveal's own beat — finish() repaints explicitly at
     // exactly that moment, and teardown always ends with the true state.
-    unsub = store.subscribe(() => { if (!purchaseInFlight && !wildRollActive) doRender(); });
+    // And held while a pointer is down inside the shop, so the emit can't eat
+    // the very tap that caused it — deferred to onShopPointerRelease.
+    unsub = store.subscribe(() => {
+      if (purchaseInFlight || wildRollActive) return;
+      if (pointerDownInside) {
+        renderDeferred = true;
+        clearDeferWatchdog();
+        deferWatchdog = setTimeout(() => {
+          if (renderDeferred) { renderDeferred = false; pointerDownInside = false; doRender(); }
+        }, 1500);
+        return;
+      }
+      doRender();
+    });
   },
 
   unmount() {
@@ -1682,6 +1731,14 @@ export default {
     wildRollActive = false;
     purchaseInFlight = false; // don't leave the guard set if the teacher navigates away mid-PIN
     if (unsub) { unsub(); unsub = null; }
+    document.removeEventListener('pointerdown', onShopPointerDown, true);
+    document.removeEventListener('pointerup', onShopPointerRelease, true);
+    document.removeEventListener('pointercancel', onShopPointerRelease, true);
+    document.removeEventListener('mousedown', onShopPointerDown, true);
+    document.removeEventListener('mouseup', onShopPointerRelease, true);
+    clearDeferWatchdog();
+    pointerDownInside = false;
+    renderDeferred = false;
     if (rootEl && clickHandler) rootEl.removeEventListener('click', clickHandler);
     clickHandler = null;
     if (carouselTeardown) { carouselTeardown(); carouselTeardown = null; }
