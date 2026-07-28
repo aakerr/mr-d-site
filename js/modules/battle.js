@@ -768,9 +768,17 @@ function injectStyles() {
      symmetric across the VS. */
   .duel-side-frozen{border-color:rgba(96,165,250,.65) !important;
     box-shadow:0 10px 34px rgba(0,0,0,.5),0 0 30px -12px rgba(96,165,250,.5),inset 0 0 0 999px rgba(30,64,175,.16) !important;}
-  .duel-frost-badge{display:inline-flex;align-items:center;gap:.2rem;flex:0 0 auto;
-    font-size:.62rem;font-weight:800;padding:.05rem .5rem;border-radius:999px;white-space:nowrap;
-    background:rgba(96,165,250,.22);border:1px solid rgba(96,165,250,.55);color:#bfdbfe;}
+  /* Sits on .duel-crest (already position:relative, up in the crest rules)
+     as an absolute corner overlay — never a sibling in the identity block's
+     flow, which is a fixed-height share with no slack for another line. The
+     full label already reads in the section-lbl below; this is just the
+     badge icon, with the label repeated in its title tooltip. */
+  .duel-frost-badge{position:absolute;top:-.2rem;right:-.2rem;z-index:2;
+    display:flex;align-items:center;justify-content:center;
+    width:clamp(1.3rem,3.2vh,2.1rem);height:clamp(1.3rem,3.2vh,2.1rem);
+    font-size:clamp(.85rem,2vh,1.3rem);line-height:1;border-radius:999px;
+    background:rgba(30,64,175,.55);border:1px solid rgba(96,165,250,.7);
+    box-shadow:0 2px 8px rgba(0,0,0,.5);}
   .duel2-slot-reason-frozen{color:#bfdbfe;}
 
   /* the reveal — defender's held defense flips face-up over their crest at
@@ -1206,8 +1214,17 @@ function hpBlockHtml(store, house, side) {
     </div>`;
 }
 
-function crestHtml(house, side) {
-  return `<div class="duel-crest" data-crest="${side}">${houseImg(house, '')}</div>`;
+// 7.5 — `frostLabel` (school-day countdown, or null) draws the shared ❄️
+// badge in the crest's corner rather than as a new line in the card's
+// identity block: that block is a fixed 60% height share with no slack for
+// an extra row (see the "THE CARD IS A 60/40 SPLIT" note below), so the
+// badge is an absolutely-positioned overlay on .duel-crest (already
+// position:relative) instead — it can never push the card's own layout
+// around. Only combatMode 'duel' passes a label; HP-mode callers are
+// unaffected.
+function crestHtml(house, side, frostLabel) {
+  const badge = frostLabel ? `<span class="duel-frost-badge" title="${esc(frostLabel)}">❄️</span>` : '';
+  return `<div class="duel-crest" data-crest="${side}">${houseImg(house, '')}${badge}</div>`;
 }
 
 function kindTag(kind) {
@@ -1706,12 +1723,12 @@ function utilityRowHtml(store, houseId, stoneOpts) {
 // "head" of the card. Reuses the same points-block/crest/name partials as
 // HP mode so the two rulesets read as the same family, just laid out to its
 // own spec.
-// 7.5 — `frostLabel` (school-day countdown or null) puts the shared ❄️
-// badge right next to the name, the same placement dashboard/council/houses
-// use for "every prominent house identity".
+// 7.5 — `frostLabel` (school-day countdown or null) hands the shared ❄️
+// badge to crestHtml, which overlays it on the crest rather than adding a
+// new line here — see crestHtml's comment for why (the card's identity
+// block is a fixed-height share with no room for an extra row).
 function duelCardHeadHtml(store, house, side, frostLabel) {
-  const badge = frostLabel ? `<span class="duel-frost-badge">❄️ ${esc(frostLabel)}</span>` : '';
-  return `${pointsBlockHtml(store, house, side)}${crestHtml(house, side)}<div class="duel-name">${esc(house.name)}</div>${badge}`;
+  return `${pointsBlockHtml(store, house, side)}${crestHtml(house, side, frostLabel)}<div class="duel-name">${esc(house.name)}</div>`;
 }
 
 function attackerCardHtmlDuel(store, challenger, target) {
