@@ -6,6 +6,7 @@
 import { CONFIG } from '../config.js';
 import { media } from '../core/media.js';
 import { lock } from '../core/lock.js';
+import { escapeHtml as esc } from '../core/escape.js';
 
 // ---- module-scoped state (mount/unmount lifecycle owns all of this) ----------
 let ctxRef = null;
@@ -69,10 +70,6 @@ function later(fn, ms) {
   return id;
 }
 function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function destCamera() {
   const c = profile.camera;
   return {

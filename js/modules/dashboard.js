@@ -1,6 +1,8 @@
 // dashboard.js — Daily Morning Dashboard (home screen)
 // Owned module. Follows ARCHITECTURE.md contract.
 
+import { escapeHtml } from '../core/escape.js';
+
 const STYLE_ID = 'dash-styles';
 const STYLE = `
 @keyframes dash-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -108,10 +110,6 @@ function fmtDateLong() {
 function houseImg(house, cls, extraAttrs = '') {
   return `<img src="${house.image}" alt="${house.name} crest" class="${cls}" ${extraAttrs}
     onerror="this.onerror=null;this.style.display='none';" />`;
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // Small inline line-art icons (lucide-style, hand-authored — no external assets).

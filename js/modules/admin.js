@@ -10,6 +10,7 @@ import { backup } from '../core/backup.js';
 import { lock, DEFAULT_PIN } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 import { buildSampleState } from '../core/sampledata.js';  // ⚙️ Settings → "Load sample data"
+import { escapeHtml as esc } from '../core/escape.js';
 
 // Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
 const MAIN_TABS = [
@@ -104,10 +105,6 @@ const FORM_TYPES = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'note',
 // ---------------------------------------------------------------------------
 // Tiny helpers
 // ---------------------------------------------------------------------------
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 function pad(n) { return String(n).padStart(2, '0'); }
 function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function todayStr() { return ymd(new Date()); }

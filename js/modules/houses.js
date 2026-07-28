@@ -7,6 +7,7 @@
 //   4. Award Routines    — one-tap teacher presets, single house or all four
 // Module id stays 'houses' so navigation/dashboard wiring elsewhere is untouched.
 import { lock } from '../core/lock.js';
+import { escapeHtml } from '../core/escape.js';
 
 const STYLE_ID = 'hse-styles';
 const STYLE = `
@@ -362,10 +363,6 @@ function ensureStyle() {
   s.id = STYLE_ID;
   s.textContent = STYLE;
   document.head.appendChild(s);
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function signed(n) { return `${n > 0 ? '+' : ''}${n}`; }

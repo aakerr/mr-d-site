@@ -17,6 +17,8 @@
 //   --carousel-card-w    width of one card (default 250px)
 //   --carousel-card-maxh max card height   (default 340px)
 
+import { escapeAttr } from './escape.js';
+
 const STYLE_ID = 'shared-carousel-styles';
 
 export function injectCarouselStyles() {
@@ -166,9 +168,4 @@ export function wireCarousel(root, { restoreLeft = 0, onFocus = null } = {}) {
 export function carouselScrollLeft(root) {
   const strip = root && root.querySelector('[data-car-strip]');
   return strip ? strip.scrollLeft : 0;
-}
-
-function escapeAttr(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

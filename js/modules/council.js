@@ -14,6 +14,8 @@
 // every store change would restart every CSS transition and the banners would
 // snap instead of rising.
 
+import { escapeHtml } from '../core/escape.js';
+
 const STYLE_ID = 'council-styles';
 
 // Banner height envelope, as a % of the arena. MAX leaves headroom above the
@@ -301,10 +303,6 @@ function ensureStyle() {
   s.id = STYLE_ID;
   s.textContent = STYLE;
   document.head.appendChild(s);
-}
-
-function escapeHtml(str) {
-  return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function rgb(hex, fallback = [245, 158, 11]) {

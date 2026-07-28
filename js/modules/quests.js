@@ -22,6 +22,7 @@
 import { fitMastheadWhenReady } from '../core/masthead.js';
 import { lock } from '../core/lock.js';
 import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } from '../core/carousel.js';
+import { escapeHtml as esc } from '../core/escape.js';
 
 const STYLE_ID = 'quest-styles';
 
@@ -52,11 +53,6 @@ function later(fn, ms) {
 }
 function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
-
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 function prefersReducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
