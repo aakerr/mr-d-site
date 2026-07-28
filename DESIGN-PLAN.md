@@ -255,7 +255,7 @@ good — keep all of it. The problems are concentration and placement, not style
 
 ## Phase 10 — Owner decisions from the closing batch (2026-07-28)
 
-- [ ] **10.1 Iconography unification (approved):** quests align to the painted scroll art
+- [x] **10.1 Iconography unification (approved):** quests align to the painted scroll art
   (board title 📜, empty-state 🧭, modal-title 🗺️ → icon-quest.png treatment); the
   All-Houses pill/chips swap 🏰 for images/class-shield.png; POTW's in-module 🌍 marks
   (launch button, small chrome — NOT the big theatrical globe, which stays as the 3D
@@ -267,4 +267,4 @@ good — keep all of it. The problems are concentration and placement, not style
   purchases is the intended pacing). CONFIG.ECONOMY's comment already names the families.
 - [x] **10.4 HP-mode retirement:** confirmed — decide at end of term (~2026-08-24): still
   on Mr. D's rules then → removal pass; HP mode used by then → fix its economy instead.
-- [ ] **10.5 Shop grid:** center partial last rows in the item sections (approved).
+- [x] **10.5 Shop grid:** center partial last rows in the item sections (approved).
