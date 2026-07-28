@@ -433,14 +433,22 @@ function showOutcomePlaque(el, prophecy, variant) {
     // award that was never made.
     const why = store.explainRefusal(houseId, points);
     const tx = why ? null : store.addPoints(houseId, points, { reason: `Die of Destiny: ${prophecy.title}`, tag: 'dice' });
-    awardedThisRoll = true;
+    // Only a REAL award burns the roll's one payout — exactly what the comment
+    // above always promised. A refusal (frozen house) shows its reason and
+    // leaves the buttons live so the teacher can redirect the points.
+    awardedThisRoll = !!tx;
     if (!tx) {
       if (area) {
-        area.textContent = '';
+        // Say why WITHOUT wiping the buttons — the whole point of a refusal
+        // leaving awardedThisRoll false is that the teacher can redirect the
+        // award to an unfrozen house. Repeated refusals replace the notice
+        // rather than stacking it.
+        const prior = area.querySelector('.dice-awarded-refused');
+        if (prior) prior.remove();
         const msg = document.createElement('div');
         msg.className = 'dice-awarded dice-awarded-refused';
         msg.textContent = why || 'Those points could not be added.';
-        area.appendChild(msg);
+        area.prepend(msg);
       }
       return;
     }
