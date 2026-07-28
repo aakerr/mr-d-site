@@ -185,6 +185,41 @@ unless a dependency is called out. One item = one commit.
 
 ---
 
+## Phase 9 — Admin area redesign (from the live Admin walkthrough, 2026-07-27)
+
+The Admin panel's tab structure, embedded per-tab guides, and explanatory copy are genuinely
+good — keep all of it. The problems are concentration and placement, not style.
+
+- [ ] **9.1 Split the Settings junk drawer.** Settings is one scroll of 13 cards spanning
+  three unrelated domains (verified live: Term Timeline, Houses, Screen colours, Screen
+  layout, Quick award buttons, Prophecy Table, Term markers, Display & Theme, Background
+  music, Sound effects, Backup & Restore, Sample Data, Teacher PIN + danger zone).
+  Restructure into three tabs:
+  - **⚙️ Term & World** — Term Timeline, Term markers, Houses, Quick award buttons.
+  - **🎨 Look & Sound** — Screen colours, Screen layout, Display & Theme, Background music
+    (including the Flyover slot from item 2.21), Sound effects.
+  - **🛡️ Data & Safety** — Backup & Restore, Sample Data, Teacher PIN, Danger Zone.
+  The Prophecy Table card is Die of Destiny content in Settings clothing — move it to a
+  small "🎲 Dice" section wherever it fits best (Term & World is acceptable; its own tab is
+  not worth it). Tab bar grows to 9 entries — verify it fits at board resolution; if tight,
+  Help can become a corner icon next to the tab bar instead of a tab.
+- [ ] **9.2 Backup health strip at the top of Admin.** The backup card is buried 11th of 13
+  while being the single most important thing in Admin. Render a one-line strip under the
+  Admin header on EVERY tab, fed by `backup.health()`: green "☁️ Saving to '<folder>' after
+  every change", amber/rose for attention/none, tappable → jumps to Data & Safety. (The
+  shell's cloud icon does this for the board; Admin deserves the persistent version.)
+- [ ] **9.3 Day Planner drawer: backdrop must not eat clicks silently.** Verified live: with
+  the drawer open, clicks on visible controls (the tab bar) are swallowed by an invisible
+  backdrop. Dim the backdrop visibly and make clicking it CLOSE the drawer — the standard
+  slide-over contract. Escape should close it too.
+- [ ] **9.4 POTW tab: destinations first.** The global "Intro Video Presets" card sits above
+  the destination list, burying the primary object below secondary config. Swap the order
+  (destinations first, presets collapsed at the bottom). Pairs naturally with 2.21 (flyover
+  slot leaves the destination editor).
+- [ ] **9.5 Compact the Admin header on scroll.** Title + subtitle + tab bar consume ~40% of
+  a 720p board before content starts. Make the header collapse to a slim sticky bar (tabs
+  only) once `.admin-body` scrolls. Pure CSS/small-JS polish; low priority.
+
 ## Decisions embedded in this plan (flag if you disagree)
 
 - **6.4** Council tile appears in both modes if layout fits, else All-Cores only.

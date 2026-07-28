@@ -68,6 +68,12 @@ folder autosave, daily safety-net download. The design is sound; these are the h
   if the slug exists, uniquify (`egypt-2`) or refuse with a message. This is a
   data-destruction path, hence Phase 0.
 
+- [ ] **0.9 (fixup, found in live review 2026-07-27):** `openConfirm` renders its message as
+  text, but the Phase 0.3 confirm copy embeds `<b>Undo last restore</b>` — the tags now show
+  literally in the sample-data / import / folder-restore dialogs (js/modules/admin.js).
+  Either strip the markup from those three messages or make openConfirm deliberately accept
+  trusted HTML from admin-authored strings only.
+
 ---
 
 ## Phase 1 — Class-visible correctness bugs
