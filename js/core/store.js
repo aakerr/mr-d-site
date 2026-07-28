@@ -710,6 +710,73 @@ function diceProphecyOverrides(list) {
   return out;
 }
 
+// ---- intro-video presets ----------------------------------------------------
+// The two ids the app itself withdrew: the intros used to be YouTube embeds and
+// now ship as real files in /videos, because the classroom computer may have no
+// internet and an embed flashes its own pause glyph on launch. Read ONLY by the
+// one-time conversion — a saved list that still names them was written before
+// they were withdrawn, and letting them convert into teacher-added entries
+// would put them back in the dropdown for ever. A YouTube link the teacher
+// pasted himself has neither of these ids and is carried across untouched.
+const RETIRED_VIDEO_IDS = new Set(['rock', 'classic']);
+
+// Shipped presets + what the teacher has added, minus what they have hidden.
+// Hiding is how a DELETION is stored: the old list was a full copy, so the only
+// way to record "I don't want the second intro" was to remove it — and the
+// backfill that introduced newly shipped presets then put it straight back on
+// the next load. An id in `hidden` says the teacher meant it.
+function materializeIntroVideos(saved) {
+  const shipped = (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
+  let added = [];
+  let hidden = [];
+  if (Array.isArray(saved)) {
+    // Legacy full copy: convert once. Entries matching a shipped preset drop
+    // out and the rest are the teacher's own — but NOTHING is hidden, however
+    // many shipped presets are missing from it. A preset absent from an old
+    // list almost never means "deleted": the whole reason this family needed
+    // fixing is that the shipped list CHANGED (YouTube embeds out, /videos
+    // files in) and old saves therefore predate every preset now in CONFIG.
+    // Reading absence as deletion there would hide both intros from exactly
+    // the installs the fix was written for. So the conversion keeps the old
+    // backfill's answer, and hiding only ever records a deletion made after
+    // it — the cost being that a preset deleted just before this upgrade
+    // comes back once, and stays gone the second time.
+    ({ added } = introVideoOverrides(saved.filter((v) => v && v.id && !RETIRED_VIDEO_IDS.has(v.id))));
+  } else if (saved && typeof saved === 'object') {
+    added = (Array.isArray(saved.added) ? saved.added : []).filter((v) => v && v.id && v.label && v.url);
+    hidden = (Array.isArray(saved.hidden) ? saved.hidden : []).filter((id) => typeof id === 'string');
+  }
+  const hide = new Set(hidden);
+  const override = new Map(added.map((v) => [v.id, v]));
+  const out = [];
+  for (const s of shipped) {
+    if (hide.has(s.id)) continue;
+    const o = override.get(s.id);
+    out.push(o ? { id: s.id, label: o.label, url: o.url } : s);
+  }
+  for (const v of added) {
+    if (!shipped.some((s) => s.id === v.id)) out.push({ id: v.id, label: v.label, url: v.url });
+  }
+  // The dropdown must never be empty — a teacher who has hidden everything and
+  // added nothing gets the shipped presets back rather than a Place of the Week
+  // with no video to choose. Same rule the old list-refill enforced.
+  return out.length ? out : shipped;
+}
+
+function introVideoOverrides(list) {
+  const shipped = CONFIG.POTW_INTRO_VIDEOS || [];
+  const live = (Array.isArray(list) ? list : []).filter((v) => v && v.id);
+  return {
+    added: live
+      .filter((v) => {
+        const s = shipped.find((x) => x.id === v.id);
+        return !s || s.label !== v.label || s.url !== v.url;
+      })
+      .map((v) => ({ id: v.id, label: v.label, url: v.url })),
+    hidden: shipped.filter((s) => !live.some((v) => v.id === s.id)).map((s) => s.id),
+  };
+}
+
 // The single place the in-memory state is turned into the text on disk. Every
 // content family that ships defaults hands back its overrides here; everything
 // else is saved as it stands.
@@ -719,6 +786,7 @@ function toSaved(st) {
     settings: {
       ...st.settings,
       diceProphecy: diceProphecyOverrides(st.settings && st.settings.diceProphecy),
+      introVideos: introVideoOverrides(st.settings && st.settings.introVideos),
     },
   };
 }
@@ -955,29 +1023,15 @@ function load() {
         if (!(Number(until) > Date.now())) delete merged.frozen[id];
       }
       merged.potwBounties = merged.potwBounties && typeof merged.potwBounties === 'object' ? merged.potwBounties : {};
-      // This list is what the Admin dropdown actually offers, and it is SAVED
-      // state. The old rule only refilled it when it was EMPTY, so a browser
-      // that had saved once kept its original list for ever — which is how the
-      // intro videos ended up unusable: /videos files were shipped and made the
-      // default, but the saved list still held only the two YouTube presets, so
-      // the dropdown could not offer the new files and 'intro-01' resolved to
-      // nothing at all. Mesopotamia appeared to work only because an unrelated
-      // fallback further down happened to point at the same file.
-      //
-      // Now: keep whatever the teacher has added, backfill anything newly
-      // shipped by id, and retire the two YouTube presets by id — the profiles
-      // that used them were remapped to the local files above, and they are the
-      // reason the classroom needed internet at all. Only those two exact ids
-      // are dropped; a YouTube link the teacher pasted himself is untouched.
-      {
-        const RETIRED = new Set(['rock', 'classic']);
-        const saved = Array.isArray(merged.settings.introVideos) ? merged.settings.introVideos : [];
-        const kept = saved.filter((v) => v && v.id && !RETIRED.has(v.id));
-        for (const v of (CONFIG.POTW_INTRO_VIDEOS || [])) {
-          if (!kept.some((k) => k.id === v.id)) kept.push({ ...v });
-        }
-        merged.settings.introVideos = kept.length ? kept : (CONFIG.POTW_INTRO_VIDEOS || []).map((v) => ({ ...v }));
-      }
+      // The presets the Admin dropdown offers: the ones that ship in CONFIG,
+      // plus whatever the teacher has added, minus what they have hidden. This
+      // list is where the "saved copy wins for ever" bug did its worst damage —
+      // /videos files were shipped and made the default while the saved list
+      // still held only the two YouTube presets, so the dropdown could not
+      // offer the new files and 'intro-01' resolved to nothing at all. Reading
+      // the shipped list from CONFIG on every load is what makes that
+      // impossible now; a newly shipped preset simply appears.
+      merged.settings.introVideos = materializeIntroVideos(merged.settings.introVideos);
       repairPotwVideos(merged);
       // Teacher's house edits are applied IN PLACE onto the shared HOUSES
       // objects, so every module holding a reference sees the new values.

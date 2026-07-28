@@ -284,17 +284,29 @@
           "example": {}
         },
         "introVideos": {
-          "type": ["array", "null"],
-          "description": "Intro-video presets offered in the POTW (Place of the Week) dropdown, teacher-editable in Admin so a recording can be added without anyone touching source code. null in a state that predates this setting; store.js load() seeds it from CONFIG.POTW_INTRO_VIDEOS the first time it is missing or empty.",
-          "items": {
-            "type": "object",
-            "required": ["id", "label", "url"],
-            "properties": {
-              "id": { "type": "string" },
-              "label": { "type": "string" },
-              "url": { "type": "string", "format": "uri" }
+          "type": ["object", "array", "null"],
+          "description": "TEACHER OVERRIDES ONLY — what the teacher has ADDED to, and HIDDEN from, the intro-video presets offered in the POTW (Place of the Week) dropdown. The presets themselves ship in code, in CONFIG.POTW_INTRO_VIDEOS (js/config.js), and store.js merges these overrides over them at load, so dropping a new file into /videos and listing it there makes it appear on every install — including one that has already saved. That is the whole reason this is no longer a copy of the list: it used to be, and when the intros changed from YouTube embeds to local /videos files, saved installs kept offering only the two dead YouTube presets and 'intro-01' resolved to nothing at all. Order: shipped presets first (in CONFIG order), then teacher-added ones. LEGACY: an ARRAY here is the pre-override shape (the whole merged list); store.js load() converts it once, keeping only entries that are not shipped or that differ from the shipped one, and dropping the two withdrawn YouTube preset ids ('rock', 'classic'). The conversion deliberately hides NOTHING, however many shipped presets the old list is missing — an old list predates the current presets, so absence there means 'never seen', not 'deleted'.",
+          "properties": {
+            "added": {
+              "type": "array",
+              "description": "Presets the teacher created in Admin, plus any shipped preset whose label or url they changed (matched by id, and rendered in the shipped preset's place rather than appended).",
+              "items": {
+                "type": "object",
+                "required": ["id", "label", "url"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "label": { "type": "string" },
+                  "url": { "type": "string", "format": "uri" }
+                }
+              }
+            },
+            "hidden": {
+              "type": "array",
+              "description": "Ids of shipped presets the teacher deleted in Admin (store.deleteIntroVideo). This is how a deletion is recorded now that the list is not copied: before, the deleted preset was simply missing from the saved copy and the backfill put it straight back on the next load. If every preset is hidden and none added, the shipped list is offered anyway — the dropdown must never be empty.",
+              "items": { "type": "string" }
             }
-          }
+          },
+          "example": { "added": [{ "id": "mine", "label": "My Own Intro", "url": "videos/mine.mp4" }], "hidden": ["intro-02"] }
         }
       }
     },
