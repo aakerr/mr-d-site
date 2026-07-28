@@ -5092,7 +5092,16 @@ function onClick(e) {
     case 'panel-close': closePanel(); break;
     case 'evt-add': startAdd(); break;
     case 'evt-edit': startEdit(btn.dataset.id); break;
-    case 'evt-del': store.removeEvent(btn.dataset.id); renderPanel(); renderBody(); break;
+    // Every other delete in Admin asks first — the planner's 🗑️ was the one
+    // that fired on a single tap, easy to hit while aiming for ✏️ beside it.
+    case 'evt-del': {
+      const id = btn.dataset.id;
+      const evt = store.getState().planner.events.find((x) => x.id === id);
+      openConfirm(`Delete “${evt ? evt.title : 'this event'}”?`, 'This removes it from the planner calendar. Points, quests and everything else are not touched.', () => {
+        store.removeEvent(id); renderPanel(); renderBody(); toast('Event deleted.');
+      });
+      break;
+    }
 
     // event form
     case 'form-back': panelView = 'day'; form = null; renderPanel(); break;
