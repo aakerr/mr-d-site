@@ -212,7 +212,7 @@ function injectStyles() {
     display:flex;align-items:center;justify-content:center;pointer-events:none;}
   .battle-sword{font-size:clamp(5rem,12vw,10rem);position:absolute;
     filter:drop-shadow(0 0 24px rgba(255,180,120,.6));}
-  /* The Sword of Destiny art replaces the old 🗡️ glyph. Its blade is drawn at
+  /* The forged sword (the Battle Day mark, single-blade cut) replaces the old 🗡️ glyph. Its blade is drawn at
      +45° (up-right), so each img is pre-rotated to point straight UP; the
      span keyframes below then swing them to their final ±45°, exactly as they
      swung the emoji. Sword B is mirrored (scaleX before rotate) so hilt and
@@ -1063,8 +1063,8 @@ function triggerCinematic() {
     <div class="battle-vignette"></div>
     <div class="battle-flash"></div>
     <div class="battle-swords-wrap">
-      <span class="battle-sword battle-sword-a"><img src="images/shop/sword-of-destiny.png" alt=""></span>
-      <span class="battle-sword battle-sword-b"><img src="images/shop/sword-of-destiny.png" alt=""></span>
+      <span class="battle-sword battle-sword-a"><img src="images/sword-forged.png" alt=""></span>
+      <span class="battle-sword battle-sword-b"><img src="images/sword-forged.png" alt=""></span>
     </div>
     <div class="battle-stamp">
       ${letters.map((ch, i) => `<span style="animation-delay:${0.55 + i * 0.07}s">${ch === ' ' ? '&nbsp;' : esc(ch)}</span>`).join('')}
