@@ -13,7 +13,7 @@ unless a dependency is called out. One item = one commit.
 
 ## Phase 6 — Classroom-flow fixes (small, high-visibility)
 
-- [ ] **6.1 Stamp the fallback itinerary/homework as a sample.**
+- [x] **6.1 Stamp the fallback itinerary/homework as a sample.**
   `store.getItinerary()` (js/core/store.js:2097) prefers a planner event of type
   `itinerary` for today and silently falls back to the hardcoded sample in
   `state.itineraries` (store.js:490-504); `getHomework` (store.js:2104) does the same.
@@ -26,7 +26,7 @@ unless a dependency is called out. One item = one commit.
   return-shape change contained or add new `getItineraryInfo` wrappers if callers are
   many).
 
-- [ ] **6.2 Voyage chrome: first tap reveals, never passes through; Escape always exits.**
+- [x] **6.2 Voyage chrome: first tap reveals, never passes through; Escape always exits.**
   The POTW stage chrome (header + presentation bar, class `potw-chrome`) idle-fades
   (js/modules/potw.js:1265 "chrome idle fade", `PRES_IDLE_MS` potw.js:60) and on the
   touch smartboard there is no hover to bring it back — verified live: a tap aimed at
@@ -38,7 +38,7 @@ unless a dependency is called out. One item = one commit.
     (same path as "🏠 Main Screen"), regardless of chrome visibility.
   - Keep the idle fade itself — the immersion is right; only the recovery is wrong.
 
-- [ ] **6.3 Map-failure backdrop for the voyage stage.**
+- [x] **6.3 Map-failure backdrop for the voyage stage.**
   When 3D tiles are absent (slow start, offline, quota), the stage is a black screen
   with invisible controls — verified live. Render a themed fallback UNDER the map canvas
   from t=0: the destination's header image if the profile has one, else the starfield
@@ -49,7 +49,7 @@ unless a dependency is called out. One item = one commit.
   error/timeout, or a 10s no-render watchdog that swaps in the backdrop permanently and
   stops waiting).
 
-- [ ] **6.4 REVISED (owner spec, 2026-07-27): the Records tile becomes the drill-down
+- [x] **6.4 REVISED (owner spec, 2026-07-27): the Records tile becomes the drill-down
   door to the standings.** No new tile. The flow:
   1. The Records dashboard tile keeps the gold trophy art (images/icon-points.png —
      already wired) — but tapping it navigates to the **Council of Four podium** (the
@@ -69,7 +69,7 @@ unless a dependency is called out. One item = one commit.
   class can see the columns are tappable. Keep the podium's ceremony intact — the tap
   targets are additive.
 
-- [ ] **6.5 All-Cores dashboard: show the next core's schedule instead of a shrug.**
+- [x] **6.5 All-Cores dashboard: show the next core's schedule instead of a shrug.**
   `renderItinerary` (dashboard.js:266-273) and `renderHomework` (dashboard.js:296) print
   "Pick a house core to see today's schedule/assignments" in All-Cores mode — the mode a
   teacher leaves on the board between classes. Instead: find the next core by clock —
@@ -82,7 +82,7 @@ unless a dependency is called out. One item = one commit.
   Keep it read-only; tapping the panel switches to that core (calls the same path as the
   switcher).
 
-- [ ] **6.6 Wizard return visits: one step, not six.**
+- [x] **6.6 Wizard return visits: one step, not six.**
   firstrun.js re-offers a skipped wizard on a later day, resuming at
   `setupResumeStep` (js/core/firstrun.js:459-461). Since the only thing that blocks
   "done" is the backup folder (needsSetup, firstrun.js:417-421), a returning visit
@@ -91,7 +91,7 @@ unless a dependency is called out. One item = one commit.
   true first run and for Help → "Run the setup wizard again" (`startSetup`,
   firstrun.js:412).
 
-- [ ] **6.7 Bounty questions need a "nobody earned it" close.**
+- [x] **6.7 Bounty questions need a "nobody earned it" close.**
   In the POTW House Bounty Quiz (potw.js:858-880, handler at 1029-1068), the only exits
   from a question are awarding a house or leaving all four buttons live forever. Add a
   small "No winner" control beside the reveal button that marks the question closed
@@ -101,7 +101,7 @@ unless a dependency is called out. One item = one commit.
   (potw.js:1077) to render it. Coordinate with FIX-PLAN 1.5, which is already changing
   `payBounty`'s return contract and the lock flow — do 1.5 first.
 
-- [ ] **6.8 Copy sweep after the shop becomes any-time (depends on FIX-PLAN 1.1).**
+- [x] **6.8 Copy sweep after the shop becomes any-time (depends on FIX-PLAN 1.1).**
   Once purchases work outside Friday, fix the copy that says otherwise: the shop hero
   "THE FRIDAY MAGIC SHOP" (js/modules/shop.js — hero template), the dashboard tile
   subtitle "Spend your hoard" is fine but Battle Day's "Team competitions" area and Help
@@ -112,7 +112,7 @@ unless a dependency is called out. One item = one commit.
 
 ## Phase 7 — Weekly rhythm & classroom trust
 
-- [ ] **7.1 Monday Convocation: a "last week" recap strip on the Council podium.**
+- [x] **7.1 Monday Convocation: a "last week" recap strip on the Council podium.**
   Extends FIX-PLAN 5.3 (build them together, in council.js). Above/below the podium
   (council.js render), when the current day is Monday — or whenever a `?recap` affordance
   is tapped — show one strip with: biggest single award last week (scan
@@ -123,7 +123,7 @@ unless a dependency is called out. One item = one commit.
   council.js stays presentation-only. The strip uses the existing decree-ticker styling
   so it feels native. No new screen, no new nav — the podium IS the Monday ritual.
 
-- [ ] **7.2 "Saved ✓" pulse on the backup cloud after each ledger write.**
+- [x] **7.2 "Saved ✓" pulse on the backup cloud after each ledger write.**
   The topbar backup button (shell.js:361, health logic at backup.health) shows nothing
   when healthy. Add a subtle one-shot pulse (a small ✓ that fades over ~1.5s) on the
   cloud button whenever a transaction lands AND the persist + (if connected) folder
@@ -142,7 +142,7 @@ unless a dependency is called out. One item = one commit.
   interval while running, cleared on unmount). This replaces the most common physical
   teacher tool not yet in the app.
 
-- [ ] **7.4 Optional one-line "proof" note when completing a quest.**
+- [x] **7.4 Optional one-line "proof" note when completing a quest.**
   In the quest-completion confirm (quests.js completion flow / admin.js quest
   controls — wherever `store.completeQuest` is invoked), add an optional text input
   ("How was it proven? — optional"), appended to the ledger reason:

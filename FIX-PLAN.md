@@ -377,14 +377,14 @@ README.md and ARCHITECTURE.md are excellent but have drifted:
 
 ## Phase 5 — Educational polish (small, high-leverage)
 
-- [ ] **5.1 Never blame the teacher in front of the class.** Audit every student-visible error
+- [x] **5.1 Never blame the teacher in front of the class.** Audit every student-visible error
   string for "ask your teacher to fix" phrasing (shop.js's Misconfigured card is the worst
   offender — fixed structurally in 1.1). Class-facing copy should be in-world ("The armoury
   is closed — see Battle Day"), with the diagnostic detail reserved for Admin.
-- [ ] **5.2 Ledger CSV export — ALREADY EXISTS** (verified live 2026-07-27: Records →
+- [x] **5.2 Ledger CSV export — ALREADY EXISTS** (verified live 2026-07-27: Records →
   ledger → "Search, sort & export" → "⬇ Export CSV"). Just verify it exports all columns
   (date, house, delta, reason, tag) and respects/clears filters sensibly. No build needed.
-- [ ] **5.3 Weekly recap moment.** A "Last Week" card on the dashboard each Monday (biggest
+- [x] **5.3 Weekly recap moment.** A "Last Week" card on the dashboard each Monday (biggest
   single award, most-improved house, quests completed) built from data `getWeeklySeries`
   already computes. Turns the ledger into a Monday-morning ritual instead of a background
   number.
@@ -392,10 +392,10 @@ README.md and ARCHITECTURE.md are excellent but have drifted:
   houses (for who answers first, who presents, tie-breaks). Fits the existing dice/fate
   aesthetic, ~a screen's worth of code, and replaces the most common physical teacher tool
   not yet in the app. (House-level only — the app deliberately has no student roster.)
-- [ ] **5.5 Projector-safe quiet mode.** One toggle that mutes SFX + freezes ambient particles
+- [x] **5.5 Projector-safe quiet mode.** One toggle that mutes SFX + freezes ambient particles
   (reduced-motion already exists as an OS media query — surface it as an in-app switch for
   test days / quiet work).
-- [ ] **5.6 Make the daily backup part of the classroom fiction.** The Friday download is a
+- [x] **5.6 Make the daily backup part of the classroom fiction.** The Friday download is a
   mechanical event; rename it in-world ("The scribe has archived this week's ledger") with a
   2-second toast. Costs nothing, makes the safety net visible so its absence is noticed.
 
