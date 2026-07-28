@@ -3,6 +3,14 @@
 import { CONFIG } from '../config.js';
 import { ymd, todayStr } from './util.js';
 
+// Every shipped points value in this file is written as `base × SCALE`, so a
+// rebalance is one line in js/config.js instead of forty here — and so a new
+// item cannot land on a different scale from the ones beside it, which is how
+// the hit-points weapons ended up able to one-shot every house. The canon (1
+// old point = 100 shipped, a good deed ≈ 500-1,000, an item ≈ 3,000-6,000) and
+// the list of values still sitting at the OLD scale are both on CONFIG.ECONOMY.
+const SCALE = CONFIG.ECONOMY.SCALE;
+
 // image = shield crest (used everywhere a house image appears);
 // heroImage = wide banner art for hero headers.
 const HOUSES = {
@@ -143,7 +151,7 @@ const DEFAULT_COMBAT_MODE = 'duel';
 // Points per step of bonus HP (see getMaxHp). 50,000 because the whole economy
 // was rescaled x100 to meet Mr. D's costs — the old 500 was the same fraction
 // of the old scale.
-const HP_POINTS_PER_STEP = 50000;
+const HP_POINTS_PER_STEP = 500 * SCALE;
 
 // Mr. D's items, transcribed from his own document. `counters` is the whole
 // game: an attack landing on a house holding the listed defense does NOTHING.
@@ -167,53 +175,53 @@ const HP_POINTS_PER_STEP = 50000;
 function defaultDuelCatalog() {
   return [
     // ---- attacks ----
-    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: 'images/shop/sword-of-destiny.png', cost: 450,  slot: 'attack',   // his doc: 600
-      effect: { kind: 'damage', dice: '2d6', mult: 100 }, counteredBy: ['shield'],
+    { id: 'sword',      name: 'The Sword of Destiny',     emoji: '🗡️', image: 'images/shop/sword-of-destiny.png', cost: 4.5 * SCALE,  slot: 'attack',   // his doc: 6 × SCALE
+      effect: { kind: 'damage', dice: '2d6', mult: SCALE }, counteredBy: ['shield'],
       desc: 'Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.' },
-    { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: 'images/shop/net-of-entrapment.png', cost: 600,  slot: 'attack',
-      effect: { kind: 'steal', dice: '2d6', mult: 100 }, counteredBy: ['gauntlet'],
+    { id: 'net',        name: 'Net of Entrapment',        emoji: '🕸️', image: 'images/shop/net-of-entrapment.png', cost: 6 * SCALE,  slot: 'attack',
+      effect: { kind: 'steal', dice: '2d6', mult: SCALE }, counteredBy: ['gauntlet'],
       desc: 'Steal 2d6 × 100 points and add them to your own total. The Gauntlet of Defense stops it.' },
-    { id: 'iceaxe',     name: 'The Legendary Ice Axe',    emoji: '🪓', image: 'images/shop/legendary-ice-axe.png', cost: 500,  slot: 'attack',
+    { id: 'iceaxe',     name: 'The Legendary Ice Axe',    emoji: '🪓', image: 'images/shop/legendary-ice-axe.png', cost: 5 * SCALE,  slot: 'attack',
       effect: { kind: 'freeze', dice: '1d6' }, counteredBy: ['shield'],
       desc: 'Freeze a House so it cannot earn points for 1d6 days. The Shield of Protection stops it.' },
-    { id: 'cloak',      name: 'Cloak of Invisibility',    emoji: '🫥', image: 'images/shop/cloak-of-invisibility.png', cost: 400,  slot: 'attack',
-      effect: { kind: 'steal', dice: '1d6', mult: 100, anonymous: true }, counteredBy: ['bow'],
+    { id: 'cloak',      name: 'Cloak of Invisibility',    emoji: '🫥', image: 'images/shop/cloak-of-invisibility.png', cost: 4 * SCALE,  slot: 'attack',
+      effect: { kind: 'steal', dice: '1d6', mult: SCALE, anonymous: true }, counteredBy: ['bow'],
       desc: 'Steal 1d6 × 100 points without anyone learning who did it. The Bow of Seeking finds you.' },
-    { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: 'images/shop/catapult.png', cost: 1000, slot: 'attack',
-      effect: { kind: 'damage', dice: '3d6', mult: 100, targets: 2 }, counteredBy: [],
+    { id: 'catapult',   name: 'The Catapult',             emoji: '🪨', image: 'images/shop/catapult.png', cost: 10 * SCALE, slot: 'attack',
+      effect: { kind: 'damage', dice: '3d6', mult: SCALE, targets: 2 }, counteredBy: [],
       desc: 'Hit TWO Houses for 3d6 × 100 points each. Nothing defends against it.' },
-    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: 'images/shop/staff-of-ra.png', cost: 700, slot: 'attack',   // his doc: 1000
-      effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['eye'],
+    { id: 'staffra',    name: 'The Staff of Ra',          emoji: '☀️', image: 'images/shop/staff-of-ra.png', cost: 7 * SCALE, slot: 'attack',   // his doc: 10 × SCALE
+      effect: { kind: 'damage', dice: '3d6', mult: SCALE }, counteredBy: ['eye'],
       desc: 'A blast of concentrated sunlight for 3d6 × 100 points. The Eye of Horus stops it.' },
-    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: 'images/shop/warhorse.png', cost: 700, slot: 'attack',   // his doc: 1000
-      effect: { kind: 'damage', dice: '3d6', mult: 100 }, counteredBy: ['bow'],
+    { id: 'warhorse',   name: 'Warhorse',                 emoji: '🐎', image: 'images/shop/warhorse.png', cost: 7 * SCALE, slot: 'attack',   // his doc: 10 × SCALE
+      effect: { kind: 'damage', dice: '3d6', mult: SCALE }, counteredBy: ['bow'],
       desc: 'A charging warhorse for 3d6 × 100 points. The Bow of Seeking brings it down.' },
 
     // ---- defenses ----
-    { id: 'shield',     name: 'The Shield of Protection', emoji: '🛡️', image: 'images/shop/shield-of-protection.png', cost: 500,  slot: 'defense',
+    { id: 'shield',     name: 'The Shield of Protection', emoji: '🛡️', image: 'images/shop/shield-of-protection.png', cost: 5 * SCALE,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['sword', 'iceaxe'],
       desc: 'Stops the Sword of Destiny or the Legendary Ice Axe for one Battle Day.' },
-    { id: 'gauntlet',   name: 'Gauntlet of Defense',      emoji: '🧤', image: 'images/shop/gauntlet-of-defense.png', cost: 400,  slot: 'defense',
+    { id: 'gauntlet',   name: 'Gauntlet of Defense',      emoji: '🧤', image: 'images/shop/gauntlet-of-defense.png', cost: 4 * SCALE,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['net'],
       desc: 'Stops every attack from the Net of Entrapment.' },
-    { id: 'bow',        name: 'Bow of Seeking',           emoji: '🏹', image: 'images/shop/bow-of-seeking.png', cost: 400,  slot: 'defense',
+    { id: 'bow',        name: 'Bow of Seeking',           emoji: '🏹', image: 'images/shop/bow-of-seeking.png', cost: 4 * SCALE,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['cloak', 'warhorse'],
       desc: 'Seeks out the Cloak of Invisibility or the Warhorse and stops the attack.' },
-    { id: 'eye',        name: 'The Eye of Horus',         emoji: '👁️', image: 'images/shop/eye-of-horus.png', cost: 500,  slot: 'defense',
+    { id: 'eye',        name: 'The Eye of Horus',         emoji: '👁️', image: 'images/shop/eye-of-horus.png', cost: 5 * SCALE,  slot: 'defense',
       effect: { kind: 'block' }, blocks: ['staffra'],
       desc: 'Defends against the Staff of Ra.' },
 
     // ---- utility ----
-    { id: 'stone',      name: 'The Stone of Seeing',      emoji: '🔮', image: 'images/shop/stone-of-seeing.png', cost: 1000, slot: 'utility',
+    { id: 'stone',      name: 'The Stone of Seeing',      emoji: '🔮', image: 'images/shop/stone-of-seeing.png', cost: 10 * SCALE, slot: 'utility',
       effect: { kind: 'reveal' },
       desc: 'Reveals what another House has chosen to do this week.' },
-    { id: 'shroud',     name: 'The Shroud of Secrecy',    emoji: '🌫️', image: 'images/shop/shroud-of-secrecy.png', cost: 500,  slot: 'utility',
+    { id: 'shroud',     name: 'The Shroud of Secrecy',    emoji: '🌫️', image: 'images/shop/shroud-of-secrecy.png', cost: 5 * SCALE,  slot: 'utility',
       effect: { kind: 'hide' },
       desc: 'Hides your actions from every other House for one week.' },
-    { id: 'timeturner', name: 'The Time Turner',          emoji: '⏳', image: 'images/shop/time-turner.png', cost: 1000, slot: 'utility',
+    { id: 'timeturner', name: 'The Time Turner',          emoji: '⏳', image: 'images/shop/time-turner.png', cost: 10 * SCALE, slot: 'utility',
       effect: { kind: 'timeturn' },
       desc: 'Go back and change your items after you have been attacked.' },
-    { id: 'bagofholding', name: 'The Bag of Holding',     emoji: '🎒', image: 'images/shop/bag-of-holding.png', cost: 500,  slot: 'utility',
+    { id: 'bagofholding', name: 'The Bag of Holding',     emoji: '🎒', image: 'images/shop/bag-of-holding.png', cost: 5 * SCALE,  slot: 'utility',
       effect: { kind: 'extraslot' },
       desc: 'An extra weapon slot — carry two attack or two defense items at once.' },
   ];
@@ -319,23 +327,23 @@ function defaultHpCatalog() {
     // at the card's width). Longer text is silently cut off mid-sentence,
     // which is worse than saying less — the shield/halving rules live in
     // Help and in Admin's matchup table, where they are not truncated.
-    { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 3500, desc: 'Roman siege engines hurl stones. Waits in your armoury for Battle Day, then takes 20 HP off a house you choose.', effect: { kind: 'attack', amount: 2000 } },
-    { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 4500, desc: 'The Byzantine secret that burned on water. Waits in your armoury for Battle Day, then takes 25 HP off a house you pick.', effect: { kind: 'attack', amount: 2500 } },
-    { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 5500, desc: 'Over the Alps into Roman territory. Waits in your armoury for Battle Day, then takes 30 HP off a house you choose.', effect: { kind: 'attack', amount: 3000 } },
-    { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 6500, desc: 'Mirrors burn ships at Syracuse. Waits in your armoury for Battle Day, then takes 35 HP off a house you choose.', effect: { kind: 'attack', amount: 3500 } },
-    { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 5000, desc: 'A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.', effect: { kind: 'steal', amount: 2500 } },
+    { id: 'catapult',  name: 'Catapult Volley',        emoji: '🪨', image: '', cost: 35 * SCALE, desc: 'Roman siege engines hurl stones. Waits in your armoury for Battle Day, then takes 20 HP off a house you choose.', effect: { kind: 'attack', amount: 20 * SCALE } },
+    { id: 'greekfire', name: 'Greek Fire',             emoji: '🔥', image: '', cost: 45 * SCALE, desc: 'The Byzantine secret that burned on water. Waits in your armoury for Battle Day, then takes 25 HP off a house you pick.', effect: { kind: 'attack', amount: 25 * SCALE } },
+    { id: 'elephants', name: "Hannibal's War Elephants", emoji: '🐘', image: '', cost: 55 * SCALE, desc: 'Over the Alps into Roman territory. Waits in your armoury for Battle Day, then takes 30 HP off a house you choose.', effect: { kind: 'attack', amount: 30 * SCALE } },
+    { id: 'heatray',   name: "Archimedes' Heat Ray",   emoji: '☀️', image: '', cost: 65 * SCALE, desc: 'Mirrors burn ships at Syracuse. Waits in your armoury for Battle Day, then takes 35 HP off a house you choose.', effect: { kind: 'attack', amount: 35 * SCALE } },
+    { id: 'trojan',    name: 'Trojan Horse',           emoji: '🐴', image: '', cost: 50 * SCALE, desc: 'A gift hiding an army. Waits for Battle Day, then takes 25 HP off the leader — you gain points equal to the damage.', effect: { kind: 'steal', amount: 25 * SCALE } },
     // ---- Offensive: pierce (ignores defenses) ----
-    { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 6000, desc: 'Strike unseen. Waits in your armoury for Battle Day, then takes 20 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 2000 } },
-    { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 7000, desc: 'Advance under cover. Waits for Battle Day, then takes 25 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 2500 } },
+    { id: 'cloak',     name: 'Invisibility Cloak',     emoji: '🫥', image: '', cost: 60 * SCALE, desc: 'Strike unseen. Waits in your armoury for Battle Day, then takes 20 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 20 * SCALE } },
+    { id: 'fogbank',   name: 'Fog Bank',               emoji: '🌫️', image: '', cost: 70 * SCALE, desc: 'Advance under cover. Waits for Battle Day, then takes 25 HP off any house — ignoring shields and halving.', effect: { kind: 'pierce', amount: 25 * SCALE } },
     // ---- Defensive ----
-    { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 2500, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
-    { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 3000, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
-    { id: 'shieldwall',name: 'Shield Wall',            emoji: '🪵', image: '', cost: 3500, desc: 'The Viking skjaldborg — no gap for a blade. Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
-    { id: 'moat',      name: 'Moat & Drawbridge',      emoji: '🏰', image: '', cost: 4500, desc: 'Raise the bridge and hold the keep. Blocks incoming attacks for 36 hours.', effect: { kind: 'shield', amount: 36 } },
-    { id: 'greatwall', name: 'The Great Wall',         emoji: '🧱', image: '', cost: 6000, desc: 'Thousands of miles of stone and watchtowers. Blocks incoming attacks for 48 hours.', effect: { kind: 'shield', amount: 48 } },
+    { id: 'phalanx',   name: 'Phalanx Formation',      emoji: '🛡️', image: '', cost: 25 * SCALE, desc: 'Locked shields, bristling spears. Blocks incoming attacks for 12 hours.', effect: { kind: 'shield', amount: 12 } },
+    { id: 'aegis',     name: 'Aegis Shield',           emoji: '⚡', image: '', cost: 30 * SCALE, desc: "Athena's shield, feared by gods and men. Blocks incoming attacks for 24 hours.", effect: { kind: 'shield', amount: 24 } },
+    { id: 'shieldwall',name: 'Shield Wall',            emoji: '🪵', image: '', cost: 35 * SCALE, desc: 'The Viking skjaldborg — no gap for a blade. Blocks incoming attacks for 24 hours.', effect: { kind: 'shield', amount: 24 } },
+    { id: 'moat',      name: 'Moat & Drawbridge',      emoji: '🏰', image: '', cost: 45 * SCALE, desc: 'Raise the bridge and hold the keep. Blocks incoming attacks for 36 hours.', effect: { kind: 'shield', amount: 36 } },
+    { id: 'greatwall', name: 'The Great Wall',         emoji: '🧱', image: '', cost: 60 * SCALE, desc: 'Thousands of miles of stone and watchtowers. Blocks incoming attacks for 48 hours.', effect: { kind: 'shield', amount: 48 } },
     // ---- Wildcards ----
-    { id: 'pandora',   name: "Pandora's Box",          emoji: '📦', image: '', cost: 4000, desc: 'Every evil escapes — but hope remains. Random swing of up to 30 pts, for you or against you.', effect: { kind: 'wild', amount: 3000 } },
-    { id: 'fortuna',   name: "Fortuna's Wheel",        emoji: '🎡', image: '', cost: 3000, desc: 'The Roman goddess of luck spins the wheel. Random swing of up to 20 pts, either way.', effect: { kind: 'wild', amount: 2000 } },
+    { id: 'pandora',   name: "Pandora's Box",          emoji: '📦', image: '', cost: 40 * SCALE, desc: 'Every evil escapes — but hope remains. Random swing of up to 30 pts, for you or against you.', effect: { kind: 'wild', amount: 30 * SCALE } },
+    { id: 'fortuna',   name: "Fortuna's Wheel",        emoji: '🎡', image: '', cost: 30 * SCALE, desc: 'The Roman goddess of luck spins the wheel. Random swing of up to 20 pts, either way.', effect: { kind: 'wild', amount: 20 * SCALE } },
     // ---- Mythic rewards (granted by a natural 20, never purchasable) ----
     { id: 'spynetwork',name: 'Spy Network',            emoji: '🕵️', image: '', cost: 0, mythicOnly: true, desc: 'Your agents hear the plan before it happens. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },
     { id: 'lookout',   name: 'Lookout Tower',          emoji: '🗼', image: '', cost: 0, mythicOnly: true, desc: 'See the dust of an army on the horizon. Incoming damage is HALVED for 48 hours.', effect: { kind: 'reduce', amount: 48 } },

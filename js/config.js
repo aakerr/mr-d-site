@@ -49,5 +49,35 @@ export const CONFIG = {
     // dice:      'music/looming-roll.mp3',
   },
 
+  // ---- the economy's one scale ---------------------------------------------
+  // THE CANON: 1 old point = 100 shipped points. A routine good deed is worth
+  // roughly 500-1,000; a Magic Shop item costs roughly 3,000-6,000. Everything
+  // a house earns or spends is quoted at that scale.
+  //
+  // It exists because the rescale to meet Mr. D's prices was done by hand, item
+  // by item, and it did not reach everything: the hit-points weapons had their
+  // damage multiplied but not the HP pool they were removing it from, so every
+  // shipped weapon one-shot every house (FIX-PLAN 1.15). One number here, and
+  // the shipped values in store.js written as `base × SCALE`, means the next
+  // rebalance is this line rather than forty scattered ones — and a new item
+  // cannot quietly land on the wrong scale, because there is only one to land on.
+  //
+  // STILL AT THE OLD SCALE, and each is a decision rather than a refactor —
+  // they change what the app pays out, so they are listed here to be chosen
+  // deliberately, not fixed in passing:
+  //   • the one-tap award presets (Bell Ringer +5, Map Quiz +50) — store.js
+  //     defaultAwardPresets()
+  //   • quest rewards (10-50) — defaultQuestCatalog()
+  //   • the Die of Destiny's outcomes (-10 to +20) — defaultDiceProphecy()
+  //   • Battle Day's ± step (10) and the flat prize (150) — defaultCombat()
+  // Against a 450-point sword, a 5-point Bell Ringer is ninety good deeds a
+  // sale. Mr. D's own duel prices (4.5-10 × SCALE) sit below the 3,000-6,000
+  // canon too, on purpose — they are his numbers, from his document.
+  //
+  // Changing SCALE also means rewording every shipped description that quotes
+  // the multiplier out loud ("2d6 × 100 points"), which is why those live next
+  // to the values they describe.
+  ECONOMY: { SCALE: 100 },
+
   STORAGE_KEY: 'mrd-classroom-os-v1',
 };
