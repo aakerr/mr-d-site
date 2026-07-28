@@ -2265,9 +2265,20 @@ export const store = {
 
   getTermInfo() {
     const s = store.getSettings();
+    // A hand-edited or half-cleared termStart must not put "Week NaN of 9" in
+    // the top bar. Same shape either way — week and totalWeeks stay honest
+    // numbers so the shell's "Week X of Y" renders sanely, the label carries
+    // the fix for the screens that print it, and `invalid` is there for any
+    // caller that wants to say more.
+    const totalWeeks = Number(s.termWeeks) > 0
+      ? Math.round(Number(s.termWeeks))
+      : CONFIG.TERM.totalWeeks;
     const start = new Date(s.termStart + 'T00:00:00');
-    const week = Math.min(s.termWeeks, Math.max(1, Math.floor((Date.now() - start.getTime()) / (7 * 86400000)) + 1));
-    return { week, totalWeeks: s.termWeeks, label: `Week ${week} of ${s.termWeeks}-Week Term` };
+    if (Number.isNaN(start.getTime())) {
+      return { week: 1, totalWeeks, label: 'Set term dates in Admin', invalid: true };
+    }
+    const week = Math.min(totalWeeks, Math.max(1, Math.floor((Date.now() - start.getTime()) / (7 * 86400000)) + 1));
+    return { week, totalWeeks, label: `Week ${week} of ${totalWeeks}-Week Term`, invalid: false };
   },
 
   // ----- planner events (teacher admin calendar) -----
