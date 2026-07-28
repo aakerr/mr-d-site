@@ -41,12 +41,12 @@ export const CONFIG = {
   // per-screen in Admin → Settings). Screens that make their own noise — Place
   // of the Week, Battle Day — are intentionally left out.
   AMBIENT_TRACKS: {
-    // dashboard: 'music/morning.mp3',
-    // council:   'music/council.mp3',
-    // quests:    'music/quests.mp3',
-    // shop:      'music/shop.mp3',
-    // houses:    'music/records.mp3',
-    // dice:      'music/dice.mp3',
+    // dashboard: 'music/honor-roll.mp3',
+    // council:   'music/the-grand-pavilion.mp3',
+    // quests:    'music/bridging-the-path.mp3',
+    // shop:      'music/vanguard-charge.mp3',
+    // houses:    'music/breath-of-fate.mp3',
+    // dice:      'music/looming-roll.mp3',
   },
 
   STORAGE_KEY: 'mrd-classroom-os-v1',
