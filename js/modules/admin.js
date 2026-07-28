@@ -3413,7 +3413,7 @@ function importBackup(file) {
     try { data = JSON.parse(reader.result); } catch (e) { toast('That file is not valid JSON.'); return; }
     const check = looksLikeBackup(data);
     if (!check.ok) { toast(check.reason); return; }
-    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. If it turns out to be the wrong file, <b>Undo last restore</b> in this panel puts everything back.', () => {
+    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. If it turns out to be the wrong file, “Undo last restore” in this panel puts everything back.', () => {
       if (replaceAllData(data)) location.reload();
     }, { yesLabel: 'Replace & reload' });
   };
@@ -3439,7 +3439,7 @@ function renderSampleDataCard() {
 function loadSampleData() {
   openConfirm(
     'Load sample data?',
-    'This fills the app with about four weeks of invented activity — points, quests, Magic Shop purchases, dice rolls and a full events calendar — so every screen has something populated to look at. It is sample data only, not your real class. Loading it replaces everything currently on screen, exactly like restoring a backup file. If you did not mean to, <b>Undo last restore</b> in this panel puts your real data straight back.',
+    'This fills the app with about four weeks of invented activity — points, quests, Magic Shop purchases, dice rolls and a full events calendar — so every screen has something populated to look at. It is sample data only, not your real class. Loading it replaces everything currently on screen, exactly like restoring a backup file. If you did not mean to, “Undo last restore” in this panel puts your real data straight back.',
     () => {
       try {
         const sample = buildSampleState();
@@ -3705,8 +3705,10 @@ async function restoreFromFolder() {
   const check = looksLikeBackup(data);
   if (!check.ok) { toast(check.reason); return; }
   const used = backup.status().lastRestoreFile;
+  // openConfirm renders its body as TEXT (it escapes) — plain quotes here,
+  // not tags, and `used` goes in raw so the escaper only runs once.
   openConfirm('Restore from backup folder?',
-    `This replaces ALL current data with ${used ? `<b>${esc(used)}</b>` : "the folder's latest backup"}, then reloads. If it is not the one you wanted, <b>Undo last restore</b> in this panel puts everything back.`, () => {
+    `This replaces ALL current data with ${used ? `“${used}”` : "the folder's latest backup"}, then reloads. If it is not the one you wanted, “Undo last restore” in this panel puts everything back.`, () => {
     if (replaceAllData(data)) location.reload();
   }, { yesLabel: 'Replace & reload' });
 }
