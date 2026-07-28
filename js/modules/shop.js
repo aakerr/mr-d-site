@@ -1,5 +1,9 @@
-// shop.js — Friday Magical Item Shop. Houses spend accumulated TERM points on
-// items that attack rivals or protect their standings before scores lock.
+// shop.js — The Magic Shop. Houses spend accumulated TERM points on items for
+// whichever battle system is active (store.getCombatMode()): under Mr. D's
+// duel rules EVERY purchase is banked into the house armoury for Battle Day;
+// under hit-points rules weapons stockpile while shields and wildcards fire
+// on the spot. The shop is open all week — Friday is when the armoury gets
+// USED, not the only day it can be filled.
 // The item catalog is teacher-editable (Admin) and lives in the store —
 // this module renders whatever store.getShopItems() returns, live.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
@@ -12,8 +16,10 @@ import { injectCarouselStyles, carouselHtml, wireCarousel, carouselScrollLeft } 
 const STYLE_ID = 'shop-styles';
 const PURPLE = '#a78bfa';
 const PURPLE_SOFT = 'rgba(167,139,250,0.35)';
-// effect.kind values the store's catalog can contain — see js/core/store.js.
-const KNOWN_KINDS = new Set(['attack', 'steal', 'shield', 'pierce', 'reduce', 'wild']);
+// Valid effect.kind values are the STORE's business, per combat mode — see
+// store.SHOP_KINDS / store.DUEL_KINDS and store.shopKindsForMode(). A
+// hand-copied list here once knew only the hit-points kinds, which marked
+// every card "Misconfigured" in the shipped default duel mode. Never again.
 
 // ---- module-scoped lifecycle state -----------------------------------------
 let ctxRef = null;
@@ -118,12 +124,21 @@ function fmtRemainShort(ms) {
 
 function kindLabel(kind) {
   return {
+    // hit-points kinds
     attack: '⚔️ Attack',
     steal: '🐴 Steal',
     pierce: '🫥 Pierce — ignores defenses',
     shield: '🛡️ Defense',
     reduce: '🕵️ Defense (Mythic)',
     wild: '🎲 Wildcard',
+    // Mr. D's duel kinds ('steal' is shared — same label either way)
+    damage: '⚔️ Attack',
+    freeze: '🧊 Freeze',
+    block: '🛡️ Defense',
+    reveal: '🔮 Reveal',
+    hide: '🌫️ Conceal',
+    timeturn: '⏳ Time Turn',
+    extraslot: '🎒 Extra Slot',
   }[kind] || kind;
 }
 
@@ -213,6 +228,10 @@ function injectStyles() {
     background:#141225;border:2px solid ${PURPLE};border-radius:1.5rem;
     padding:clamp(.5rem,1.4vh,1rem) 1.5rem;box-shadow:0 0 26px ${PURPLE_SOFT};
     flex:0 0 auto;}
+
+  /* one quiet line under the treasury naming the duel rule of the week */
+  .shop-mode-note{max-width:720px;margin:-.5rem auto 1.25rem;text-align:center;color:#c4b5fd;
+    font-style:italic;font-size:.95rem;}
 
   /* shown instead of the shop grid when the top bar is on "All Cores" */
   .shop-pickhouse{max-width:520px;margin:2.5rem auto;text-align:center;color:#c4b5fd;font-style:italic;
@@ -594,14 +613,20 @@ function sizeTreasuryToHeadings(root) {
   } catch (e) { /* presentation only — never break the shop */ }
 }
 
-function itemIssues(item) {
+// An item is renderable when the ACTIVE combat mode's engine implements it.
+// The store owns the two kind lists (SHOP_KINDS for hit points, DUEL_KINDS for
+// Mr. D's rules), so this can never drift from Admin's own save-time
+// validation (store.saveShopItem). Duel items are validated by their real
+// shape — damage/steal carry `dice`/`mult` and NO `effect.amount` — so the
+// amount check is a hit-points-only rule.
+function itemIssues(store, item) {
   if (!item || typeof item !== 'object') return ['missing item'];
   const issues = [];
   if (!item.name) issues.push('missing name');
   // Mythic rewards are never purchased with points — cost 0 is expected there.
   if (!item.mythicOnly && !(Number(item.cost) > 0)) issues.push('invalid cost');
-  if (!item.effect || !KNOWN_KINDS.has(item.effect.kind)) issues.push('unknown effect');
-  else if (!(Number(item.effect.amount) > 0)) issues.push('invalid amount');
+  if (!item.effect || !store.shopKindsForMode().includes(item.effect.kind)) issues.push('unknown effect');
+  else if (store.getCombatMode() !== 'duel' && !(Number(item.effect.amount) > 0)) issues.push('invalid amount');
   return issues;
 }
 
@@ -645,8 +670,11 @@ function itemArtHtml(item) {
 const CONSUMABLE_KINDS = new Set(['attack', 'steal', 'pierce', 'wild']);
 
 function itemCard(store, s, item, buyerId) {
-  const issues = itemIssues(item);
+  const issues = itemIssues(store, item);
   if (issues.length) {
+    // Class-facing copy stays in-world: no "ask your teacher" from the shop
+    // floor. The actual diagnostics live in Admin's shop editor, where the
+    // teacher is the audience.
     const nm = item?.name || 'Unknown Item';
     const desc = item?.desc || '';
     return `
@@ -655,7 +683,7 @@ function itemCard(store, s, item, buyerId) {
         <div class="shop-card-name" title="${esc(nm)}">${esc(nm)}</div>
         <div class="shop-kind-tag" title="Unavailable">⚠️ Unavailable</div>
         <div class="shop-flavor" title="${esc(desc)}">${esc(desc)}</div>
-        <div class="shop-card-status"><div class="shop-broken-note">⚠️ Misconfigured — ask your teacher to fix this item in Admin.</div></div>
+        <div class="shop-card-status"><div class="shop-broken-note">The shopkeeper has taken this one off the shelf.</div></div>
         <button type="button" class="shop-buy-btn" disabled>Unavailable</button>
       </div>`;
   }
@@ -665,6 +693,32 @@ function itemCard(store, s, item, buyerId) {
   const affordable = treasury >= item.cost;
   const art = itemArtHtml(item);
   const kindTag = `<div class="shop-kind-tag" title="${esc(kindLabel(kind))}">${esc(kindLabel(kind))}</div>`;
+
+  // ---- Mr. D's duel rules: EVERY purchase banks into the armoury ------------
+  // (the same store path Battle Day's mini-shop uses — see resolvePurchase).
+  // The card shows what the house already holds and, when a slot-limited buy
+  // would be refused, quotes store.duelCanBuy's own reason — so this screen
+  // and the mini-shop can never disagree about the one-attack-one-defense
+  // weekly rule.
+  if (store.getCombatMode() === 'duel') {
+    const held = store.countOwned(buyerId, item.id);
+    const gate = store.duelCanBuy(buyerId, item.id);
+    return `
+      <div class="shop-card" data-card="${esc(item.id)}">
+        <div class="shop-cost-badge">${item.cost} pts</div>
+        ${art}
+        <div class="shop-card-name" title="${esc(item.name)}">${esc(item.name)}</div>
+        ${kindTag}
+        <div class="shop-flavor" title="${esc(item.desc)}">${esc(item.desc)}</div>
+        <div class="shop-card-status">
+          ${held > 0 ? `<div class="shop-bought-badge">×${held} in your armoury</div>` : ''}
+          ${!gate.ok ? `<div class="shop-broken-note">🚫 ${esc(gate.reason)}</div>` : ''}
+        </div>
+        <button type="button" class="shop-buy-btn" data-buy="${esc(item.id)}" ${gate.ok && affordable ? '' : 'disabled'}>
+          ${gate.ok ? 'BUY' : 'SLOT FULL'}
+        </button>
+      </div>`;
+  }
 
   // Shield & (non-mythic) reduce items are both self-buff "defense" purchases:
   // ACTIVE while in effect, rebuy disabled, remaining time shown.
@@ -754,7 +808,7 @@ function pierceNoteHtml(store, target) {
 function confirmModalHtml(store, s) {
   if (!s.confirm) return '';
   const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
-  if (!item || itemIssues(item).length) return '';
+  if (!item || itemIssues(store, item).length) return '';
   const { buyerId, targetId } = s.confirm;
   const buyer = store.HOUSES[buyerId];
   const target = targetId != null ? store.HOUSES[targetId] : null;
@@ -764,7 +818,13 @@ function confirmModalHtml(store, s) {
   let bodyHtml = '';
   let confirmLabel = 'Confirm Purchase';
 
-  if (kind === 'shield') {
+  if (store.getCombatMode() === 'duel') {
+    // Mr. D's rules: every item is banked, whatever its kind — attacks and
+    // defenses wait in the armoury for Battle Day, utilities wait to be used.
+    const held = store.countOwned(buyerId, item.id);
+    const heldNote = held > 0 ? ` <b>${esc(buyer.name)}</b> already holds <b>×${held}</b> in the armoury.` : '';
+    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to add <b>${esc(item.name)}</b> to the armoury — held until it is used on <b>Battle Day</b>.${heldNote}`;
+  } else if (kind === 'shield') {
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to raise the ${esc(item.name)}, blocking incoming attacks for <b>${amount} hour${amount === 1 ? '' : 's'}</b>.`;
   } else if (kind === 'reduce') {
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to activate ${esc(item.name)}, halving incoming damage for <b>${amount} hour${amount === 1 ? '' : 's'}</b>.`;
@@ -855,14 +915,16 @@ function render(s) {
   if (carouselTeardown) { carouselTeardown(); carouselTeardown = null; }
   const buyer = store.getActiveHouse();
   const items = store.getShopItems();
-  const mythic = items.filter((it) => it.mythicOnly && !itemIssues(it).length);
+  const mythic = items.filter((it) => it.mythicOnly && !itemIssues(store, it).length);
 
+  // The shop is open all week — Friday is the battle ritual, not the only
+  // trading day — so the masthead sells the rhythm rather than a day.
   const headerHtml = `
     <div class="shop-header">
       <img class="shop-header-mark" src="images/icon-market.png" alt="" onerror="this.style.visibility='hidden'" />
       <div class="shop-headings">
-        <div class="shop-title font-display"><span class="mh-ink">THE FRIDAY MAGIC SHOP</span></div>
-        <div class="shop-subtitle"><span class="mh-ink">Spend your hoard. Strike your rivals. Guard your points.</span></div>
+        <div class="shop-title font-display"><span class="mh-ink">THE MAGIC SHOP</span></div>
+        <div class="shop-subtitle"><span class="mh-ink">Stock up all week. Settle it on Friday.</span></div>
       </div>
       <span class="shop-header-spacer" aria-hidden="true"></span>
     </div>`;
@@ -878,12 +940,26 @@ function render(s) {
     const buyerId = buyer.id;
     const treasury = store.getTotal(buyerId, 'term');
     const buyable = items.filter((it) => !it.mythicOnly);
+    const duel = store.getCombatMode() === 'duel';
 
-    const offensive = buyable.filter((it) => !itemIssues(it).length && ['attack', 'steal', 'pierce'].includes(it.effect?.kind));
-    const defensive = buyable.filter((it) => !itemIssues(it).length && ['shield', 'reduce'].includes(it.effect?.kind));
-    const wildcards = buyable.filter((it) => !itemIssues(it).length && it.effect?.kind === 'wild');
-    const broken = buyable.filter((it) => itemIssues(it).length);
-    const anyBuyable = offensive.length || defensive.length || wildcards.length || broken.length;
+    // Section grouping follows the ACTIVE rule set: Mr. D's items group by the
+    // slot they occupy in a house's weekly hand (attack/defense/utility),
+    // hit-points items by what their effect does. Broken items always trail.
+    const valid = buyable.filter((it) => !itemIssues(store, it).length);
+    const broken = buyable.filter((it) => itemIssues(store, it).length);
+    const sections = duel
+      ? [
+        ['⚔️ Attacks', valid.filter((it) => (it.slot || 'utility') === 'attack')],
+        ['🛡️ Defenses', valid.filter((it) => (it.slot || 'utility') === 'defense')],
+        ['🔮 Utilities', valid.filter((it) => (it.slot || 'utility') === 'utility')],
+      ]
+      : [
+        ['⚔️ Offensive', valid.filter((it) => ['attack', 'steal', 'pierce'].includes(it.effect?.kind))],
+        ['🛡️ Defensive', valid.filter((it) => ['shield', 'reduce'].includes(it.effect?.kind))],
+        ['🎲 Wildcards', valid.filter((it) => it.effect?.kind === 'wild')],
+      ];
+    sections.push(['⚠️ Unavailable', broken]);
+    const anyBuyable = sections.some(([, list]) => list.length);
 
     bodyHtml = `
       <div class="shop-treasury-row" data-buyer="${buyerId}" style="--tr-accent:${buyer.accent}">
@@ -896,14 +972,12 @@ function render(s) {
           onerror="this.style.visibility='hidden'" />
       </div>
 
+      ${duel ? '<div class="shop-mode-note">One attack and one defense held per house per week — chosen in secret, revealed on Battle Day.</div>' : ''}
+
       ${anyBuyable ? (layout === 'carousel'
-        ? carouselBodyHtml([...offensive, ...defensive, ...wildcards, ...broken], store, s, buyerId)
-        : `
-          ${sectionHtml('⚔️ Offensive', offensive, store, s, buyerId)}
-          ${sectionHtml('🛡️ Defensive', defensive, store, s, buyerId)}
-          ${sectionHtml('🎲 Wildcards', wildcards, store, s, buyerId)}
-          ${sectionHtml('⚠️ Needs Attention', broken, store, s, buyerId)}
-        `) : '<div class="shop-empty">The shop shelves are empty — check back after your teacher stocks it in Admin.</div>'}
+        ? carouselBodyHtml(sections.flatMap(([, list]) => list), store, s, buyerId)
+        : sections.map(([title, list]) => sectionHtml(title, list, store, s, buyerId)).join(''))
+        : '<div class="shop-empty">The shop shelves are empty — check back after your teacher stocks it in Admin.</div>'}
 
       ${mythicSectionHtml(mythic)}
     `;
@@ -1281,7 +1355,7 @@ async function resolvePurchase(s) {
   const store = ctxRef.store;
   const audio = ctxRef.audio;
   const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
-  if (!item || itemIssues(item).length) { s.confirm = null; render(s); return; }
+  if (!item || itemIssues(store, item).length) { s.confirm = null; render(s); return; }
   const { buyerId, targetId } = s.confirm;
   const kind = item.effect.kind;
 
@@ -1306,6 +1380,28 @@ async function resolvePurchase(s) {
     const allowed = await lock.requireUnlock('buy this item');
     if (rootEl !== mountedRootAtStart) return; // shop was unmounted while the PIN pad was open
     if (!allowed) return; // PIN refused — no charge, no sound, no FX, no banner; confirm modal stays open as-is
+
+    // ---- Mr. D's duel rules: ONE purchase path for both screens ------------
+    // This is the exact store sequence Battle Day's mini-shop runs
+    // (battle.js buyMiniShopItem): duelCanBuy gate → store.purchase →
+    // store.addToInventory. Because the gate and both mutations live in the
+    // store, the Magic Shop and the mini-shop can never disagree about what a
+    // house may hold or what a purchase does.
+    if (store.getCombatMode() === 'duel') {
+      const buyer = store.HOUSES[buyerId];
+      const gate = store.duelCanBuy(buyerId, item.id);
+      if (!gate.ok) { s.confirm = null; render(s); showToast(gate.reason); return; }
+      const ok = store.purchase(buyerId, item.cost, item.name);
+      if (!ok) { s.confirm = null; render(s); showToast('Not enough points'); return; }
+      store.addToInventory(buyerId, item.id);
+      audio.sfx('coin');
+      s.confirm = null;
+      s.targetPicker = null;
+      render(s);
+      const held = store.countOwned(buyerId, item.id);
+      showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${held}) — ready for Battle Day! ${item.emoji || '✨'}`);
+      return;
+    }
 
     if (kind === 'wild') { resolveWildPurchase(s, item, buyerId); return; }
 
@@ -1436,9 +1532,21 @@ export default {
         const buyerId = activeHouse.id;
         const itemId = buyBtn.getAttribute('data-buy');
         const item = store.getShopItems().find((i) => i.id === itemId);
-        if (!item || itemIssues(item).length) return;
+        if (!item || itemIssues(store, item).length) return;
         const treasury = store.getTotal(buyerId, 'term');
         if (treasury < item.cost) { showToast('Not enough points'); shakeCard(itemId); return; }
+
+        // Mr. D's rules: slot limits are the STORE's rule (duelCanBuy), the
+        // same gate the Battle Day mini-shop consults — refuse loudly, in the
+        // store's own words, then confirm a plain armoury purchase (no
+        // targets, no instant effects — everything waits for Battle Day).
+        if (store.getCombatMode() === 'duel') {
+          const gate = store.duelCanBuy(buyerId, item.id);
+          if (!gate.ok) { showToast(gate.reason); shakeCard(itemId); return; }
+          s.confirm = { itemId, buyerId, targetId: null };
+          doRender();
+          return;
+        }
 
         const kind = item.effect.kind;
         if (kind === 'wild' && wildRollActive) {
