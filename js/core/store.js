@@ -1818,7 +1818,10 @@ export const store = {
   // awarding compensating points. That matters twice over: the history reads as
   // though the strike never happened (no confusing "+700 Time Turner" line for
   // a class to argue about), and it still works on a house that has since been
-  // frozen, which a positive award would not.
+  // frozen, which a positive award would not. The one exception: loot the
+  // attacker has already SPENT cannot be deleted without driving their total
+  // negative, so that case falls back to an honest compensating deduction —
+  // see useTimeTurner.
   //
   // Kept per house, because the Catapult hits two and either may want to undo.
   recordStrike(houseId, info) {
@@ -1844,8 +1847,25 @@ export const store = {
     let restored = 0;
     for (const id of last.txIds || []) {
       const tx = state.transactions.find((t) => t.id === id);
-      if (tx && tx.houseId === Number(houseId)) restored += Math.abs(tx.delta);
-      store.removeTransaction(id);
+      if (!tx) continue;   // already gone (teacher corrected it by hand) — nothing to undo
+      const removed = store.removeTransaction(id);
+      if (removed) {
+        if (tx.houseId === Number(houseId)) restored += Math.abs(tx.delta);
+        continue;
+      }
+      // The removal was refused: this is the attacker's loot credit, and they
+      // have already SPENT it. Deleting it anyway is what used to happen, and
+      // it drove their total negative — the one number this ledger promises
+      // can never exist. So instead of rewriting history, the ledger records
+      // what actually happens: a deduction, trimmed at zero by addPoints like
+      // every other deduction. The Time Turner still takes the loot back; it
+      // just takes it from what the attacker has LEFT, honestly, on the record.
+      if (tx.delta > 0) {
+        store.addPoints(tx.houseId, -tx.delta, {
+          reason: `Time Turner: ${last.itemName || 'attack'} undone`,
+          tag: 'attack',
+        });
+      }
     }
     if (last.froze) store.thawHouse(houseId);
     store.consumeFromInventory(houseId, 'timeturner');
