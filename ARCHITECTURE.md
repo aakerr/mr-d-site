@@ -21,7 +21,6 @@ js/core/shell.js       — topbar + quick-points panel + accent/theme wiring (sh
 js/core/audio.js       — audio helpers (LEAD-OWNED)
 js/core/lock.js        — optional teacher PIN gate (see "The teacher PIN" below)
 js/core/ambient.js     — per-screen looping background music + crossfade
-js/core/masthead.js    — pure layout helper: centers/fits the Quests & Shop mastheads
 js/core/firstrun.js    — first-run setup wizard (#firstrun-root), re-runnable from Help
 js/core/health.js      — "System check" diagnostics, data-only (help.js renders it)
 js/core/help.js        — in-app Help Wiki (NOT owned by any module agent — do not edit)
@@ -44,8 +43,9 @@ js/core/util.js        — shared small helpers used across modules (see the fil
 js/modules/dashboard.js   js/modules/houses.js    js/modules/potw.js
 js/modules/dice.js        js/modules/battle.js    js/modules/shop.js
 js/modules/quests.js      js/modules/council.js   js/modules/admin.js
-js/modules/wheel.js       — Wheel of Fate, a house-only random picker (dashboard tile,
-                          plain Math.random(), NOT the fate-audited dice path)
+js/modules/wheel.js       — Wheel of Fate: the painted 8-wedge wheel (4 houses, 2 all-
+                          houses, sun/moon) — plain Math.random(), NOT the fate-audited
+                          dice path
 js/integrations/classroom.js   — Google Classroom scaffold, UNWIRED (see below)
 tools/hero-tuner.js     — dev-only overlay: live sliders over the dashboard hero's
                           CSS variables (name/motto/"WELCOME" size, gaps). Nothing it
@@ -418,9 +418,12 @@ suggestion — it is never applied automatically.
   from `main.js`.
 - `ambientFor(moduleId)` / `refreshAmbient()` / `stopAmbient()` / `ambientStatus()`.
 - Tracks are assigned per screen in Admin → Settings → Background music
-  (`store.getSettings().ambient.tracks`, falling back to `CONFIG.AMBIENT_TRACKS`).
-  A screen with no assigned track is silent by design — POTW and Battle Day
-  make their own noise and are excluded from the assignable list.
+  (`store.getSettings().ambient.tracks`, falling back to `CONFIG.AMBIENT_TRACKS`,
+  which ships a full per-screen map — music is ON out of the box; the store's
+  default is `tracks: null`, meaning "use config"). A screen whose track the
+  teacher clears is silent. POTW's row covers its landing screen only: the
+  voyage overlay calls `stopAmbient()` when it opens and `ambientFor('potw')`
+  when it closes, because the voyage makes its own noise.
 - That same `ambient.tracks` map also holds one PSEUDO-SCREEN key,
   `'flyover'` (`FLYOVER_TRACK_KEY` in store.js) — the music that plays under
   Place of the Week's Google Maps 3D flight, shown on the same Admin card as
@@ -439,14 +442,6 @@ suggestion — it is never applied automatically.
   topbar speaker button both live in `shell.js` and write
   `store.updateSettings({ soundEnabled })`; `ambient.js` picks the change up
   via its `store.subscribe`.
-
-### `masthead` (js/core/masthead.js) — pure layout helper
-Not a module, not a singleton with state — a stateless layout function used by
-the Quests and Magic Shop headers to center their title/subtitle/icon/pill
-precisely (subtitle font-size is iteratively scaled to match the title's ink
-width). `fitMastheadWhenReady(parts)` runs it once immediately, once on the
-next animation frame, and once more after `document.fonts.ready` (Cinzel's
-metrics shift once the webfont actually loads).
 
 ### `firstrun` (js/core/firstrun.js) — first-run setup wizard
 A 6-step wizard (Welcome → Backup → Term dates → Houses preview → PIN →

@@ -84,7 +84,7 @@ const CATEGORIES = [
   { id: 'potw',   label: 'Place of the Week',    icon: '🌍' },
   { id: 'quests', label: 'Quests',               icon: '🧭' },
   { id: 'shop',   label: 'Magic Shop & Battle',  icon: '🔮' },
-  { id: 'dice',   label: 'Die of Destiny',       icon: '🎲' },
+  { id: 'dice',   label: 'Dice & the Wheel',     icon: '🎲' },
   { id: 'admin',  label: 'The Admin panel',      icon: '🗝️' },
   { id: 'data',   label: 'Your data & backups',  icon: '💾' },
   { id: 'setup',  label: 'Housekeeping',         icon: '⚙️' },
@@ -104,8 +104,8 @@ const TOPICS = [
     body: `
       <p class="help-lede">If you only ever read one page, read this one.</p>
       <ol class="help-steps">
-        <li><b>Give a house points.</b> Tap the round <b>±</b> button next to the house name at the top of the screen, tap the house, tap <b>+5</b> / <b>+10</b> (or type any amount and tap <b>+ Add</b>).</li>
-        <li><b>Take points away.</b> Same panel — <b>−5</b> / <b>−10</b>, or type an amount and tap <b>− Deduct</b>.</li>
+        <li><b>Give a house points.</b> Tap the round <b>±</b> button next to the house name at the top of the screen, tap the house, tap <b>+50</b> / <b>+100</b> (or type any amount and tap <b>+ Add</b>).</li>
+        <li><b>Take points away.</b> Same panel — <b>−50</b> / <b>−100</b>, or type an amount and tap <b>− Deduct</b>.</li>
         <li><b>Undo a mistake.</b> Award the exact opposite amount with the reason "correction" — the totals come out right and the log shows both. <a href="#" data-help-go="undo-points">Full instructions →</a></li>
         <li><b>Switch class period.</b> Tap the big house name in the middle of the top bar and pick <b>Core 1–4</b> (or <b>All Cores</b> for the whole-school standings screen).</li>
         <li><b>Set up next week's destination.</b> <b>🗝️ Admin → Place of the Week</b>, edit a destination, set <b>Week of</b> to next Monday, <b>Save</b>. <a href="#" data-help-go="potw-schedule">Full instructions →</a></li>
@@ -131,7 +131,7 @@ const TOPICS = [
       </ul>
       <p>There is no separate <b>❓</b> button in the top bar any more — this handbook now lives one tap inside Admin: <b>🗝️ Admin → ❓ Help</b>.</p>
       <h4>The Morning Dashboard (the home screen)</h4>
-      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop and the Die of Destiny.</p>
+      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop, the Die of Destiny and the Wheel of Fate.</p>
     `,
   },
   {
@@ -199,7 +199,7 @@ const TOPICS = [
       <ol class="help-steps">
         <li>Tap the round <b>±</b> button just to the right of the house name.</li>
         <li>Tap the house you are awarding — it starts on the class period you have selected.</li>
-        <li>Tap <b>+5</b> or <b>+10</b>, or type any number up to 9999 in the small box and tap <b>+ Add</b>.</li>
+        <li>Tap <b>+50</b> or <b>+100</b>, or type any number up to 9999 in the small box and tap <b>+ Add</b>.</li>
         <li>Optional: type a <b>Reason</b> before you award. It is saved with the entry and shows up in the log later.</li>
       </ol>
       <p class="help-callout">The reason box clears itself after every award, so the next one does not silently inherit the last label.</p>
@@ -222,7 +222,7 @@ const TOPICS = [
       <ol class="help-steps">
         <li>Tap the round <b>±</b> button in the top bar.</li>
         <li>Tap the house.</li>
-        <li>Tap <b>−5</b> or <b>−10</b>, or type an amount and tap <b>− Deduct</b>.</li>
+        <li>Tap <b>−50</b> or <b>−100</b>, or type an amount and tap <b>− Deduct</b>.</li>
       </ol>
       <p>Deducting is a normal entry in the log, exactly like awarding.</p>
       <h4>Zero is the floor — a house can never go into debt</h4>
@@ -657,10 +657,10 @@ const TOPICS = [
     keywords: 'battle day combat strike victory defeat arena swords ignite hit points hp duel mr d rules mode which switch',
     body: () => {
       const duel = isDuelNow();
-      let tScore = 10;
-      try { tScore = store.getCombat().teacherScore || 10; } catch (e) { tScore = 10; }
+      let tScore = 100;
+      try { tScore = store.getCombat().teacherScore || 100; } catch (e) { tScore = 100; }
       return `
-      <p>Battle Day is a full-screen contest mode. Tap the tile, then tap the big <b>⚔️ BATTLE DAY!</b> button, and the arena opens. It asks <b>who is attacking</b>, then <b>who they are attacking</b>, and lays the two out facing each other with a <b>VS</b> between them — the attacker on the left, the defender on the right. Along the top are a <b>🛒 Magic Shop</b> button (so a house can buy something without leaving the fight) and <b>🏳️ End Battle</b>.</p>
+      <p>Battle Day is a full-screen contest mode. Tap the tile, then tap the big <b>⚔️ BATTLE DAY!</b> button, and the arena opens. It asks <b>who is attacking</b>, then <b>who they are attacking</b>, and lays the two out facing each other with a <b>VS</b> between them — the attacker on the left, the defender on the right. There is no separate shop button: <b>every empty slot on the attacker's card is a door to the Magic Shop</b> — tap an empty attack slot, the locked Bag-of-Holding slot or a not-held utility slot and the shop pop-up opens right there, so a house can buy something without leaving the fight. <b>🏳️ End Battle</b> sits in the middle column, under the VS.</p>
       <p>Across the bottom, in both rule sets, is a <b>👩‍🏫 Teacher scoring</b> row: one chip per house with a <b>+${tScore}</b> and a <b>−${tScore}</b> button. That is you awarding or deducting by hand — it is not a house attack, it spends no items and rolls no dice. It is there so you can settle something on the spot without leaving the arena.${duel ? ' <span class="help-fineprint">That number is set in the Hit-points battle-rules card, which is hidden while Mr. D\'s rules are running — so under Mr. D\'s rules these buttons stay at whatever it was last set to. The <b>±</b> button in the top bar can award any amount at any time.</span>' : ''}</p>
       <p>Battle Day can be run under <b>two completely different rule sets</b>, and only one is ever active at a time:</p>
       <ul class="help-list">
@@ -669,7 +669,7 @@ const TOPICS = [
       </ul>
       <p>Right now, on this computer, Battle Day is set to <b>${duel ? "Mr. D's rules" : 'Hit points'}</b>. Change it any time in <b>🗝️ Admin → ⚔️ Battle Day</b> — switching swaps the Magic Shop's items over too, since each rule set has its own list, and switching back finds your edits to that shop exactly as you left them.</p>
       <p class="help-warn"><b>Switching is not a cosmetic change.</b> As well as swapping the shop over, it <b>empties every house's holdings</b> — anything they had bought and not yet used is gone, in both directions, and it does not come back when you switch back. That is on purpose: an item bought under one rule set means nothing under the other. Your <b>points, the whole log, quests, the planner and every other setting are untouched.</b> If a class has spent real points on items this week, finish the week before switching.</p>
-      <p>To come out, tap <b>🏳️ End Battle</b> at the top right — that takes you back to the "The houses stand ready…" screen, ready to ignite again. (<b>Esc</b> does <i>not</i> close the arena; it only backs out of a pop-up sitting on top of it, such as the Catapult's second-house question. Tapping the crest at the top left leaves for the dashboard as usual.)</p>
+      <p>To come out, tap <b>🏳️ End Battle</b> below the VS in the middle — that takes you back to the "The houses stand ready…" screen, ready to ignite again. (<b>Esc</b> does <i>not</i> close the arena; it only backs out of a pop-up sitting on top of it, such as the Catapult's second-house question. Tapping the crest at the top left leaves for the dashboard as usual.)</p>
       <p>Under Mr. D's rules, ending the battle also makes every house's holdings <b>secret again</b> — anything revealed by a Stone of Seeing or by a strike landing goes back to face-down for next week. What each house owns is not lost, only hidden.</p>
       <p>Everything that happened is in the points log like any other award.</p>
     `;
@@ -743,7 +743,7 @@ const TOPICS = [
         ${!duel ? `<p class="help-warn">Mr. D's rules are <b>not</b> the ones running on this computer right now — Battle Day is currently set to <b>Hit points</b> instead. See <a href="#" data-help-go="battle-hp">Hit points, strikes and prizes</a> for what's actually happening on your screen, or switch back in <b>🗝️ Admin → ⚔️ Battle Day</b>.</p>` : ''}
         <p class="help-lede">This is Mr. D's own game, transcribed from his own document, and it's the rule set Battle Day uses by default.</p>
         <ol class="help-steps">
-          <li><b>Ahead of time, houses shop.</b> A house buys a defense from the Magic Shop and holds it quietly — nobody else knows which one, not even you, unless another house has spent a <b>Stone of Seeing</b> on them. An attack can be bought at any time too, including moments before it is thrown: there is a <b>🛒 Magic Shop</b> button right inside Battle Day, so nobody has to leave the arena to buy something.</li>
+          <li><b>Ahead of time, houses shop.</b> A house buys a defense from the Magic Shop and holds it quietly — nobody else knows which one, not even you, unless another house has spent a <b>Stone of Seeing</b> on them. An attack can be bought at any time too, including moments before it is thrown: inside Battle Day, <b>tapping any empty slot on the attacker's card opens the Magic Shop pop-up</b>, so nobody has to leave the arena to buy something.</li>
           <li><b>A house picks a target and throws an attack.</b> Open Battle Day, choose the attacking house, choose who they are aiming at, and tap the attack item they are spending. Nothing is spent and nobody is struck until you tap that item — picking a target costs nothing, so you can look around the board freely.</li>
           <li><b>If the weapon hits two houses, you choose the second one now.</b> Only <b>The Catapult</b> does this. A panel appears asking who <i>else</i> it hits, showing the two remaining houses. This happens <b>before anything at all is spent</b>, so <b>Cancel — do not use it yet</b> (or <b>Esc</b>) puts you straight back with the Catapult still sitting in its slot and no points moved. <a href="#" data-help-go="duel-items">More about the Catapult →</a></li>
           <li><b>The defender's held defense is revealed.</b> Whatever that house was quietly holding turns up on screen the moment the attack lands — for most of the term this is the only moment anyone finds out what they had. From then on that pairing stays face-up for the rest of the Battle Day.</li>
@@ -936,10 +936,10 @@ const TOPICS = [
     body: `
       <ol class="help-steps">
         <li>Open the <b>Die of Destiny</b> tile.</li>
-        <li>Pick <b>1d6</b>, <b>2d6</b>, <b>1d12</b> or <b>d20</b>.</li>
-        <li>Tap the tray to roll. Real 3D dice tumble and physically settle on a face — the app reads the face they landed on, it does not pick a number and then animate it.</li>
+        <li>Pick <b>1d6</b>, <b>2d6</b>, <b>3d6</b> or <b>d20</b>.</li>
+        <li>Tap <b>ROLL</b>. Real 3D dice tumble and physically settle on a face — the app reads the face they landed on, it does not pick a number and then animate it.</li>
       </ol>
-      <p>1d6, 2d6 and 1d12 are just dice — no points attached, use them for whatever your lesson needs.</p>
+      <p>1d6, 2d6 and 3d6 are just dice — no points attached, use them for whatever your lesson needs.</p>
       <p><b>d20 is the classroom one.</b> It shows an outcome plaque with a prophecy. <a href="#" data-help-go="dice-prophecy">The table →</a></p>
       <p>If the computer cannot do 3D graphics, the dice fall back to a simple spinning number. The result is just as valid.</p>
     `,
@@ -969,6 +969,22 @@ const TOPICS = [
         <p>On a <b>mythic</b> roll (the top of the die) the house gets its points and you also get to grant one <b>Mythic relic</b>, once per roll — provided at least one is currently configured in the shop. ${isDuelNow() ? "Under <b>Mr. D's rules</b> (the active rule set right now), none are, by default — " : ''}<a href="#" data-help-go="shop-mythic">About relics →</a></p>
       `;
     },
+  },
+  {
+    id: 'wheel-how', cat: 'dice', title: 'The Wheel of Fate',
+    keywords: 'wheel of fate spin fortune misfortune sun moon all houses award random picker',
+    body: `
+      <p class="help-lede">The Wheel of Fate is the painted wheel on its own tile — spin it when you want fate, not you, to pick who is blessed today.</p>
+      <p>The wheel has <b>eight wedges</b>: one for each of the four houses, <b>two "all houses" wedges</b>, a <b>☀️ sun</b> and a <b>🌙 moon</b>. Tap <b>SPIN</b> and it lands on one of them:</p>
+      <ul class="help-list">
+        <li><b>A house's wedge</b> — a <b>+50 to them</b> button appears.</li>
+        <li><b>All houses</b> — one button pays <b>+50 to all four</b> at once (a frozen house is skipped, and the card says so).</li>
+        <li><b>☀️ Fortune</b> — the sun smiles: you pick which house receives <b>+100</b>.</li>
+        <li><b>🌙 Misfortune</b> — the moon frowns: you pick which house loses <b>50</b>.</li>
+      </ul>
+      <p><b>Nothing is automatic.</b> The spin only decides the outcome — no points move until you tap the award button, and each spin can pay out exactly once, so a double-tap cannot pay twice. Every award lands in the points log as "Wheel of Fate".</p>
+      <p class="help-fineprint">Unlike the d20, the wheel is a plain, uniform random draw — it is not wired into the fate-audited dice path, because it is not a gamble a house chose to take, just fate picking a name. If the Teacher PIN is on, awarding asks for it like any other points change.</p>
+    `,
   },
 
   // ======================= ADMIN =======================

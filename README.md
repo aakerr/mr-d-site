@@ -276,13 +276,15 @@ and what keeps it SAFE:
   date); **Quiet mode** — one switch that mutes sound effects and freezes
   ambient/seasonal animation for a test day or quiet work time; Google Maps
   API key (leave blank to use the bundled key, paste your own if you prefer)
-- **Background music**: one card assigns a quiet looping track (drop files in
-  `/music`) to any screen except Place of the Week and Battle Day, which make
-  their own noise, **plus a Flyover slot** — the music that plays under Place
-  of the Week's Google Maps 3D flight. Flyover music is a single, global
-  choice here, not set per destination the way it used to be. A master
-  volume slider and the global mute (`M` key, or the speaker icon in the
-  top bar) sit alongside all of it
+- **Background music**: one card per screen assigns a quiet looping track
+  (drop files in `/music`), **plus a Flyover slot** — the music that plays
+  under Place of the Week's Google Maps 3D flight. Flyover music is a single,
+  global choice here, not set per destination the way it used to be. Music
+  ships **on**, with every screen pre-assigned a bundled track
+  (`CONFIG.AMBIENT_TRACKS` in js/config.js) — Place of the Week's row covers
+  its landing screen only; the voyage itself silences the loop and makes its
+  own noise. A master volume slider and the global mute (`M` key, or the
+  speaker icon in the top bar) sit alongside all of it
 - **Sound effects**: swap any of the app's built-in beeps (or the spoken
   Battle Day line) for your own recording — drop an `.mp3`/`.m4a` into the
   `sfx` folder and point a row at it; nothing here is included in a backup
@@ -333,7 +335,7 @@ The core of classroom management.
 - **Top Bar ± Button**: a small "±" sits in the top bar itself (not a
   separate floating button anymore); tap it to open the quick-points dropdown
   - Select a house
-  - **Quick buttons**: +5 / −5 / +10 / −10, or type any amount (1–9999) and
+  - **Quick buttons**: +50 / −50 / +100 / −100, or type any amount (1–9999) and
     tap Add/Deduct
   - **Reason** (optional): Why they earned/lost points
 - **Transaction Log**: Every point change is logged with timestamp, reason,
@@ -500,7 +502,7 @@ touches points, the ledger, quests, the planner, or any other setting.
   prize in points and the loser's point total does not change at all
 - **"🔮 Open Magic Shop"** button jumps straight to the shop to stock up on a
   weapon for next time, or buy a defense before this duel
-- **Teacher scoring row**: a separate, always-visible ±10 per house for you to
+- **Teacher scoring row**: a separate, always-visible ±100 per house for you to
   award or deduct points directly — labeled "not a house attack." This is the
   one path on this screen that still moves points immediately rather than
   through HP and a battle prize; a deduction here still respects that house's
@@ -582,32 +584,40 @@ Classroom d20 roller with a 3D physics simulation and outcome table.
 **d20 Prophecy Table**:
 | Roll | Outcome | Effect | Button Award |
 |------|---------|--------|---------------|
-| 1 | 💀 **CATASTROPHE** | −10 points | Tap to award |
+| 1 | 💀 **CATASTROPHE** | −100 points | Tap to award |
 | 2–5 | 🌧️ **Misfortune** | Nothing; teacher picks next challenger | No auto-award |
 | 6–9 | 😐 **Fate is Neutral** | Nothing happens | No auto-award |
-| 10–14 | ✨ **Small Favor** | +2 points | Tap to award |
-| 15–19 | 🔥 **Fortune Smiles** | +5 points | Tap to award |
-| 20 | 👑 **MYTHIC TRIUMPH** | +20 points **+ choice of a Mythic Relic** | Tap for +20 |
+| 10–14 | ✨ **Small Favor** | +20 points | Tap to award |
+| 15–19 | 🔥 **Fortune Smiles** | +50 points | Tap to award |
+| 20 | 👑 **MYTHIC TRIUMPH** | +200 points **+ choice of a Mythic Relic** | Tap for +200 |
 
 **Awarding Points**:
 - Tap the outcome button to apply the roll result to the active house
 - One award per roll (new roll re-enables awarding)
-- For Mythic Triumph (20): after you award the +20, the screen itself offers a
+- For Mythic Triumph (20): after you award the +200, the screen itself offers a
   row of **Mythic Relic** cards to tap — any shop item flagged "Mythic reward
   only" in Admin (there's no separate trip to the Magic Shop needed). If no
-  item is flagged that way, the house just keeps the 20 points
+  item is flagged that way, the house just keeps the 200 points
 - Rolls are genuinely uniform 1–20 — nothing behind the scenes weights the
   outcome
 
 ### Wheel of Fate (🎡)
-A four-wedge spinner for the tie-breaks and "who goes first" calls a teacher
-already handled with a pointing finger — **house-level only**, not a student
-picker; this app has no student roster to draw from. Tap **SPIN**, the disc
-lands on one of the four houses, and a **+5 to them** quick-award button
-appears (logged to the ledger as "Wheel of Fate"). Unlike the d20, the pick
-is a plain, uniform random draw — it isn't wired into the fate-audited dice
-path the Prophecy Table uses, because it isn't gambling for points, just
-picking a house.
+The owner's painted wheel (wheel-outside.png frame + wheel-center.png disc,
+stacked 1:1 on the same canvas, over wheel-background.jpg) — **house-level
+only**, not a student picker; this app has no student roster to draw from.
+The disc has **eight wedges**: one per house, two **all-houses** wedges, a
+**☀️ sun** and a **🌙 moon**. Tap **SPIN**; the disc spins on its measured
+centre and lands on one of them:
+- **A house** → a **+50 to them** quick-award button appears
+- **All houses** → one button pays **+50 to all four** (frozen houses are
+  skipped, and the card says so)
+- **☀️ Fortune** → teacher picks a house to receive **+100**
+- **🌙 Misfortune** → teacher picks a house to lose **50**
+
+One award per spin; every award logs to the ledger as "Wheel of Fate".
+Unlike the d20, the pick is a plain, uniform random draw — it isn't wired
+into the fate-audited dice path the Prophecy Table uses, because it isn't
+gambling for points, just fate picking a name.
 
 ### Teacher PIN (Lock) 🔒
 Off by default. Turn it on in Admin → 🛡️ Data & Safety and it puts a short PIN in
@@ -634,10 +644,11 @@ never gated.
   also means anyone holding that backup file can read it)
 
 ### Ambient Music & Master Mute
-Every screen except Place of the Week and Battle Day (which make their own
-noise) can have a quiet looping background track, assigned in Admin →
-🎨 Look & Sound → Background music. Tracks crossfade smoothly when you switch
-screens, and there's one master volume plus a hard on/off:
+Every screen has a quiet looping background track, pre-assigned out of the
+box and re-assignable in Admin → 🎨 Look & Sound → Background music. (Place
+of the Week's track plays on its landing screen only — the voyage overlay
+silences the loop and makes its own noise.) Tracks crossfade smoothly when
+you switch screens, and there's one master volume plus a hard on/off:
 - Press **`M`** anywhere in the app to mute or unmute everything instantly
   (ignored while you're typing in a text field)
 - Or tap the 🔊/🔇 speaker icon in the top bar
@@ -665,7 +676,7 @@ images/class-shield.png
 ```
 
 ### Module Icons
-Each screen has an optional icon (topbar/masthead and Admin tab):
+Each screen has an optional icon (dashboard tile and Admin tab):
 ```
 images/icon-quest.png
 images/icon-market.png  (shop)

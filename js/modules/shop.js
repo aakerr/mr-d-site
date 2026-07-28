@@ -202,21 +202,6 @@ function injectStyles() {
       url('images/magic-shop.jpg') center 30%/cover no-repeat fixed,#0b0f19;}
   /* The wizard mark sits OUTSIDE the centred text block, so the title and
      subtitle centre on each other rather than on "icon + title". */
-  /* The TEXT centres on the screen; the mark hangs to its left and an equal
-     spacer on the right keeps that true. The mark is allowed to look
-     off-balance — that is the intended composition. */
-  .shop-header{display:flex;align-items:flex-start;justify-content:center;
-    gap:clamp(.5rem,1.4vw,1.1rem);margin-bottom:1rem;}
-  .shop-header-mark,.shop-header-spacer{width:clamp(2.2rem,5.4vw,3.6rem);flex:0 0 auto;}
-  .shop-header-mark{height:auto;filter:drop-shadow(0 4px 14px rgba(167,139,250,.5));}
-  .shop-headings{text-align:center;}
-  .mh-ink{display:inline-block;white-space:nowrap;}
-  .shop-title{font-family:'Cinzel',Georgia,serif;font-weight:800;
-    font-size:clamp(1.4rem,3.4vw,2.4rem);color:${PURPLE};letter-spacing:.05em;
-    text-shadow:0 0 26px ${PURPLE_SOFT};}
-  .shop-subtitle{color:#c4b5fd;font-style:italic;font-weight:600;font-size:clamp(1.05rem,2.7vw,1.7rem);
-    margin-top:.05rem;line-height:1.05;}
-
   /* treasury pill — the ONLY house shown is whatever's active in the top bar,
      so this is a wide identity pill (crest + name + total) rather than a picker. */
   /* Shields flank a points-only pill; the pill spans the width of the heading

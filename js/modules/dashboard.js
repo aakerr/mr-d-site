@@ -170,7 +170,7 @@ html[data-mode="light"] .dash-hw-badge {
 // module id -> PNG icon (368x370, transparent). Unknown ids fall back to
 // their registered emoji so the plugin/tile pattern keeps working.
 const MODULE_ICON_MAP = {
-  // Records' tile shows the same scroll art as the masthead one tap away —
+  // Records' tile shows the same scroll art as the Records screen itself —
   // the tile-emoji/screen-art mismatch was the exact class of thing the
   // owner asked to be hunted down (see the Battle Day mark).
   houses: 'images/icon-points.png',

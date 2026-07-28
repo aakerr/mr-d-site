@@ -135,25 +135,6 @@ function injectStyles() {
       url('images/quest-hall.jpg') center 25%/cover no-repeat fixed,var(--color-page,#0b0f19);
     color:var(--color-text,#f9fafb);overflow:hidden;box-sizing:border-box;}
 
-  /* ---- masthead (mirrors the Magic Shop header) ---- */
-  /* The quest mark sits OUTSIDE the centred text block, so the title and
-     subtitle centre on each other rather than on "icon + title". */
-  /* TEXT centres on the screen; the scroll mark hangs left with a matching
-     spacer on the right so the centring is of the text, not "icon + text". */
-  .quest-head{flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;
-    gap:clamp(.5rem,1.4vw,1.1rem);}
-  .quest-headings{text-align:center;}
-  .mh-ink{display:inline-block;white-space:nowrap;}
-  .quest-head-icon,.quest-head-spacer{width:clamp(2.2rem,5.4vw,3.6rem);flex:0 0 auto;}
-  .quest-head-icon{height:auto;object-fit:contain;
-    filter:drop-shadow(0 4px 14px var(--accent-soft,rgba(245,158,11,.5)));}
-  .quest-head-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
-    font-size:clamp(1.4rem,3.4vw,2.4rem);line-height:1.1;color:var(--accent,#f59e0b);
-    text-shadow:0 0 26px var(--accent-soft,rgba(245,158,11,.4));}
-  /* Scaled so the tagline spans roughly the same width as the title above it. */
-  .quest-head-sub{color:#fcd34d;font-style:italic;font-weight:600;
-    font-size:clamp(1.05rem,2.7vw,1.7rem);margin-top:.05rem;line-height:1.05;}
-
   /* ---- ACTIVE QUEST hero ---- */
   .quest-hero{flex-shrink:0;position:relative;display:flex;gap:clamp(12px,2vw,28px);flex-wrap:wrap;
     border:3px solid var(--h,#f59e0b);border-radius:1.5rem;padding:clamp(12px,2vh,24px) clamp(14px,2vw,28px);
@@ -256,15 +237,12 @@ function injectStyles() {
   /* And the same again between the header row and the first row of cards. */
   .quest-grid,.car-wrap{margin-top:calc(1.1rem - var(--bgap));}
   .quest-board-head{flex-shrink:0;display:flex;align-items:center;gap:clamp(8px,1.2vw,18px);flex-wrap:wrap;}
-  /* Its own class, NOT .quest-head-spacer: that one is a fixed-width mirror of
-     the masthead's scroll icon and must stay fixed or the title stops being
-     centred. Here the job is the opposite — eat the slack so the sort control
-     lands on the grid's right edge instead of floating mid-row. */
+  /* Eats the slack so the sort control lands on the grid's right edge
+     instead of floating mid-row. */
   .quest-head-push{flex:1 1 auto;min-width:0;}
   .quest-board-title{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.05em;
     font-size:clamp(1.1rem,2.6vh,1.8rem);color:var(--color-text,#e5e7eb);}
-  /* Same em-relative mark as the masthead's scroll icon, sized off this
-     title's own font-size so it tracks the mobile override below for free. */
+  /* Em-relative mark, sized off this title's own font-size. */
   .quest-board-mark{height:1.1em;width:auto;max-width:none;object-fit:contain;
     display:inline-block;vertical-align:-0.22em;margin-right:.3em;}
   .quest-board-count{color:var(--color-text-soft,#9ca3af);font-weight:700;font-size:clamp(1rem,1.8vh,1.2rem);}
@@ -300,7 +278,7 @@ function injectStyles() {
      carousel mode, where there is no grid to match. */
   .quest-hero,.quest-hero-empty,.quest-lockbar,.quest-board-head,.quest-deeds{
     width:var(--board-w,100%);margin-left:auto;margin-right:auto;}
-  /* One card-gap under the masthead too, so the rhythm above the active-quest
+  /* One card-gap at the top too, so the rhythm above the active-quest
      field matches the rhythm below it. */
   .quest-hero,.quest-hero-empty{margin-top:calc(1.1rem - var(--rgap));}
   .quest-card{display:flex;flex-direction:column;gap:clamp(4px,.7vh,10px);border-radius:1.1rem;
@@ -483,7 +461,6 @@ function injectStyles() {
      darker, so it still reads on a WHITE card instead of a near-black one.
      Values chosen and contrast-checked against the actual light-mode
      background each one sits on (>=4.5:1, most well clear of it). */
-  html[data-mode="light"] .quest-head-sub{color:#92400e;}
   html[data-mode="light"] .quest-lockbar{color:#92400e;}
   html[data-mode="light"] .quest-lockbar.quest-lockbar-info{color:#1e40af;}
   html[data-mode="light"] .quest-deed-pts{color:#166534;}
@@ -500,22 +477,14 @@ function injectStyles() {
     .quest-hero,.quest-hero.quest-pop,.quest-modal,.quest-modal-bg,.quest-toast,.quest-fly{animation:none;}
   }
 
-  /* ---- 1280x720 smartboards: masthead + hero were costing ~390px combined,
-     leaving almost none of the 644px module area for the quest cards. Trim the
-     chrome that's nice-to-have (masthead scale, hero padding/sizes, board/deeds
-     chrome) so at least one full row of cards is visible without page scroll.
-     Text stays >=14px (0.875rem) and every button stays >=48px (touch). The
-     masthead sizes below only change what the CSS proposes — masthead.js still
-     measures the (now smaller) title ink and fits the subtitle/pill to match,
-     so nothing here fights the fitter. ---- */
+  /* ---- 1280x720 smartboards: the hero + chrome were costing most of the
+     644px module area. Trim the nice-to-have chrome (hero padding/sizes,
+     board/deeds chrome) so at least one full row of cards is visible without
+     page scroll. Text stays >=14px (0.875rem) and every button stays >=48px
+     (touch). ---- */
   @media (max-height: 800px) {
     .quest-root{--rgap:clamp(5px,.9vh,9px);
       padding:clamp(5px,.9vh,9px) clamp(10px,1.6vw,20px) clamp(6px,1vh,10px);}
-
-    /* masthead: smaller mark, tighter title (subtitle/pill scale to match) */
-    .quest-head{gap:clamp(.35rem,.9vw,.6rem);}
-    .quest-head-icon,.quest-head-spacer{width:clamp(1.4rem,3.2vw,1.9rem);}
-    .quest-head-title{font-size:clamp(1rem,2.2vw,1.4rem);}
 
     /* Active-quest hero. Padding matches the CARDS exactly so the field reads
        as the same family, and the row gaps are the card's gaps — the panel was
