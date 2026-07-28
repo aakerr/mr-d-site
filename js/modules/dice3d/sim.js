@@ -481,6 +481,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
   let rollStart = 0;
   let settleResolve = null;
   let settleTimer = null;
+  let settlePending = null;  // resolver parked in the anticipation beat (see settle/dispose)
   let pauseAt = 0;
   const fateStats = { targeted: 0, hits: 0 };
 
@@ -694,8 +695,12 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     // so a later roll can never resolve this promise with the wrong values.
     const resolve = settleResolve;
     settleResolve = null;
+    // Parked where dispose() can still reach it — a caller is awaiting this
+    // resolver through the whole anticipation beat, and losing it here would
+    // strand them exactly like losing settleResolve mid-tumble.
+    settlePending = resolve;
     clearTimeout(settleTimer);
-    settleTimer = setTimeout(() => { if (resolve) resolve(results); }, ROLL.settleAnticipationMs);
+    settleTimer = setTimeout(() => { settlePending = null; if (resolve) resolve(results); }, ROLL.settleAnticipationMs);
   }
 
   // --- render loop (render-on-demand; idles when settled) -----------------
@@ -766,6 +771,15 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     rafId = null;
     clearTimeout(settleTimer);
     settleTimer = null;
+    // A caller can still be awaiting roll() right now — mid-tumble
+    // (settleResolve) or in the settle-anticipation beat (settlePending).
+    // Dropping either strands that await forever, and the strike it was
+    // driving with it. Resolve with null: the callers read null as
+    // "cancelled" and stand down cleanly.
+    const abandoned = settleResolve || settlePending;
+    settleResolve = null;
+    settlePending = null;
+    if (abandoned) abandoned(null);
     canvas.style.transform = '';
     ro.disconnect();
     clear();

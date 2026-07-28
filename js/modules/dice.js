@@ -312,6 +312,8 @@ async function performRoll(el) {
 
   rollInProgress = false;
   setRollEnabled(el, true);
+  // null = cancelled (sim disposed mid-roll by unmount, or a roll was already
+  // in flight). The per-roll flags were reset above, so just stand down.
   if (!results) return;
 
   if (mode === 'd20') {

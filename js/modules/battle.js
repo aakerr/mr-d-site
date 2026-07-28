@@ -2017,6 +2017,9 @@ function plainRoll(n, sides) {
 // Rolls `item`'s dice for `house`, live on screen, and resolves with the
 // total the class watched land. Never rolled in software and animated as
 // something else — this total is what gets passed to applyDuelAttack.
+// Resolves null when the roll was CANCELLED under it (the overlay torn down
+// by unmount or End Battle mid-tumble) — the caller must treat that as "no
+// strike", never as a roll of zero.
 async function rollItemDice(item, house, cap = null) {
   const store = ctxRef.store;
   const { n, sides } = store.parseDice(item.effect.dice);
@@ -2056,7 +2059,9 @@ async function rollItemDice(item, house, cap = null) {
   // already tumbling before anyone had found them on the board. Let them sit in
   // the tray for a beat first — the room looks at the dice, THEN they go.
   if (!prefersReducedMotion()) await delay(DUEL2_PRE_ROLL_MS);
-  if (!diceSim) return { ...plainRoll(n, sides), label: item.effect.dice || '1d6' };
+  // Gone during the beat means closeDiceOverlay ran under us (unmount or End
+  // Battle) — that is a cancellation, not a cue to roll invisible dice.
+  if (!diceSim) return null;
 
   let rolls = [];
   let label = `${n}d${sides}`;
@@ -2065,11 +2070,14 @@ async function rollItemDice(item, house, cap = null) {
       // 1d6, 2d6 and 3d6 are all real tray modes now — every die leaves the
       // hand together. 3d6 used to roll as 2d6 then a lone d6, which split the
       // loudest moment of his game into two beats.
+      // A null result is the sim disposed mid-roll (see sim.dispose) — cancel.
       const results = await diceSim.roll(`${n}d6`);
-      rolls = (results || []).map((r) => r.value);
+      if (results == null) { closeDiceOverlay(); return null; }
+      rolls = results.map((r) => r.value);
     } else if (sides === 20 && n === 1) {
       const results = await diceSim.roll('d20');
-      rolls = (results || []).map((r) => r.value);
+      if (results == null) { closeDiceOverlay(); return null; }
+      rolls = results.map((r) => r.value);
     } else {
       // Not a shape the 3D sim can physically render (e.g. a teacher-edited
       // spec like "4d6") — still an honest uniform roll, just without dice.
@@ -2244,7 +2252,10 @@ async function resolveDuelSequence(challenger, target, item, preview, second = n
     // Pass the defender's purse so the tray can show what will actually be taken
     // rather than a number the zero floor is about to trim behind the scenes.
     const roll = await rollItemDice(item, challenger, store.getTotal(target.id, 'term'));
-    if (!rootEl) return;
+    // A null roll was cancelled under us — nothing applies, the item stays in
+    // the armoury (applyDuelAttack is the only thing that spends it and it
+    // never runs), and strikeDuel's finally resets `resolving`.
+    if (!roll || !rootEl) return;
 
     // Step 5 — the points are applied, using the exact total the class watched land.
     const out = store.applyDuelAttack({ attackerId: challenger.id, targetId: target.id, itemId: item.id, rolled: roll.total });
