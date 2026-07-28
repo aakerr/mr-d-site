@@ -2850,8 +2850,10 @@ function renderSettings() {
 
 // ----- background music (quiet per-screen ambient loops) -------------------
 
-// Screens a teacher would plausibly want music on. Place of the Week plays
-// its own flight music and presentation audio, so it's deliberately left out.
+// Screens a teacher would plausibly want music on. Place of the Week takes no
+// background loop — its video and presentation carry the room — so it's
+// deliberately left out here; its flight music is a slot of its own, appended
+// after these rows (see FLYOVER_SLOT below).
 // Battle Day IS assignable — it just plays under the battle, and the opening
 // voice line still comes through on top of it. Reads the live module registry
 // when available so a future module shows up here automatically; falls back
@@ -2866,6 +2868,21 @@ const AMBIENT_SCREENS_FALLBACK = [
   { id: 'dice',      label: 'Die of Destiny' },
   { id: 'battle',    label: 'Battle Day' },
 ];
+
+// The one row here that isn't a screen: the music under Place of the Week's
+// 3D flight. It used to be chosen per destination inside the POTW editor, so
+// "where do I change the music?" had two different answers depending on which
+// music you meant — the owner asked for one place, and this is it. Place of
+// the Week plays this itself, at full volume for the 27 seconds of the flight,
+// which is why the row carries no per-screen level and doesn't follow the
+// ambience switch above. Blank means the track that ships with the app.
+// The id is the pseudo-screen key the choice is stored under — it must stay
+// equal to store.FLYOVER_TRACK_KEY, which is what potw.js reads.
+const FLYOVER_SLOT = {
+  id: 'flyover',
+  label: 'Flyover — Place of the Week',
+  standalone: true,
+};
 
 // The teacher's actual files in /music, as of this build. A static site can't
 // list a directory, so this is a hard-coded convenience list for the
@@ -3000,17 +3017,21 @@ function stopMusicPreview() {
 function previewMusicTrack(screen) {
   stopMusicPreview();
   showMusicError(screen, '');
-  const input = rootEl.querySelector(`.admin-music-path[data-screen="${screen}"]`);
-  const src = input ? input.value.trim() : '';
-  if (!src) { showMusicError(screen, 'Pick or type a file first.'); return; }
   const store = ctxRef.store;
+  const isFlyover = screen === FLYOVER_SLOT.id;
+  const input = rootEl.querySelector(`.admin-music-path[data-screen="${screen}"]`);
+  // A blank flyover row still plays something — the bundled default — so
+  // auditioning it should play that, not scold the teacher for an empty field.
+  const src = (input ? input.value.trim() : '') || (isFlyover ? store.getFlyoverTrack() : '');
+  if (!src) { showMusicError(screen, 'Pick or type a file first.'); return; }
   const ambient = store.getAmbient();
   // Preview at the screen's own level (relative to master) when previewing
   // the track that's actually assigned there, so the audition matches reality.
+  // The flyover ignores both — Place of the Week plays it at full volume.
   const entry = screenTrackEntry(ambient.tracks, screen);
   const gain = entry.src === src ? entry.volume : 1;
   const audio = new Audio(src);
-  audio.volume = Math.min(1, Math.max(0, (Number(ambient.volume) || 0) * gain));
+  audio.volume = isFlyover ? 1 : Math.min(1, Math.max(0, (Number(ambient.volume) || 0) * gain));
   const fail = () => {
     if (musicPreview && musicPreview.el === audio) musicPreview = null;
     showMusicError(screen, "Couldn't play that file — check the name and that it's in /music.");
@@ -3030,16 +3051,28 @@ function renderMusicCard() {
   const screens = ambientScreens();
   const volPct = Math.round((Number(ambient.volume) || 0) * 100);
 
-  const rows = screens.map((sc) => {
+  // Every screen, then the flyover — one card, every piece of background music
+  // in the app, in the order the teacher meets them.
+  const rows = screens.concat([FLYOVER_SLOT]).map((sc) => {
     const entry = screenTrackEntry(ambient.tracks, sc.id);
     const cur = entry.src;
     const screenVolPct = Math.round(entry.volume * 100);
     const options = ['<option value="">Pick a known file…</option>']
       .concat(files.map((f) => `<option value="${esc(f)}"${f === cur ? ' selected' : ''}>${esc(f)}</option>`))
       .join('');
-    const caveat = sc.id === 'battle'
-      ? '<div class="admin-mini admin-music-caveat">⚔️ Plays under the battle — the opening voice line still comes through.</div>'
-      : '';
+    let caveat = '';
+    if (sc.id === 'battle') {
+      caveat = '<div class="admin-mini admin-music-caveat">⚔️ Plays under the battle — the opening voice line still comes through.</div>';
+    } else if (sc.standalone) {
+      caveat = `<div class="admin-mini admin-music-caveat">🌍 Plays under the flight to this week's place, from the “Fly to” tap until the presentation opens — aim for a track around 30 seconds. It plays at full volume rather than under the ambience settings above, so it needs no level of its own. Leave it blank and the flight uses the track that ships with the app (<code>${esc(CONFIG.POTW_FLYOVER_DEFAULT || '')}</code>).</div>`;
+    }
+    // The flyover has no per-screen level: Place of the Week plays it itself,
+    // at full volume, so a slider here would move a number nobody reads.
+    const volRow = sc.standalone ? '' : `
+        <div class="admin-music-vol-row">
+          <label class="admin-flabel admin-music-vol-label" for="admin-music-vol-${sc.id}">Level on this screen — <span id="admin-music-vol-num-${sc.id}">${screenVolPct}%</span> <span class="admin-faint">(relative to the master volume above)</span></label>
+          <input id="admin-music-vol-${sc.id}" class="admin-input admin-music-screen-volume" data-screen="${sc.id}" type="range" min="0" max="100" step="1" value="${screenVolPct}" aria-label="Level on this screen for ${esc(sc.label)}"${cur ? '' : ' disabled'} />
+        </div>`;
     return `
       <div class="admin-music-row">
         <div class="admin-music-name">${esc(sc.label)}</div>
@@ -3049,10 +3082,7 @@ function renderMusicCard() {
           <button class="admin-btn admin-btn-sm" data-action="music-preview" data-screen="${sc.id}">▶ Preview</button>
           <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="music-clear" data-screen="${sc.id}">Clear</button>
         </div>
-        <div class="admin-music-vol-row">
-          <label class="admin-flabel admin-music-vol-label" for="admin-music-vol-${sc.id}">Level on this screen — <span id="admin-music-vol-num-${sc.id}">${screenVolPct}%</span> <span class="admin-faint">(relative to the master volume above)</span></label>
-          <input id="admin-music-vol-${sc.id}" class="admin-input admin-music-screen-volume" data-screen="${sc.id}" type="range" min="0" max="100" step="1" value="${screenVolPct}" aria-label="Level on this screen for ${esc(sc.label)}"${cur ? '' : ' disabled'} />
-        </div>
+        ${volRow}
         ${caveat}
         <div class="admin-music-error" id="admin-music-err-${sc.id}" style="display:none"></div>
       </div>`;
@@ -3081,7 +3111,7 @@ function renderMusicCard() {
 
       <div class="admin-music-list">${rows}</div>
 
-      <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week plays its own flight music and presentation audio, so it doesn't take background music.</div>
+      <div class="admin-mini" style="margin-top:12px">🌍 Place of the Week takes no looping background music of its own — its intro video and your presentation carry the room — but its flight music is the <b>Flyover</b> row above.</div>
     </div>`;
 }
 
@@ -5357,7 +5387,11 @@ function onClick(e) {
       store.setAmbientTrack(screen, null);
       showMusicError(screen, '');
       renderBody({ force: true });
-      toast('Track cleared.');
+      // Clearing a screen leaves it silent; clearing the flyover can't — the
+      // flight always has music — so say what it actually went back to.
+      toast(screen === FLYOVER_SLOT.id
+        ? `Flyover music back to the one that ships with the app (${store.getFlyoverTrack()}).`
+        : 'Track cleared.');
       break;
     }
     // sound effects (teacher recordings vs. built-in synth cues)

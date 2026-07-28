@@ -329,6 +329,13 @@ const LAYOUT_SCREENS = {
 };
 const DEFAULT_LAYOUT = 'grid';
 
+// Place of the Week's flight music rides in the ambient `tracks` map under this
+// pseudo-screen key, so the teacher picks it in Admin → Background music next
+// to every other piece of music in the app. It is deliberately NOT a screen:
+// js/core/ambient.js only ever looks a track up by module id, and no module is
+// called 'flyover', so nothing plays it as a background loop by accident.
+const FLYOVER_TRACK_KEY = 'flyover';
+
 
 function defaultQuestCatalog() {
   // Starter catalog — points scale with effort and benefit to class/school.
@@ -2153,6 +2160,23 @@ export const store = {
     const tracks = { ...cur.tracks };
     if (src) tracks[moduleId] = src; else delete tracks[moduleId];
     return store.updateAmbient({ tracks });
+  },
+
+  FLYOVER_TRACK_KEY,
+
+  // The music under Place of the Week's 3D flight. One track for every
+  // destination — it used to be chosen per place inside the POTW editor, which
+  // meant the answer to "where do I change the music?" depended on which music
+  // you meant. Blank (the normal case) means the track that ships with the app.
+  // The entry takes either shape the ambient map allows: 'music/x.mp3' or
+  // { src, volume } — the per-screen volume is meaningless here, because the
+  // flight plays its music at full volume, so only the src is read.
+  getFlyoverTrack() {
+    const raw = (store.getAmbient().tracks || {})[FLYOVER_TRACK_KEY];
+    const src = raw && typeof raw === 'object' ? raw.src : raw;
+    return typeof src === 'string' && src.trim()
+      ? src.trim()
+      : (CONFIG.POTW_FLYOVER_DEFAULT || '');
   },
 
   // ----- houses (teacher-editable: names, mottos, colours, artwork) -----
