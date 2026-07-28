@@ -45,6 +45,23 @@ const STYLE = `
 .hse-pill-total { font-weight: 800; font-size: 1.25rem; line-height: 1; }
 .hse-pill[data-on="false"] .hse-pill-total { color: var(--color-text-soft, #9ca3af); }
 
+/* 7.5 shared frost language — badge + subtle ice-blue tint + a thaw-day
+   label, the same three pieces on every prominent house identity app-wide
+   (dashboard standings/hero, Council's podium, these Records tabs, Battle
+   Day's duel cards). Colours match battle.js's existing (until now unused)
+   .duel-def-frozen ice-blue so a frozen house reads as ONE indicator, not a
+   different look per screen. .hse-frost-tint only changes background, never
+   min-height/padding — a frozen pill stays the same height as its
+   neighbours. Duplicated per module rather than pulled into a shared core
+   file — the pattern this app already uses for cross-module CSS (see
+   .acc-text just above). */
+.hse-frost-tint { background: rgba(30,64,175,0.22) !important; }
+.hse-frost-badge {
+  display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.7rem; font-weight: 800;
+  padding: 0.1rem 0.5rem; border-radius: 999px; white-space: nowrap;
+  background: rgba(96,165,250,0.22); border: 1px solid rgba(96,165,250,0.55); color: #bfdbfe;
+}
+
 /* A house's accent is an IDENTITY colour (crest, swatch, dot, bar, border) —
    not automatically a safe TEXT colour. Dark mode's cards are dark enough
    that the accent reads fine as foreground text; in light mode the card
@@ -430,14 +447,22 @@ function renderHeader(store, s) {
       <span class="hse-pill-total ml-1 acc-text" style="${on('all') ? '--acc:#f59e0b' : ''}">${classTotal}</span>
     </button>`;
 
-  const housePills = houses.map((h) => `
-    <button type="button" class="hse-pill" data-scope="${h.id}" data-on="${on(h.id)}"
+  const housePills = houses.map((h) => {
+    // 7.5 — fail-soft: getFreezeInfo is brand new, so a missing/throwing
+    // store method just means no frost, i.e. exactly today's pill.
+    let frost = null;
+    try { frost = store.getFreezeInfo ? store.getFreezeInfo(h.id) : null; } catch (e) { frost = null; }
+    const frozen = !!(frost && frost.frozen);
+    return `
+    <button type="button" class="hse-pill ${frozen ? 'hse-frost-tint' : ''}" data-scope="${h.id}" data-on="${on(h.id)}"
       style="--hse-acc:${h.accent}; --hse-soft:${h.accentSoft}; ${on(h.id) ? `border-color:${h.accent};` : ''}"
       aria-pressed="${on(h.id)}">
       ${houseImg(h, 'h-9 w-auto object-contain shrink-0')}
       <span class="hse-pill-name acc-text" style="--acc:${h.accent}">${escapeHtml(h.name)}</span>
+      ${frozen ? `<span class="hse-frost-badge">❄️ ${escapeHtml(frost.label)}</span>` : ''}
       <span class="hse-pill-total acc-text" style="${on(h.id) ? `--acc:${h.accent}` : ''}">${store.getTotal(h.id, 'term')}</span>
-    </button>`).join('');
+    </button>`;
+  }).join('');
 
   return `
     <div class="hse-in flex items-center gap-4 flex-wrap shrink-0">
