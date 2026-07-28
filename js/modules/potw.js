@@ -26,6 +26,7 @@ let globe = null;             // Stage 0 three.js globe controller ({ dispose })
 let mapReadyPromise = null;   // resolves true (map usable) | false (fallback)
 let mapBackdropEl = null;     // themed art UNDER the map, so the stage is never black
 let mapGaveUp = false;        // this voyage stopped waiting for tiles that never came
+let mapCameAlive = false;     // the map fired a camera/steady event — it is running
 let mapsAuthFailed = false;   // Maps called gm_authFailure (bad key, quota, billing)
 let authHookInstalled = false;
 let advanced = false;         // reached the reveal (intro handed off to map)
@@ -131,7 +132,7 @@ function drawEarthTexture() {
     if (stroke) { g.lineWidth = 2; g.strokeStyle = stroke; g.lineJoin = 'round'; g.stroke(); }
   };
 
-  const GREEN = '#3d7a49', TAN = '#c2a86a', ICE = '#eaf1fb', COAST = '#274b32', OCEAN = '#1e3a8a';
+  const GREEN = '#3d7a49', ICE = '#eaf1fb', COAST = '#274b32', OCEAN = '#1e3a8a';
 
   // ---- simplified continent + island coastlines ([lon, lat]) ----------------
   const northAmerica = [
@@ -194,19 +195,16 @@ function drawEarthTexture() {
     [[80,6],[82,7],[81,9],[80,8]],                                    // Sri Lanka
   ];
 
-  // fill land (green), then ice sheets, then arid overlays, then inland seas
+  // fill land (green), then ice sheets, then inland seas
   const greenRings = [northAmerica, southAmerica, africa, europe, asia, arabia, india, australia, ...islands];
   greenRings.forEach((r) => poly(r, GREEN, COAST));
   poly(greenland, ICE, '#cdd9e8');
   poly(antarctica, ICE, null);
   g.fillStyle = 'rgba(234,241,251,0.45)'; g.fillRect(0, 0, W, H * 0.04); // north ice cap
 
-  // arid regions (tan) — irregular so they read as deserts, not blocks
-  [
-    [[-11,17],[2,15],[16,16],[26,19],[30,25],[26,30],[12,31],[-2,29],[-10,24]], // Sahara
-    [[39,17],[46,14],[52,18],[52,25],[47,29],[41,28],[38,22]],                  // Arabian interior
-    [[123,-21],[132,-23],[139,-25],[138,-29],[130,-30],[124,-27]],              // Australian outback
-  ].forEach((r) => poly(r, TAN, null));
+  // No desert overlays: the tan patches matched the antique-map background so
+  // closely they read as holes punched through the continents, not as deserts.
+  // Solid green land reads cleanly at globe size.
 
   // inland seas / bays (ocean overlay) so they read correctly
   [
@@ -226,7 +224,7 @@ async function mountGlobe(container) {
   try { THREE = await import('three'); } catch (e) { return; } // keep emoji fallback
   if (!rootEl || !container.isConnected) return;               // unmounted while loading
   try {
-    const size = 168;
+    const size = 250;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(size, size, false);
@@ -247,7 +245,7 @@ async function mountGlobe(container) {
     tiltGroup.add(sphere);
     scene.add(tiltGroup);
 
-    scene.add(new THREE.AmbientLight(0x99aabb, 0.9));
+    scene.add(new THREE.AmbientLight(0xa9b8c8, 1.1));
     const dir = new THREE.DirectionalLight(0xffffff, 1.0);
     dir.position.set(3, 1.5, 2.5);
     scene.add(dir);
@@ -305,6 +303,10 @@ async function openOverlay() {
   cardShown = false;
   ytIntroEl = null; ytPlayer = null; ytPollTimer = null; ytSafetyArmed = false;
   deckInfo = null; deckPromise = null;   // re-resolve the deck for this voyage
+  // The landing screen has a background loop now — the voyage makes its own
+  // noise (intro video, flight music, presentation), so the loop stops here
+  // and comes back in closeOverlay.
+  stopAmbientIfAny();
   const shortName = profile.title.split(/\s+/).pop();
 
   overlayEl = document.createElement('div');
@@ -717,6 +719,13 @@ function createMap3d() {
   mapEl.setAttribute('tilt', '45');
   mapEl.setAttribute('heading', '0');
   mapEl.setAttribute('default-ui-hidden', '');
+  // Liveness: a working map fires a camera event almost immediately after it
+  // connects (and gmp-steadychange when the view settles). Its shadow root is
+  // closed, so these events are the only sign of life the watchdog can read.
+  mapCameAlive = false;
+  const alive = () => { mapCameAlive = true; };
+  ['gmp-steadychange', 'gmp-centerchange', 'gmp-headingchange', 'gmp-rangechange']
+    .forEach((t) => mapEl.addEventListener(t, alive, { once: true }));
   overlayEl.querySelector('.potw-map-layer').appendChild(mapEl);
 
   watchMapsAuthFailure();
@@ -781,20 +790,22 @@ async function resolveBackdropArt() {
   return '';
 }
 
-// Has the map element produced a rendering surface? This is the one honest
-// signal the element offers: it has no load/error event and no ready promise,
-// but it cannot draw a single tile without first putting a sized <canvas>
-// somewhere (light DOM or shadow DOM). No canvas after ten seconds means the
-// library loaded but the map never started — the exact case the old
-// script-load guard missed, verified live: element defined, zero canvases.
+// Is the map element actually running? <gmp-map-3d> hides its internals in a
+// CLOSED shadow root — el.shadowRoot is null on a perfectly healthy map, so no
+// canvas probe can ever see inside (an earlier canvas-based check here declared
+// every map dead at 10s and skipped the flyover, verified live). The honest
+// signals are the ones the element volunteers: a camera event fires within
+// ~1s of a successful connect (watched in createMap3d), and isSteady flips
+// true once the first view settles. A map that never produced either in ten
+// seconds built nothing — the black screen this watchdog exists for.
 function mapHasSurface() {
   if (!mapEl) return false;
+  if (mapCameAlive || mapEl.isSteady === true) return true;
+  // Deliberately generous: ANY internals at all count as a living map, because
+  // hiding a map that is merely slow would be the worse mistake. (Only an old
+  // build with an open shadow root would ever be visible here.)
   const sr = mapEl.shadowRoot;
   if (mapEl.querySelector('canvas') || (sr && sr.querySelector('canvas'))) return true;
-  // Deliberately generous: ANY internals at all count as a living map, because
-  // hiding a map that is merely slow would be the worse mistake. A map that
-  // reaches low-detail ground and stalls there is still a picture; one that
-  // built nothing is the black screen this watchdog exists for.
   return mapEl.childElementCount > 0 || !!(sr && sr.childElementCount > 0);
 }
 
@@ -1912,10 +1923,12 @@ function closeOverlay() {
   if (mapEl) { try { mapEl.remove(); } catch (e) {} mapEl = null; }
   if (overlayEl) { try { overlayEl.remove(); } catch (e) {} overlayEl = null; }
   videoEl = null; songEl = null; mapReadyPromise = null;
-  mapBackdropEl = null; mapGaveUp = false; mapsAuthFailed = false;
+  mapBackdropEl = null; mapGaveUp = false; mapCameAlive = false; mapsAuthFailed = false;
   advanced = false; usingFallback = false; cardShown = false;
   deckInfo = null; deckPromise = null;
-  // Stage 0 launch screen remains mounted in #module-root underneath.
+  // Stage 0 launch screen remains mounted in #module-root underneath — give it
+  // its background loop back (openOverlay silenced it for the voyage).
+  import('../core/ambient.js').then((m) => m.ambientFor && m.ambientFor('potw')).catch(() => {});
 }
 
 // =============================================================================
@@ -1929,7 +1942,10 @@ function injectStyles() {
   /* ---- Stage 0 launch ---- */
   .potw-launch{position:relative;height:100%;display:flex;flex-direction:column;
     align-items:center;justify-content:center;text-align:center;overflow:hidden;
-    background:radial-gradient(ellipse at 50% 38%,#111827,#0b0f19 72%);}
+    /* The owner's antique chart of the world — the classified destination is
+       hiding somewhere on it. Painted dark already; the scrim is a whisper. */
+    background:radial-gradient(ellipse at 50% 38%,rgba(17,24,39,.25),rgba(11,15,25,.5) 78%),
+      url('images/potw-background.jpg') center center/cover no-repeat,#0b0f19;}
   .potw-stars{position:absolute;inset:0;pointer-events:none;opacity:.55;
     background-image:
       radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,.6), transparent),
@@ -1937,19 +1953,24 @@ function injectStyles() {
       radial-gradient(1px 1px at 210px 160px, rgba(255,255,255,.4), transparent),
       radial-gradient(1.5px 1.5px at 90px 230px, rgba(255,255,255,.35), transparent);
     background-repeat:repeat;background-size:300px 300px;animation:potw-drift 90s linear infinite;}
-  .potw-globe{width:168px;height:168px;display:flex;align-items:center;justify-content:center;
-    filter:drop-shadow(0 0 26px rgba(59,130,246,.35));}
-  .potw-globe-emoji{font-size:6rem;animation:potw-globe-pulse 3.2s ease-in-out infinite;}
-  .potw-globe-canvas{width:168px;height:168px;display:block;}
-  .potw-launch-title{font-size:clamp(2rem,5vw,3.25rem);color:#f59e0b;letter-spacing:.05em;
-    margin:.5rem 0 .25rem;text-shadow:0 0 34px rgba(245,158,11,.45);}
-  .potw-teaser{color:#9ca3af;font-size:clamp(1rem,2.2vw,1.35rem);margin-bottom:2rem;
-    letter-spacing:.03em;font-style:italic;}
-  .potw-launch-btn{background:linear-gradient(135deg,#f59e0b,#b45309);color:#0b0f19;
+  /* 250px = the 200px globe +25%, on the owner's call. The glow is the same
+     soft amber as the launch button's, so the two warm halos frame the title
+     as one family — the old blue halo vanished against the blue oceans. */
+  .potw-globe{width:250px;height:250px;display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 0 28px rgba(251,191,36,.55)) drop-shadow(0 0 64px rgba(251,191,36,.3));}
+  .potw-globe-emoji{font-size:8.5rem;animation:potw-globe-pulse 3.2s ease-in-out infinite;}
+  /* Rendered native-size; brightness lifted so the night side still reads
+     against the dark map. */
+  .potw-globe-canvas{width:250px;height:250px;display:block;filter:brightness(1.3) saturate(1.08);}
+  .potw-launch-title{font-size:clamp(2rem,5vw,3.25rem);color:#fbbf24;letter-spacing:.05em;
+    margin:.5rem 0 .25rem;text-shadow:0 0 40px rgba(251,191,36,.65),0 2px 10px rgba(0,0,0,.85);}
+  .potw-teaser{color:#e5e7eb;font-size:clamp(1rem,2.2vw,1.35rem);margin-bottom:2rem;
+    letter-spacing:.03em;font-style:italic;text-shadow:0 2px 8px rgba(0,0,0,.85);}
+  .potw-launch-btn{background:linear-gradient(135deg,#fcd34d,#d97706);color:#0b0f19;
     font-weight:800;font-size:clamp(1.1rem,2.4vw,1.6rem);padding:20px 42px;border:none;
-    border-radius:1rem;min-height:48px;cursor:pointer;box-shadow:0 12px 44px rgba(245,158,11,.42);
+    border-radius:1rem;min-height:48px;cursor:pointer;box-shadow:0 12px 50px rgba(251,191,36,.55);
     transition:transform .2s ease,box-shadow .2s ease;}
-  .potw-launch-btn:hover{transform:scale(1.04);box-shadow:0 16px 54px rgba(245,158,11,.55);}
+  .potw-launch-btn:hover{transform:scale(1.04);box-shadow:0 16px 60px rgba(251,191,36,.7);}
   .potw-launch-btn:active{transform:scale(.98);}
   /* The button's own mark, not the theatrical stage globe above it (that one
      stays a spinning emoji/3D piece by design). Sized off the button's own
@@ -2461,7 +2482,7 @@ export default {
     if (st) st.remove();
     rootEl = null; profile = null;
     videoEl = null; songEl = null; mapReadyPromise = null;
-    mapBackdropEl = null; mapGaveUp = false; mapsAuthFailed = false;
+    mapBackdropEl = null; mapGaveUp = false; mapCameAlive = false; mapsAuthFailed = false;
     advanced = false; usingFallback = false; cardShown = false;
   deckInfo = null; deckPromise = null;
   },
