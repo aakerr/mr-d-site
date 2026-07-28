@@ -176,6 +176,12 @@ function injectStyles() {
     border:3px solid #fca5a5;border-radius:1.5rem;min-height:48px;cursor:pointer;
     letter-spacing:.04em;box-shadow:0 0 0 0 rgba(239,68,68,.55),0 20px 60px rgba(0,0,0,.6);
     animation:battle-pulse-glow 2s ease-in-out infinite;transition:transform .15s ease;}
+  /* The same crossed-swords mark as the dashboard tile and the cinematic —
+     one graphic everywhere Battle Day announces itself. max-width:none guards
+     against the preflight img rule collapsing it (same trap as the cinematic). */
+  .battle-ignite-icon{height:1.25em;width:auto;max-width:none;display:inline-block;
+    vertical-align:-0.28em;margin-right:.25em;
+    filter:drop-shadow(0 2px 6px rgba(0,0,0,.55));}
   .battle-ignite-btn:hover{transform:scale(1.04);}
   .battle-ignite-btn:active{transform:scale(.96);}
   @keyframes battle-pulse-glow{
@@ -1012,7 +1018,7 @@ function renderLanding() {
     <div class="battle-landing">
       <div class="battle-landing-eyebrow">Friday Showdown</div>
       <div class="battle-landing-title">The houses stand ready&hellip;</div>
-      <button type="button" class="battle-ignite-btn font-display">⚔️ BATTLE DAY!</button>
+      <button type="button" class="battle-ignite-btn font-display"><img class="battle-ignite-icon" src="images/icon-battle.png" alt=""> BATTLE DAY!</button>
       <p class="battle-landing-sub">Tap to ignite Combat Mode — one house picks an opponent, spends its magic items, and strikes.</p>
     </div>`;
   const btn = rootEl.querySelector('.battle-ignite-btn');
