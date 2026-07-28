@@ -32,7 +32,16 @@ export const registry = {
     el.className = 'module-view h-full';
     root.appendChild(el);
     current = next;
-    next.mount(el, ctx);
+    try {
+      next.mount(el, ctx);
+    } catch (e) {
+      // The root was already cleared, so a module that throws on mount would
+      // otherwise leave a blank screen — and every later tap on its nav button
+      // would repeat the blank. Show plain words in its place and put the real
+      // error in the console; the rest of the app stays navigable.
+      console.error(`registry: module '${id}' failed to mount`, e);
+      el.innerHTML = `<div class="module-mount-error" style="display:flex;align-items:center;justify-content:center;height:100%;padding:2rem;text-align:center;color:#9ca3af">This screen failed to load — check the console, or reload.</div>`;
+    }
     window.dispatchEvent(new CustomEvent('module:navigate', { detail: { id } }));
   },
 
