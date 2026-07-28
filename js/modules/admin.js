@@ -1526,6 +1526,24 @@ async function hydrateShopImage(id) {
   if (u && shopForm && shopForm.id === id) { shopForm.imageUrl = u; renderShopModal(); }
 }
 
+// Shared by the HP and duel shop editors (byte-identical in both, aside from
+// reading the same shopForm fields either way): the optional item-art drop
+// zone, either showing the current image with a Remove button, or the
+// drop/browse prompt when there isn't one yet.
+function shopImageAreaHTML(f) {
+  const previewUrl = (f.imageFile || f.imageStored) ? f.imageUrl : f.imagePath;
+  return (f.imageFile || f.imageStored || f.imagePath)
+    ? `<div class="admin-shop-imgprev">
+         ${previewUrl ? `<img src="${esc(previewUrl)}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
+         <span class="admin-faint">${f.imageFile ? 'pending save' : (f.imageStored ? 'stored' : 'shipped art')}</span>
+         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
+       </div>`
+    : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
+         <input type="file" class="admin-file" data-shopimg="1" accept="image/*" hidden />
+         <span class="admin-drop-prompt">⬇ Optional image — drop or click (falls back to the emoji)</span>
+       </div>`;
+}
+
 function renderShopModal() {
   if (shopForm && shopForm.mode === 'duel') { renderDuelShopModal(); return; }
   renderHpShopModal();
@@ -1565,17 +1583,7 @@ function renderHpShopModal() {
     ? '<div class="admin-warn-line">Half-damage relics are usually Mythic rewards. If it\'s purchasable, attacks become very weak — are you sure?</div>' : '';
   const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
 
-  const previewUrl = (f.imageFile || f.imageStored) ? f.imageUrl : f.imagePath;
-  const imageArea = (f.imageFile || f.imageStored || f.imagePath)
-    ? `<div class="admin-shop-imgprev">
-         ${previewUrl ? `<img src="${esc(previewUrl)}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
-         <span class="admin-faint">${f.imageFile ? 'pending save' : (f.imageStored ? 'stored' : 'shipped art')}</span>
-         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
-       </div>`
-    : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
-         <input type="file" class="admin-file" data-shopimg="1" accept="image/*" hidden />
-         <span class="admin-drop-prompt">⬇ Optional image — drop or click (falls back to the emoji)</span>
-       </div>`;
+  const imageArea = shopImageAreaHTML(f);
 
   m.innerHTML = `
     <div class="admin-modal-bg" data-action="shop-close"></div>
@@ -1728,17 +1736,7 @@ function renderDuelShopModal() {
   };
   const saveErr = f.saveError ? `<div class="admin-warn-line admin-save-err">⚠️ ${esc(f.saveError)}</div>` : '';
 
-  const previewUrl = (f.imageFile || f.imageStored) ? f.imageUrl : f.imagePath;
-  const imageArea = (f.imageFile || f.imageStored || f.imagePath)
-    ? `<div class="admin-shop-imgprev">
-         ${previewUrl ? `<img src="${esc(previewUrl)}" alt="" class="admin-shop-imgprev-img" />` : '<span class="admin-faint">loading…</span>'}
-         <span class="admin-faint">${f.imageFile ? 'pending save' : (f.imageStored ? 'stored' : 'shipped art')}</span>
-         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="shop-img-del">Remove image</button>
-       </div>`
-    : `<div class="admin-drop" data-shopimg="1" data-action="media-browse" title="Drop or click to browse">
-         <input type="file" class="admin-file" data-shopimg="1" accept="image/*" hidden />
-         <span class="admin-drop-prompt">⬇ Optional image — drop or click (falls back to the emoji)</span>
-       </div>`;
+  const imageArea = shopImageAreaHTML(f);
 
   m.innerHTML = `
     <div class="admin-modal-bg" data-action="shop-close"></div>

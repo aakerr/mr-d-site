@@ -119,11 +119,6 @@ function initState() {
 
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
 
-function houseImg(house, cls) {
-  return `<img src="${house.image}" alt="${esc(house.name)} artwork" class="${cls}"
-    onerror="this.onerror=null;this.style.display='none';" />`;
-}
-
 // mm/hh remaining-time formatters shared by shield/reduction displays.
 function fmtRemain(ms) {
   if (ms <= 0) return null;

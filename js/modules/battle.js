@@ -1418,14 +1418,20 @@ function renderHpDuel() {
 }
 
 // =============================================================================
-// DUEL VIEW — wiring (HP mode)
+// DUEL VIEW — wiring shared by both combat systems
 // =============================================================================
-function wireHpDuel() {
+// wireHpDuel and wireMrDDuel wired ~80% identical listeners onto the same
+// duel-stage markup (attacker/target picker, clear-target, teacher scoring,
+// End Battle) — only the Shop button's action and what a strike-item tap
+// does actually differ between the two rulesets. Mr. D's rules additionally
+// wire the duel-only utility items (Stone of Seeing, Shroud, Time Turner),
+// which have no HP-mode equivalent, so those stay in wireMrDDuel below.
+function wireDuelCommon({ onShopClick, onStrike }) {
   if (!rootEl) return;
   const store = ctxRef.store;
 
   const shopBtn = rootEl.querySelector('.battle-shop-btn');
-  if (shopBtn) shopBtn.addEventListener('click', () => ctxRef.registry.navigate('shop'));
+  if (shopBtn) shopBtn.addEventListener('click', onShopClick);
   const endBtn = rootEl.querySelector('.battle-end-btn');
   if (endBtn) endBtn.addEventListener('click', endBattle);
 
@@ -1452,7 +1458,7 @@ function wireHpDuel() {
   if (clearTarget) clearTarget.addEventListener('click', () => { targetId = null; renderDuel(); });
 
   rootEl.querySelectorAll('[data-strike-item]').forEach((btn) => {
-    btn.addEventListener('click', () => strikeHp(btn.getAttribute('data-strike-item')));
+    btn.addEventListener('click', () => onStrike(btn.getAttribute('data-strike-item')));
   });
 
   rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
@@ -1460,6 +1466,11 @@ function wireHpDuel() {
       teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
     });
   });
+}
+
+// ---- wiring (HP mode) -------------------------------------------------------
+function wireHpDuel() {
+  wireDuelCommon({ onShopClick: () => ctxRef.registry.navigate('shop'), onStrike: strikeHp });
 }
 
 // =============================================================================
@@ -1741,42 +1752,10 @@ function renderMrDDuel() {
   wireMrDDuel();
 }
 
-// =============================================================================
-// DUEL VIEW — wiring (Mr. D's rules)
-// =============================================================================
+// ---- wiring (Mr. D's rules) -------------------------------------------------
 function wireMrDDuel() {
+  wireDuelCommon({ onShopClick: openMiniShop, onStrike: strikeDuel });
   if (!rootEl) return;
-  const store = ctxRef.store;
-
-  const shopBtn = rootEl.querySelector('.battle-shop-btn');
-  if (shopBtn) shopBtn.addEventListener('click', openMiniShop);
-  const endBtn = rootEl.querySelector('.battle-end-btn');
-  if (endBtn) endBtn.addEventListener('click', endBattle);
-
-  rootEl.querySelectorAll('[data-pick-challenger]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = Number(btn.getAttribute('data-pick-challenger'));
-      chooserOpen = false;
-      if (targetId === id) targetId = null;
-      ctxRef.audio.sfx('coin');
-      store.setActiveCore(id);
-    });
-  });
-
-  rootEl.querySelectorAll('[data-pick-target]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      targetId = Number(btn.getAttribute('data-pick-target'));
-      ctxRef.audio.sfx('sword');
-      renderDuel();
-    });
-  });
-
-  const clearTarget = rootEl.querySelector('[data-clear-target]');
-  if (clearTarget) clearTarget.addEventListener('click', () => { targetId = null; renderDuel(); });
-
-  rootEl.querySelectorAll('[data-strike-item]').forEach((btn) => {
-    btn.addEventListener('click', () => strikeDuel(btn.getAttribute('data-strike-item')));
-  });
 
   const stoneBtn = rootEl.querySelector('[data-stone-peek]');
   if (stoneBtn) stoneBtn.addEventListener('click', peekWithStone);
@@ -1788,12 +1767,6 @@ function wireMrDDuel() {
   });
   rootEl.querySelectorAll('[data-time-turn]').forEach((btn) => {
     btn.addEventListener('click', () => timeTurnFor(Number(btn.getAttribute('data-time-turn'))));
-  });
-
-  rootEl.querySelectorAll('[data-teacher]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      teacherScore(Number(btn.getAttribute('data-house')), Number(btn.getAttribute('data-teacher')));
-    });
   });
 }
 
