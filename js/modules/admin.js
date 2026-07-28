@@ -1407,6 +1407,14 @@ function shopThumbHTML(item) {
     const key = item.image.slice('media:'.length);
     return `<span class="admin-shop-thumb" data-imgkey="${esc(key)}"><span class="admin-shop-emoji">${esc(item.emoji || '✨')}</span></span>`;
   }
+  // A plain-path image (every shipped item has one under images/shop/) shows
+  // the art itself, same as the shop card — the emoji sits hidden behind it
+  // and steps in only if the file fails to load. No inline emoji-in-JS
+  // handler: an apostrophe in a teacher-typed emoji field once killed one.
+  if (item.image) {
+    return `<span class="admin-shop-thumb"><img class="admin-shop-thumb-img" src="${esc(item.image)}" alt=""
+      onerror="this.style.display='none';this.nextElementSibling.style.display=''" /><span class="admin-shop-emoji" style="display:none">${esc(item.emoji || '✨')}</span></span>`;
+  }
   return `<span class="admin-shop-thumb"><span class="admin-shop-emoji">${esc(item.emoji || '✨')}</span></span>`;
 }
 
@@ -3226,9 +3234,12 @@ function stopMusicPreview() {
   musicPreview = null;
   try { if (fail) a.removeEventListener('error', fail); } catch (e) { /* detached */ }
   try { a.pause(); } catch (e) { /* detached */ }
+  try { setMusicPreviewButtons(null); } catch (e) { /* tab already gone */ }
 }
 
 function previewMusicTrack(screen) {
+  // Toggle: previewing the row that is already playing stops it.
+  if (musicPreview && musicPreview.screen === screen) { stopMusicPreview(); return; }
   stopMusicPreview();
   showMusicError(screen, '');
   const store = ctxRef.store;
@@ -3252,10 +3263,22 @@ function previewMusicTrack(screen) {
   };
   audio.addEventListener('error', fail);
   musicPreview = { el: audio, screen, fail };
+  // The whole track, on the owner's call — it ends on its own, on the row's
+  // button (now ⏹), on another row's ▶, or on leaving the tab.
+  audio.addEventListener('ended', () => { if (musicPreview && musicPreview.el === audio) stopMusicPreview(); });
   const p = audio.play();
   if (p && typeof p.catch === 'function') p.catch(fail);
-  // A brief audition, not a full loop — stop itself after a few seconds.
-  later(() => { if (musicPreview && musicPreview.el === audio) stopMusicPreview(); }, 6000);
+  setMusicPreviewButtons(screen);
+}
+
+// Relabel the row buttons so the playing row reads ⏹ Stop and every other
+// row offers ▶ Preview. Pure DOM patch — no re-render, so the sliders and
+// half-typed paths on the tab are untouched.
+function setMusicPreviewButtons(playingScreen) {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('[data-action="music-preview"]').forEach((b) => {
+    b.textContent = (playingScreen != null && b.dataset.screen === playingScreen) ? '⏹ Stop' : '▶ Preview';
+  });
 }
 
 function renderMusicCard() {
