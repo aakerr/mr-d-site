@@ -615,7 +615,7 @@ export default {
       sim = createDiceSim({ container: host, audio, ghostTray: true,
         // Camera matched by eye to the painted tray's perspective — tune these
         // three numbers if the backdrop art ever changes.
-        view: { elev: 0.55, fill: 0.58, targetY: 4.9 }, dieScale: 2.3 });
+        view: { elev: 0.55, fill: 0.64, targetY: 4.9, trayAspect: 1.9 }, dieScale: 2.3 });
       // Tint the dice with the active house accent (null = All → defaults).
       sim.setHouse(store.getActiveHouse());
       // Recolor live when the teacher switches core in the top bar (no remount).

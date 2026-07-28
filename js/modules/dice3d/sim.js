@@ -108,8 +108,11 @@ const accentKey = (house) => (house ? house.accent : 'default');
  *  comparatively narrow — combined with FILL this leaves clear space on
  *  the left and right of the tray inside the stage box. Physics walls are built
  *  from the same w/d, so dice can never leave the visible tray. */
-function traySize(aspect) {
-  const a = Math.min(1.4, Math.max(0.55, aspect));
+function traySize(aspect, cap = 1.4) {
+  // ghostTray callers can raise the cap: the painted Die of Destiny tray is
+  // much wider than deep, so its invisible twin needs a wider footprint than
+  // the rendered tray ever used.
+  const a = Math.min(cap, Math.max(0.55, aspect));
   const base = 9.5;
   return { w: base * Math.sqrt(a), d: base / Math.sqrt(a) };
 }
@@ -764,7 +767,7 @@ export function createDiceSim({ container, audio, fate = FATE_DEFAULT, minRollMs
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    const dims = traySize(w / h);
+    const dims = traySize(w / h, Number.isFinite(view.trayAspect) ? view.trayAspect : 1.4);
     trayW = dims.w;
     trayD = dims.d;
     buildTray();
