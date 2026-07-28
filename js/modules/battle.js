@@ -22,7 +22,8 @@ const STYLE_ID = 'battle-styles';
 // Offensive item kinds a house can use from this screen (HP-mode catalog).
 const OFFENSIVE_KINDS = new Set(['attack', 'steal', 'pierce']);
 
-// Sequence timings (ms). Every individual animation stays ≤900ms.
+// Sequence timings (ms). Travel/impact/count beats stay short (≤620ms); the
+// outcome caption holds the screen much longer so the class has time to read it.
 const TRAVEL_MS = 280;   // projectile flight
 const IMPACT_MS = 620;   // flash / shake / damage-number lifetime
 const COUNT_MS = 450;    // point-total roll
@@ -490,15 +491,11 @@ function injectStyles() {
   .duel-def-shield{background:rgba(59,130,246,.16);border:1px solid rgba(96,165,250,.6);color:#bfdbfe;}
   .duel-def-reduce{background:rgba(180,83,9,.2);border:1px solid rgba(251,191,36,.6);color:#fde68a;
     transition:transform .2s ease;}
-  .duel-empty-broke{border:1px dashed rgba(251,191,36,.45);color:#fde68a;
-    background:rgba(180,83,9,.15);border-radius:.8rem;padding:.55rem .7rem;}
   /* what the attacker stands to win once a defender is chosen — visible
      before anyone strikes, so the class can see the stakes. */
   .duel-prize{flex:0 0 auto;width:100%;text-align:center;font-size:.78rem;font-weight:700;color:#fde68a;
     background:rgba(180,131,6,.14);border:1px dashed rgba(253,230,138,.45);border-radius:.7rem;
     padding:.4rem .55rem;margin-top:.2rem;line-height:1.3;}
-  .duel-items-more{grid-column:1/-1;text-align:center;color:var(--color-text-soft,#9ca3af);
-    font-size:.8rem;padding:.35rem 0 .1rem;}
   .duel-def-none{background:rgba(127,29,29,.18);border:1px dashed rgba(239,68,68,.5);color:#fca5a5;
     justify-content:center;}
   .duel-reduce-flare{animation:duel-reduce-flare-kf .7s ease;}
@@ -1441,9 +1438,6 @@ function wireHpDuel() {
   const endBtn = rootEl.querySelector('.battle-end-btn');
   if (endBtn) endBtn.addEventListener('click', endBattle);
 
-  const openChooser = rootEl.querySelector('[data-open-chooser]');
-  if (openChooser) openChooser.addEventListener('click', () => { chooserOpen = true; renderDuel(); });
-
   rootEl.querySelectorAll('[data-pick-challenger]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = Number(btn.getAttribute('data-pick-challenger'));
@@ -1498,7 +1492,6 @@ function kindTagDuel(kind) {
 // keeps a card's height constant whatever a house happens to be holding: the
 // slot COUNT never changes, only what's drawn inside each one. See .duel2-slot
 // in the styles for the fixed heights this depends on.
-const UTILITY_ITEM_IDS = ['stone', 'shroud', 'timeturner'];
 
 // Expands getInventory's { item, count } rows into one entry per physically
 // held copy, e.g. two Swords -> [swordItem, swordItem] — each occupies its
@@ -1768,9 +1761,6 @@ function wireMrDDuel() {
   if (shopBtn) shopBtn.addEventListener('click', openMiniShop);
   const endBtn = rootEl.querySelector('.battle-end-btn');
   if (endBtn) endBtn.addEventListener('click', endBattle);
-
-  const openChooser = rootEl.querySelector('[data-open-chooser]');
-  if (openChooser) openChooser.addEventListener('click', () => { chooserOpen = true; renderDuel(); });
 
   rootEl.querySelectorAll('[data-pick-challenger]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2194,7 +2184,10 @@ async function rollItemDice(item, house, cap = null) {
           el.classList.add('punch');
           ctxRef.audio.sfx('coin');
           totalEl.querySelector('.duel-dice-caption')?.classList.add('in');
-          if (capEl) capEl.style.transition = 'opacity .4s ease', capEl.style.opacity = '1';
+          if (capEl) {
+            capEl.style.transition = 'opacity .4s ease';
+            capEl.style.opacity = '1';
+          }
         }
         // Operators are punctuation — they land with the term after them.
         const pause = el.classList.contains('dm-op') ? 140 : DUEL2_MATH_STEP_MS;
@@ -2654,7 +2647,8 @@ function animatePoints(side, from, to, durationMs) {
 
 // =============================================================================
 // COMBAT EFFECTS — pure CSS/DOM, pointer-events:none via the fx classes,
-// every animation ≤900ms, tracked in fxNodes for guaranteed cleanup.
+// tracked in fxNodes for guaranteed cleanup. Most beats are quick (≤620ms);
+// the outcome caption (OUTCOME_MS, 2.6s) is the deliberate exception.
 // =============================================================================
 function centerOf(el) {
   const r = el.getBoundingClientRect();
