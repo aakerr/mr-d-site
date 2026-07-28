@@ -1061,10 +1061,20 @@ function wireLesson() {
       if (!(await lock.requireUnlock('award this bounty'))) return;
       if (overlayEl !== liveOverlay || btn.disabled) return;   // lesson closed while the pad was open
 
-      // payBounty awards the points AND records the payment; false = already paid.
-      const paid = ctxRef.store.payBounty(activeKey, qi, houseId, points, q.q.slice(0, 40));
-      lockBounty(qi, paid ? btn : null);
-      if (!paid) return;   // someone already claimed it — UI is now in sync
+      // payBountyChecked awards the points AND records the payment — and says
+      // which of two very different "no"s it is. Already claimed → the ledger
+      // knows the winner, lock the buttons to match. Refused (a frozen house
+      // cannot earn) → nothing was recorded and the question is still open, so
+      // say why and leave all four buttons live for another winner. The old
+      // path greyed out every button on any falsy result, which turned one
+      // frozen house into a permanently dead question.
+      const res = ctxRef.store.payBountyChecked(activeKey, qi, houseId, points, q.q.slice(0, 40));
+      if (!res.ok) {
+        if (res.reason === 'already-paid') { lockBounty(qi, null); return; }
+        bountyNotice(qi, res.message);
+        return;
+      }
+      lockBounty(qi, btn);
 
       ctxRef.audio.sfx('coin');
       const f = document.createElement('span');
@@ -1080,6 +1090,24 @@ function wireLesson() {
 function bountyPoints() {
   const n = Number(profile && profile.bountyPoints);
   return Number.isFinite(n) && n > 0 ? n : 50;
+}
+
+// A refusal speaks where the paid note would appear, then withdraws — unlike
+// the paid note, the question is still open and the buttons stay live.
+function bountyNotice(qi, message) {
+  if (!overlayEl) return;
+  const note = overlayEl.querySelector(`.potw-bounty-paid[data-paid="${qi}"]`);
+  if (!note) return;
+  if (!note.hidden && !note.classList.contains('refused')) return;   // a real paid note is never clobbered
+  note.textContent = message;
+  note.classList.add('refused');
+  note.hidden = false;
+  later(() => {
+    if (!note.isConnected || !note.classList.contains('refused')) return;
+    note.classList.remove('refused');
+    note.textContent = '';
+    note.hidden = true;
+  }, 4500);
 }
 
 // Lock a question's four buttons and show who won, from the ledger.
@@ -1841,6 +1869,7 @@ function injectStyles() {
   .potw-bounty-paid{margin-top:10px;color:#34d399;font-weight:700;font-size:.95rem;
     display:flex;align-items:center;gap:6px;}
   .potw-bounty-paid[hidden]{display:none;}
+  .potw-bounty-paid.refused{color:#fbbf24;}
   .potw-float{position:absolute;top:-6px;left:50%;color:#f59e0b;font-weight:800;font-size:1.35rem;
     pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.6);animation:potw-float 1s ease-out forwards;}
 
