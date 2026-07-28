@@ -1159,6 +1159,14 @@ export const store = {
   STOCKPILE_KINDS,
   PRIZE_RULES,
 
+  // ONE honest answer to "did that last change actually make it to disk?" —
+  // for anything that wants to celebrate a save rather than merely hope one
+  // happened. persist() already tracks whether localStorage accepted the
+  // write; a stale second tab (see the two-tab guard above) never even
+  // attempts one, and silence there is just as much a non-save as a thrown
+  // QuotaExceededError. Both have to be clean for this to say yes.
+  lastPersistOk() { return !persistFailed && !staleTab; },
+
   getCombat() { return { ...defaultCombat(), ...(store.getSettings().combat || {}) }; },
   // Clamps live HERE, not in the Admin form. The form is one caller among
   // several (backup restore, migrations, a future preset), and it clamped
@@ -1566,6 +1574,55 @@ export const store = {
       return rows;
     });
     return raw.map((r) => ({ week: r.week, from: new Date(r.from), totals: { ...r.totals } }));
+  },
+
+  // The Monday-morning recap (DESIGN-PLAN 7.1): biggest single award, the
+  // most-improved house, and how many quests got finished — all scoped to
+  // last week's calendar Mon-Sun window, not the current in-progress one.
+  // "Most improved" is a genuine week-over-week comparison (this house's net
+  // last week against its net the week before), the same idea getWeeklySeries
+  // computes for the whole term — not just "who scored the most," which
+  // would only repeat the standings the podium already shows every day.
+  // Keyed on last week's Monday, same trick as getTotal's `since`: the
+  // answer is wrong the instant the calendar rolls over a week, right up
+  // until then it is exactly as cheap as everything else in this cache.
+  getLastWeekRecap() {
+    const weekStart = startOfWeek().getTime();      // this week's Monday, 00:00
+    const lastStart = weekStart - 7 * 86400000;      // last week's Monday
+    const prevStart = lastStart - 7 * 86400000;      // the week before that (improvement baseline)
+    const raw = cached(`recap|${lastStart}`, () => {
+      const netLast = {};
+      const netPrev = {};
+      let biggest = null;
+      for (const t of state.transactions) {
+        if (t.ts >= lastStart && t.ts < weekStart) {
+          netLast[t.houseId] = (netLast[t.houseId] || 0) + t.delta;
+          if (t.delta > 0 && (!biggest || t.delta > biggest.delta)) {
+            biggest = { houseId: t.houseId, delta: t.delta, reason: t.reason || '' };
+          }
+        } else if (t.ts >= prevStart && t.ts < lastStart) {
+          netPrev[t.houseId] = (netPrev[t.houseId] || 0) + t.delta;
+        }
+      }
+      let mostImproved = null;
+      for (const id of Object.keys(HOUSES)) {
+        const delta = (netLast[id] || 0) - (netPrev[id] || 0);
+        if (delta > 0 && (!mostImproved || delta > mostImproved.delta)) {
+          mostImproved = { houseId: Number(id), delta };
+        }
+      }
+      const questsCompleted = state.quests.completed
+        .filter((c) => c.ts >= lastStart && c.ts < weekStart).length;
+      return { biggestAward: biggest, mostImproved, questsCompleted };
+    });
+    // Copied out for the same reason getWeeklySeries copies its rows: the
+    // cache hands back the identical object on every hit, and one caller's
+    // edit must never leak into the next caller's read.
+    return {
+      biggestAward: raw.biggestAward ? { ...raw.biggestAward } : null,
+      mostImproved: raw.mostImproved ? { ...raw.mostImproved } : null,
+      questsCompleted: raw.questsCompleted,
+    };
   },
 
   // Where a house's points actually came from, by tag.
@@ -2317,6 +2374,28 @@ export const store = {
     emit();
   },
 
+  // Projector-safe quiet mode (FIX-PLAN 5.5): one switch for a test day or
+  // quiet work, instead of hunting through Settings for the sound toggle and
+  // hoping seasonal particles were off too. Kept to these two calls on
+  // purpose — Admin's Settings row for it is a later wave's job, and it only
+  // ever needs to read and flip this one flag.
+  getQuietMode() { return !!store.getSettings().quietMode; },
+
+  // audio.js only ever reads `settings.soundEnabled` (shell.js's
+  // applySoundGate wraps the shared audio singleton around exactly that flag
+  // — see the comment there), so muting quiet mode's SFX means writing the
+  // same switch the M key and the speaker button already flip, not inventing
+  // a second one they'd have to agree with. Turning quiet mode back OFF does
+  // NOT auto-restore sound: silencing the room was a deliberate act, and so
+  // is un-silencing it — one tap of M, not something this toggle should
+  // assume on the teacher's behalf.
+  setQuietMode(on) {
+    const quiet = !!on;
+    const patch = { quietMode: quiet };
+    if (quiet) patch.soundEnabled = false;
+    store.updateSettings(patch);
+  },
+
   getTermInfo() {
     const s = store.getSettings();
     // A hand-edited or half-cleared termStart must not put "Week NaN of 9" in
@@ -2375,21 +2454,36 @@ export const store = {
 
   // ----- itinerary & homework (planner-aware with static fallback) -----
 
-  getItinerary(core = state.activeCore, date = todayStr()) {
-    if (core === 'all') return [];
+  // `sample: true` means nobody has built a real plan yet and this is the
+  // hardcoded example data the app ships with — "Bell Ringer: Map of the
+  // Fertile Crescent" was reading as today's ACTUAL plan on a fresh install,
+  // fiction presented to the class as fact. The plain getters below still
+  // return just the items, for the one caller (this file's own delegation)
+  // that only ever wanted the list; dashboard.js uses the Info form so it can
+  // caption the sample.
+  getItineraryInfo(core = state.activeCore, date = todayStr()) {
+    if (core === 'all') return { items: [], sample: false };
     const planned = store.getEventsOn(date, core).find((e) => e.type === 'itinerary' && Array.isArray(e.items));
-    if (planned) return planned.items;
-    return state.itineraries[core] || [];
+    if (planned) return { items: planned.items, sample: false };
+    return { items: state.itineraries[core] || [], sample: true };
   },
 
-  getHomework(core = state.activeCore, date = todayStr()) {
-    if (core === 'all') return [];
+  getItinerary(core = state.activeCore, date = todayStr()) {
+    return store.getItineraryInfo(core, date).items;
+  },
+
+  getHomeworkInfo(core = state.activeCore, date = todayStr()) {
+    if (core === 'all') return { items: [], sample: false };
     const upcoming = store.getEvents({ from: date, core })
       .filter((e) => ['homework', 'test', 'quiz'].includes(e.type))
       .slice(0, 6)
       .map((e) => ({ due: fmtDue(e.date), text: e.title || e.type }));
-    if (upcoming.length) return upcoming;
-    return state.homework[core] || [];
+    if (upcoming.length) return { items: upcoming, sample: false };
+    return { items: state.homework[core] || [], sample: true };
+  },
+
+  getHomework(core = state.activeCore, date = todayStr()) {
+    return store.getHomeworkInfo(core, date).items;
   },
 
   // ----- quests (one active per core; teacher confirms completion) -----
@@ -2501,7 +2595,12 @@ export const store = {
   },
 
   // Teacher check-off: awards the points and archives the completion.
-  completeQuest(core) {
+  // `opts.note` is an optional one-line "how was it proven?" (DESIGN-PLAN
+  // 7.4) — folded straight into the ledger reason rather than given its own
+  // field, because the reason is already free text and Records search
+  // already searches it. Callers own escaping it at render time, same as
+  // every other free-text reason in this ledger.
+  completeQuest(core, opts = {}) {
     const quest = store.getActiveQuest(core);
     if (!quest) return null;
     delete state.quests.active[core];
@@ -2511,7 +2610,9 @@ export const store = {
     // addPoints declines silently. Callers need to know so they can say so
     // instead of cheering a payout that never happened.
     const why = store.explainRefusal(core, quest.points);
-    const tx = why ? null : store.addPoints(core, quest.points, { reason: `Quest complete: ${quest.title}`, tag: 'quest' });
+    const note = typeof opts.note === 'string' ? opts.note.trim().slice(0, 80) : '';
+    const reason = `Quest complete: ${quest.title}${note ? ` — proof: ${note}` : ''}`;
+    const tx = why ? null : store.addPoints(core, quest.points, { reason, tag: 'quest' });
     return { ...quest, paid: !!tx, paidPoints: tx ? tx.delta : 0, unpaidReason: tx ? '' : (why || '') };
   },
 
@@ -2611,6 +2712,21 @@ export const store = {
     state.potwBounties[store.bountyKey(profileKey, index)] = { houseId: Number(houseId), ts: Date.now(), points };
     emit();
     return { ok: true, tx };
+  },
+
+  // "Nobody earned it" (DESIGN-PLAN 6.7): closes a bounty question with no
+  // winner and no ledger write. Recorded in the SAME potwBounties bucket as a
+  // paid entry, deliberately — every screen that already asks "is this
+  // bounty decided?" (isBountyPaid/getPaidBounty) is a lookup by key, not a
+  // house lookup, so a closed record surfaces there for free. houseId:null is
+  // what tells a paid win apart from a closed no-win; `closed` is there so a
+  // caller checking specifically for "nobody won" never has to infer it from
+  // an absent houseId alone.
+  closeBounty(profileKey, index) {
+    if (store.isBountyPaid(profileKey, index)) return false;   // already decided, one way or the other
+    state.potwBounties[store.bountyKey(profileKey, index)] = { houseId: null, ts: Date.now(), closed: true };
+    emit();
+    return true;
   },
 
   getPotwProfiles() {
