@@ -1649,6 +1649,10 @@ export const store = {
   },
   isShrouded(houseId) { return (((state.shrouded || {})[houseId]) || 0) > Date.now(); },
   shroudedUntil(houseId) { return (((state.shrouded || {})[houseId]) || 0); },
+  lowerShroud(houseId) {
+    if (state.shrouded && state.shrouded[houseId]) { delete state.shrouded[houseId]; emit(); return true; }
+    return false;
+  },
 
   // Time Turner: "go back and change your items after you have been attacked."
   // With only one defense held there is nothing to swap TO, so in practice it

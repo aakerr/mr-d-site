@@ -2611,7 +2611,7 @@ function renderBattleDay() {
 
       ${renderBattleRulesGate()}
 
-      ${shieldPanelHTML()}
+      ${ctxRef.store.getCombatMode() === 'duel' ? duelStatePanelHTML() : shieldPanelHTML()}
     </div>`;
 }
 
@@ -3110,6 +3110,74 @@ function shieldPanelHTML() {
           ${body}
         </div>`;
       }).join('')}</div>
+    </div>`;
+}
+
+// The duel-mode equivalent of the Active Defenses board. Mr. D's rules have no
+// hit points, shields or Pierce weapons, so that panel described nothing he can
+// see; what he actually needs to undo here is a freeze, a raised Shroud, and a
+// mis-tapped purchase. Every one of those was previously impossible to fix
+// without a full reset.
+function duelStatePanelHTML() {
+  const store = ctxRef.store;
+  const cat = store.getShopItems();
+  const nameOf = (id) => (cat.find((c) => c.id === id) || {}).name || id;
+  const emojiOf = (id) => (cat.find((c) => c.id === id) || {}).emoji || '\u2728';
+
+  const rowsHtml = Object.values(store.HOUSES).map((house) => {
+    const lines = [];
+    if (store.isFrozen(house.id)) {
+      const ts = store.frozenUntil(house.id);
+      const until = ts ? new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : '';
+      lines.push(`
+        <div class="admin-def-line">
+          <span class="admin-shield-emoji">\u2744\ufe0f</span>
+          <div class="admin-q-main">
+            <div class="admin-def-name">Frozen \u2014 cannot earn points, and cannot attack</div>
+            <div class="admin-q-desc">Thaws on its own ${esc(until ? `on ${until}` : 'shortly')}. They can still be attacked and can still lose points in the meantime.</div>
+          </div>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="duel-thaw" data-house="${house.id}">Un-freeze</button>
+        </div>`);
+    }
+    if (store.isShrouded(house.id)) {
+      const ts = store.shroudedUntil(house.id);
+      const until = ts ? new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : '';
+      lines.push(`
+        <div class="admin-def-line">
+          <span class="admin-shield-emoji">\ud83c\udf2b\ufe0f</span>
+          <div class="admin-q-main">
+            <div class="admin-def-name">Shrouded \u2014 no Stone of Seeing can look at them</div>
+            <div class="admin-q-desc">Lifts on its own ${esc(until ? `on ${until}` : 'shortly')}.</div>
+          </div>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="duel-unshroud" data-house="${house.id}">Lower it</button>
+        </div>`);
+    }
+    const inv = store.getInventory(house.id);
+    if (inv.length) {
+      lines.push(`<div class="admin-inv-grid">${inv.map(({ item, count }) => `
+        <div class="admin-inv-chip">
+          <span class="admin-inv-emoji">${esc(emojiOf(item.id))}</span>
+          <span class="admin-inv-name">${esc(nameOf(item.id))}${count > 1 ? ` \u00d7${count}` : ''}</span>
+          <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="duel-take-item"
+            data-house="${house.id}" data-item="${esc(item.id)}" title="Take one back">Take back</button>
+        </div>`).join('')}</div>`);
+    }
+    const body = lines.length ? `<div class="admin-def-lines">${lines.join('')}</div>`
+      : `<div class="admin-mini" style="margin:0">Nothing held and nothing active \u2014 ${esc(house.name)} is holding no items, is not frozen and is not shrouded.</div>`;
+    return `
+      <div class="admin-shield-row" style="--house:${house.accent}">
+        <div class="admin-def-house" style="color:${house.accent}">${esc(house.name)}</div>
+        ${body}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">\u2694\ufe0f House status &amp; holdings</div>
+      <div class="admin-mini">
+        Everything a house is currently carrying or currently suffering, and a way to undo any of it. <b>Frozen</b> means the Legendary Ice Axe landed on them: they cannot earn points and cannot attack until it lifts \u2014 but they can still be attacked and can still lose points, so being frozen is a punishment and not a hiding place. The freeze counts <b>school days</b> and skips weekends, so a roll of 6 can run more than a week of real time; if that turns out to be too harsh, tap <b>Un-freeze</b> and they can score again immediately. <b>Shrouded</b> means they spent a Shroud of Secrecy: any Stone of Seeing used against them shows nothing at all (and is still used up). Below that is every item each house is holding. If a class bought the wrong thing, or you handed one out by mistake, tap <b>Take back</b> to remove one \u2014 the points they paid are <b>not</b> refunded automatically, so if you meant to undo the purchase entirely, give the points back with the \u00b1 button as well.
+      </div>
+      <div class="admin-shield-list">${rowsHtml}</div>
     </div>`;
 }
 
@@ -4991,6 +5059,44 @@ function onClick(e) {
     case 'lock-now': lock.lockNow(); renderBody({ force: true }); toast('Locked.'); break;
     case 'lock-minutes': lock.setMinutes(Number(btn.dataset.minutes)); renderBody({ force: true }); toast(`Auto-relock set to ${btn.dataset.minutes} minutes.`); break;
 
+    case 'duel-thaw': {
+      const hid = Number(btn.dataset.house);
+      const house = store.HOUSES[hid];
+      openConfirm(`Un-freeze ${house ? house.name : 'this house'}?`,
+        'The freeze ends immediately and they can earn points and attack again from now on. Points they missed while frozen are not paid back — award those with the ± button if you want them made whole.',
+        () => {
+          const ok = store.thawHouse(hid);
+          renderBody({ force: true });
+          toast(ok ? `${house.name} is no longer frozen.` : 'That house was not frozen.');
+        }, { yesLabel: 'Un-freeze' });
+      break;
+    }
+    case 'duel-unshroud': {
+      const hid = Number(btn.dataset.house);
+      const house = store.HOUSES[hid];
+      openConfirm(`Lower ${house ? house.name : 'this house'}'s Shroud?`,
+        'Stones of Seeing can look at them again from now on. The 500 points they spent on it are not refunded.',
+        () => {
+          const ok = store.lowerShroud(hid);
+          renderBody({ force: true });
+          toast(ok ? `${house.name}'s Shroud is down.` : 'That house was not shrouded.');
+        }, { yesLabel: 'Lower it' });
+      break;
+    }
+    case 'duel-take-item': {
+      const hid = Number(btn.dataset.house);
+      const itemId = btn.dataset.item;
+      const house = store.HOUSES[hid];
+      const item = store.getShopItems().find((i) => i.id === itemId);
+      openConfirm(`Take back ${item ? item.name : 'this item'} from ${house ? house.name : 'this house'}?`,
+        'One of them is removed from that house\u2019s holdings. The points they paid are NOT refunded — if you meant to undo the purchase completely, give the points back with the ± button too.',
+        () => {
+          store.consumeFromInventory(hid, itemId);
+          renderBody({ force: true });
+          toast(`${item ? item.name : 'Item'} taken back from ${house.name}.`);
+        }, { yesLabel: 'Take it back' });
+      break;
+    }
     case 'shield-clear': {
       const hid = Number(btn.dataset.house);
       const house = store.HOUSES[hid];
@@ -5678,6 +5784,11 @@ function injectStyles() {
   .admin-shield-emoji{font-size:1.4rem;flex-shrink:0;}
   .admin-def-house{font-weight:800;font-size:1rem;}
   .admin-def-lines{display:flex;flex-direction:column;gap:6px;}
+  .admin-inv-grid{display:flex;flex-wrap:wrap;gap:6px;}
+  .admin-inv-chip{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:.6rem;
+    border:1px solid rgba(148,163,184,.28);background:rgba(30,41,59,.5);}
+  .admin-inv-emoji{font-size:18px;line-height:1;}
+  .admin-inv-name{font-weight:700;font-size:13px;}
   .admin-def-line{display:flex;align-items:center;gap:12px;}
   .admin-def-name{font-weight:700;font-size:.9rem;color:var(--color-text);}
 
