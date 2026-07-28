@@ -7,6 +7,7 @@
 // The item catalog is teacher-editable (Admin) and lives in the store —
 // this module renders whatever store.getShopItems() returns, live.
 // Owns ONLY this file. Follows ARCHITECTURE.md contract.
+import { escapeHtml as esc, escapeAttr } from '../core/escape.js';
 import { media } from '../core/media.js';
 import { fitMastheadWhenReady } from '../core/masthead.js';
 import { rollInHost } from './dice3d/roll.js';
@@ -99,11 +100,6 @@ function spawnFxPlain(parent, className, ttl) {
   fxNodes.add(el);
   later(() => { el.remove(); fxNodes.delete(el); }, ttl);
   return el;
-}
-
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function houseImg(house, cls) {
@@ -657,13 +653,34 @@ function resolveItemImage(item, onReady) {
 
 // Always returns the same fixed-size art slot (image or emoji fallback) so
 // every card's art occupies identical height, whether or not it has artwork.
+// The broken-image fallback is wired AFTER render (wireCardImageFallbacks) —
+// it used to be an inline onerror that embedded the emoji in a JS string,
+// where an apostrophe in a teacher-typed emoji field terminated the string
+// and killed the handler.
 function itemArtHtml(item) {
   const resolved = resolveItemImage(item, () => { if (currentRenderFn) currentRenderFn(); });
   if (resolved) {
-    return `<div class="shop-card-art"><img src="${esc(resolved)}" alt="${esc(item.name)}" class="shop-card-img"
-      onerror="this.parentElement.innerHTML='<div class=&quot;shop-card-emoji&quot;>${esc(item.emoji || '✨')}</div>';" /></div>`;
+    return `<div class="shop-card-art"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(item.name)}" class="shop-card-img"
+      data-fallback-emoji="${escapeAttr(item.emoji || '✨')}" /></div>`;
   }
   return `<div class="shop-card-art"><div class="shop-card-emoji">${esc(item.emoji || '✨')}</div></div>`;
+}
+
+// If a card's artwork fails to load, swap in the emoji slot instead. Wired
+// fresh after every render — listeners attach in the same task the <img>
+// nodes are created, before any error event can fire, and DOM APIs
+// (textContent) carry the emoji so no teacher-typed character can break out.
+function wireCardImageFallbacks(root) {
+  root.querySelectorAll('img.shop-card-img[data-fallback-emoji]').forEach((img) => {
+    img.addEventListener('error', () => {
+      const holder = img.parentElement;
+      if (!holder) return;
+      const fallback = document.createElement('div');
+      fallback.className = 'shop-card-emoji';
+      fallback.textContent = img.getAttribute('data-fallback-emoji') || '✨';
+      holder.replaceChildren(fallback);
+    }, { once: true });
+  });
 }
 
 // =============================================================================
@@ -995,6 +1012,7 @@ function render(s) {
     </div>
     ${confirmModalHtml(store, s)}
   `;
+  wireCardImageFallbacks(rootEl);
   fitMastheadWhenReady({
     icon: rootEl.querySelector('.shop-header-mark'),
     titleInk: rootEl.querySelector('.shop-title .mh-ink'),
