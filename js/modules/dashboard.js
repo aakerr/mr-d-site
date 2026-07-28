@@ -179,6 +179,7 @@ const MODULE_ICON_MAP = {
   battle: 'images/icon-battle.png',
   shop: 'images/icon-market.png',
   dice: 'images/icon-dice.png',
+  wheel: 'images/icon-wheel.png',
 };
 const MODULE_SUBTITLE_MAP = {
   houses: 'History & analysis',

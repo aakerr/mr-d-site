@@ -48,6 +48,14 @@ function createStyles() {
         font-size: clamp(1.3rem, 3vw, 1.9rem); color: #fcd34d;
         text-shadow: 0 0 18px rgba(252,211,77,0.4); text-align: center;
       }
+      /* The masthead's own painted mark, sized off the title's font-size so it
+         tracks the clamp() above for free — same em-mark pattern as every
+         other screen's title icon. The rotating disc below is CSS wedges, not
+         this PNG, and stays that way regardless of what this mark becomes. */
+      .wheel-title-mark {
+        height: 1em; width: auto; max-width: none; object-fit: contain;
+        display: inline-block; vertical-align: -0.25em; margin-right: 0.25em;
+      }
       .wheel-subtitle { color: #9ca3af; font-size: 0.95rem; text-align: center; margin-top: -0.5rem; }
 
       /* Stage: fixed square, holds the pointer + the rotating disc. */
@@ -299,7 +307,7 @@ export default {
 
     el.innerHTML = createStyles() + `
       <div class="wheel-container">
-        <div class="wheel-title">🎡 Wheel of Fate</div>
+        <div class="wheel-title"><img class="wheel-title-mark" src="images/icon-wheel.png" alt="" onerror="this.outerHTML='🎡 '" />Wheel of Fate</div>
         <div class="wheel-subtitle">Spin for who answers first, who presents, or a tie-break — house-level only.</div>
         <div class="wheel-stage">
           <div class="wheel-pointer"></div>
