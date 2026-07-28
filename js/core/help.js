@@ -69,7 +69,7 @@ function duelItemsBySlot(slot) {
 // ---------------------------------------------------------------------------
 // The d20 prophecy table.
 // SOURCE OF TRUTH: store.getDiceProphecy() (js/core/store.js) — teacher-edited
-// via 🗝️ Admin → ⚙️ Settings → 🎲 Die of Destiny, defaulting to
+// via 🗝️ Admin → ⚙️ Term & World → 🎲 Die of Destiny, defaulting to
 // defaultDiceProphecy() in store.js. The article below reads it live (same
 // pattern as battle-hp does for combat numbers) so it can never go stale.
 // ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ const TOPICS = [
     body: `
       <ol class="help-steps">
         <li><b>Check your backups.</b> This is the single most important thing on this page. A daily backup file already saves itself to Downloads with no setup — but connecting a backup folder too gives you second-by-second protection instead of once-a-day. <a href="#" data-help-go="data-backup">How backups work →</a></li>
-        <li><b>Set your term dates.</b> <b>🗝️ Admin → ⚙️ Settings → Term Timeline</b>: the Monday your term starts and how many weeks it runs.</li>
+        <li><b>Set your term dates.</b> <b>🗝️ Admin → ⚙️ Term &amp; World → Term Timeline</b>: the Monday your term starts and how many weeks it runs.</li>
         <li><b>Plan a week or two.</b> <b>🗝️ Admin → 📅 Planner</b> — tap any date to add an itinerary, homework, a quiz or a vacation.</li>
         <li><b>Schedule your first Place of the Week.</b> <a href="#" data-help-go="potw-schedule">Step by step →</a></li>
       </ol>
@@ -710,7 +710,7 @@ const TOPICS = [
           <thead><tr><th>House</th><th>Points (term)</th><th>Max HP this battle</th></tr></thead>
           <tbody>${hpRows}</tbody>
         </table>
-        <p>Max HP is <code>${c.hpBase} + ${c.hpPer500} for every 500 points a house holds</code>. A house sitting on more points is a little tougher to knock out — a mild brake on everyone piling onto whoever is currently leading. Change either number in <b>🗝️ Admin → ⚙️ Settings → ⚔️ Battle rules</b>.</p>
+        <p>Max HP is <code>${c.hpBase} + ${c.hpPer500} for every 500 points a house holds</code>. A house sitting on more points is a little tougher to knock out — a mild brake on everyone piling onto whoever is currently leading. Change either number in <b>🗝️ Admin → ⚔️ Battle Day → ⚔️ Battle rules</b>.</p>
 
         <h4>During the battle: strikes remove HP</h4>
         <p>Houses use the weapons already sitting in their armoury. Each strike removes <b>HP</b> — not points — and the usual defence rules still apply: a shield can block it outright, and a halving relic still cuts it in half. <a href="#" data-help-go="shop-matchups">How attacks and defences interact →</a> When a house's HP reaches <b>zero</b>, that fight is over.</p>
@@ -730,7 +730,7 @@ const TOPICS = [
           ? 'Currently <b>allowed</b> on this computer — any house may attack any other house, regardless of who has more points.'
           : 'Currently <b>off</b> on this computer (the default) — a house may only attack one with <b>more</b> points than itself. That stops the leading class from farming the last-placed class every single week.'}</p>
 
-        <p class="help-callout">Every number and rule above is teacher-editable in <a href="#" data-help-go="admin-settings">🗝️ Admin → ⚙️ Settings → ⚔️ Battle rules</a> — including a live preview of what any two houses would win right now.</p>
+        <p class="help-callout">Every number and rule above is teacher-editable in <a href="#" data-help-go="battle-day">🗝️ Admin → ⚔️ Battle Day → ⚔️ Battle rules</a> — including a live preview of what any two houses would win right now.</p>
       `;
     },
   },
@@ -961,7 +961,7 @@ const TOPICS = [
               `<tr><td><b>${esc(rangeLabel(r))}</b></td><td>${esc(r.emoji || '')} <b>${esc(r.title)}</b></td><td>${esc(r.desc)}</td><td class="help-nowrap"><b>${esc(ptsLabel(r))}</b></td></tr>`).join('') || '<tr><td colspan="4" class="help-muted">Not available right now.</td></tr>'}
           </tbody>
         </table>
-        <p>The <b>points, title, description and emoji</b> for every row above are teacher-editable in <b>🗝️ Admin → ⚙️ Settings → 🎲 Die of Destiny</b> — change any row to match how you want to run your own classroom. The roll <b>ranges</b> themselves (which numbers on the die trigger which outcome) are deliberately fixed, so every one of the 20 faces always maps to exactly one outcome with no gaps and no overlaps — a roll can never come up with nothing to show the class.</p>
+        <p>The <b>points, title, description and emoji</b> for every row above are teacher-editable in <b>🗝️ Admin → ⚙️ Term &amp; World → 🎲 Die of Destiny</b> — change any row to match how you want to run your own classroom. The roll <b>ranges</b> themselves (which numbers on the die trigger which outcome) are deliberately fixed, so every one of the 20 faces always maps to exactly one outcome with no gaps and no overlaps — a roll can never come up with nothing to show the class.</p>
         <h4>How the points actually get applied</h4>
         <p>Nothing happens automatically. The plaque shows a button for each house — tap the house you want it to land on and the points are awarded, logged with the reason "Die of Destiny: <i>outcome</i>".</p>
         <p><b>One award per roll.</b> Once you have tapped, the buttons stop responding until the next roll, so a double-tap cannot pay twice.</p>
@@ -983,10 +983,11 @@ const TOPICS = [
         <li><b>Shop</b> — edit the Magic Shop items.</li>
         <li><b>Place of the Week</b> — destinations, weekly scheduling, presentations, test flights.</li>
         <li><b>⚔️ Battle Day</b> — pick which rule set runs the fight, <b>Mr. D's rules</b> or <b>Hit points</b>, plus the settings that belong to whichever one is active: the prize rule, its number and the hit-point toughness settings for Hit points; nothing extra to set for Mr. D's rules beyond its own shop items. Underneath sits a live board, and <b>which board you get depends on the rule set</b>. Under Hit points it is <b>🛡️ Active Defenses</b>: every house's shield and damage-halving status, with a <b>Clear</b> button. Under Mr. D's rules it is <b>⚔️ House status &amp; holdings</b>: who is <b>frozen</b> (with <b>Un-freeze</b>), who is <b>shrouded</b> (with <b>Lower it</b>), and every single item each house is holding, each with a <b>Take back</b> button for a mis-tapped purchase. <a href="#" data-help-go="battle-day">More →</a></li>
-        <li><b>❓ Help</b> — opens this handbook, straight to the section you need.</li>
-        <li><b>⚙️ Settings</b> — term dates, theme, backups, your own Maps key, and the reset button. <a href="#" data-help-go="admin-settings">More →</a></li>
+        <li><b>⚙️ Term &amp; World</b> — what the term IS: its dates, the term markers, your four houses, the quick award buttons and the Die of Destiny's prophecy table. <a href="#" data-help-go="admin-settings">More →</a></li>
+        <li><b>🎨 Look &amp; Sound</b> — what the room looks and sounds like: screen colours, screen layout, dark/light and quiet mode, background music and your own recorded sound effects. Nothing in here moves a single point. <a href="#" data-help-go="admin-settings">More →</a></li>
+        <li><b>🛡️ Data &amp; Safety</b> — backups and restoring, sample data, the Teacher PIN, and the reset button. <a href="#" data-help-go="data-backup">More →</a></li>
       </ul>
-      <p>Several screens also carry a small <b>❓ How this works</b> link that jumps you straight to the right article in here.</p>
+      <p>The <b>❓</b> button sitting just to the right of those tabs opens this handbook. Several screens also carry a small <b>❓ How this works</b> link that jumps you straight to the right article in here.</p>
       <p>Tap the crest at the top left to leave Admin and go back to the dashboard.</p>
     `,
   },
@@ -1000,7 +1001,7 @@ const TOPICS = [
         : '<p class="help-warn"><b>No PIN is set.</b> Anyone who walks up to the board can award points or open Admin.</p>';
       return `
         ${status}
-        <p>Set it up in <b>🗝️ Admin → ⚙️ Settings → 🔒 Teacher PIN</b>. 4 to 8 digits, something you will still remember on a Monday morning. The boxes start <b>empty</b> on purpose — a PIN the app shipped with would be a PIN anyone could look up — so pick your own.</p>
+        <p>Set it up in <b>🗝️ Admin → 🛡️ Data &amp; Safety → 🔒 Teacher PIN</b>. 4 to 8 digits, something you will still remember on a Monday morning. The boxes start <b>empty</b> on purpose — a PIN the app shipped with would be a PIN anyone could look up — so pick your own.</p>
         <p><b>The PIN ships switched off.</b> Nothing in the app asks for it until you turn it on, so you can try everything out first and add the lock when you are ready.</p>
 
         <h4>What it asks for a PIN</h4>
@@ -1025,7 +1026,7 @@ const TOPICS = [
         <p class="help-warn">This is a classroom door, not a safe. It stops a student walking up and tapping the board, which is the thing that actually happens. It is <b>not</b> real security: it does not lock or scramble your saved data, and a student who knows their way around a web browser can get past it. Do not treat it as protection for anything sensitive.</p>
 
         <h4>If you forget it — the recovery code</h4>
-        <p>There is no "email me a reset": the app has no account and no server. Instead, when you turn the PIN on, the app writes an eight-character <b>recovery code</b>. It is printed on the Teacher PIN card in Settings — worth copying onto something in your desk — and it is saved inside every backup file.</p>
+        <p>There is no "email me a reset": the app has no account and no server. Instead, when you turn the PIN on, the app writes an eight-character <b>recovery code</b>. It is printed on the Teacher PIN card in 🛡️ Data &amp; Safety — worth copying onto something in your desk — and it is saved inside every backup file.</p>
         <ol class="help-steps">
           <li>On the PIN pad, tap <b>Forgot your PIN?</b></li>
           <li>Open your most recent backup <code>.json</code> in any text editor (Notepad or TextEdit will do) and search for <b>recovery</b>.</li>
@@ -1065,23 +1066,39 @@ const TOPICS = [
     `,
   },
   {
-    id: 'admin-settings', cat: 'admin', title: 'Settings',
-    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets layout carousel grid battle rules hit points hp combat prize punching down',
+    id: 'admin-settings', cat: 'admin', title: 'Settings: the three tabs and what lives on each',
+    keywords: 'settings term dates theme backup maps key reset danger zone pin lock screen colours colors award presets layout carousel grid battle rules hit points hp combat prize punching down term world look sound data safety',
     body: () => `
+      <p>Settings used to be one very long scroll. It is now three tabs at the end of the Admin bar, and every card lives on exactly one of them.</p>
+
+      <h4>⚙️ Term &amp; World — what the term IS</h4>
       <ul class="help-list">
         <li><b>Term Timeline</b> — the Monday your term starts and how many weeks it runs. This drives "Week N of M" in the top bar and the term totals. ${termLine()}</li>
-        <li><b>⚔️ Battle rules</b> — settings for <b>Hit points</b> mode: the prize rule (half the gap, share of their total, or a fixed amount) and its number, whether houses may "punch down" on a house with fewer points, and the hit-point settings that decide how tough each house is to beat. Includes a live preview of what any two houses would win right now. Only matters while Battle Day is set to Hit points — <a href="#" data-help-go="battle-day">both rule sets, and how to switch →</a></li>
-        <li><b>Display &amp; Theme</b> — dark or light, and optional seasonal decoration. <a href="#" data-help-go="theme">More →</a></li>
-        <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
+        <li><b>Term Start / End Markers</b> — read-only here; the calendar on 📅 Planner is where you edit them.</li>
+        <li><b>🏰 Houses</b> — rename or recolour any of the four. <a href="#" data-help-go="houses-edit">More →</a></li>
         <li><b>⚡ Quick award buttons</b> — the one-tap awards that appear on the Records screen. Edit the labels and point values to match what you actually say in class.</li>
+        <li><b>🎲 Die of Destiny — Prophecy Table</b> — the twenty outcomes the die can land on. <a href="#" data-help-go="dice-prophecy">More →</a></li>
+      </ul>
+
+      <h4>🎨 Look &amp; Sound — what the room looks and sounds like</h4>
+      <ul class="help-list">
         <li><b>🎨 Screen colours</b> — lock the Home screen, Quests or Records to one fixed colour instead of following whichever house is active. <a href="#" data-help-go="screen-colours">More →</a></li>
         <li><b>🗂️ Screen layout</b> — show Quests and the Magic Shop as a scrolling grid or a one-card-at-a-time carousel. Purely visual. <a href="#" data-help-go="screen-layout">More →</a></li>
-        <li><b>Maps API key</b> — leave blank unless you have your own. <a href="#" data-help-go="maps-key">More →</a></li>
+        <li><b>Display &amp; Theme</b> — dark or light, optional seasonal decoration, 🤫 quiet mode, and the <b>Maps API key</b> box. <a href="#" data-help-go="theme">More →</a> · <a href="#" data-help-go="maps-key">About the key →</a></li>
+        <li><b>🎵 Background music</b> — a quiet loop per screen, plus the Flyover track for Place of the Week.</li>
         <li><b>🔊 Sound effects</b> — replace any built-in beep, or the spoken Battle Day line, with your own recording. <a href="#" data-help-go="admin-sfx">More →</a></li>
+      </ul>
+
+      <h4>🛡️ Data &amp; Safety — what keeps a term of points alive</h4>
+      <ul class="help-list">
         <li><b>Backup &amp; Restore</b> — a daily backup file to Downloads (on by default, no setup), an optional backup folder for second-by-second saving, and restoring either one. <a href="#" data-help-go="data-backup">More →</a></li>
+        <li><b>🧪 Sample Data</b> — fills an empty machine with a term's worth of pretend classroom, for practising on.</li>
+        <li><b>🔒 Teacher PIN</b> — put a short PIN in front of the Admin panel and anything that awards or takes away points. Off until you turn it on. <a href="#" data-help-go="admin-lock">More →</a></li>
         <li><b>⚠️ Danger Zone</b> — wipes everything and starts over. You have to type <b>RESET</b> to confirm, and there is no undo.</li>
       </ul>
       <p class="help-warn">Before you ever touch the Danger Zone, make sure you have a backup folder connected and a dated snapshot in it.</p>
+
+      <p>Two things people look for in Settings and no longer find there: <b>⚔️ Battle rules</b> live on the <b>⚔️ Battle Day</b> tab with the rest of the fight — <a href="#" data-help-go="battle-day">both rule sets, and how to switch →</a> — and the handbook you are reading is the <b>❓</b> button beside the tab bar.</p>
     `,
   },
   {
@@ -1109,7 +1126,7 @@ const TOPICS = [
           <li>Open your phone's built-in recorder — <b>Voice Memos</b> on iPhone, <b>Recorder</b> or <b>Voice Recorder</b> on Android — and record the line or sound. For the war cry, something said with energy works best, e.g. "It's Battle Day. Attack!" Keep it to about 1–3 seconds; for the shorter cues (sword clash, blocked hit, points chime, dice rattle) aim for under a second.</li>
           <li>Get the file onto the computer any way that is easy for you: <b>AirDrop</b> it straight across if it's a nearby Mac, email or message it to yourself and download the attachment, or drop it into a cloud-drive folder (Google Drive, iCloud Drive, Dropbox, OneDrive) that is synced on both devices.</li>
           <li>On the computer, move the file into this app's <code>sfx</code> folder — it sits right next to the <code>images</code> and <code>music</code> folders in the app's files. Any filename works; something simple like <code>battle-cry.mp3</code> or <code>sword-clash.mp3</code> is easiest to find again later. There's also a short README inside the <code>sfx</code> folder itself with the same instructions, if you ever need a reminder without opening this handbook.</li>
-          <li>In the app, go to <b>🗝️ Admin → ⚙️ Settings → 🔊 Sound effects</b> and find the row for that sound.</li>
+          <li>In the app, go to <b>🗝️ Admin → 🎨 Look &amp; Sound → 🔊 Sound effects</b> and find the row for that sound.</li>
           <li>Type the path into the box — for example <code>sfx/battle-cry.mp3</code> — and it saves automatically as soon as you click away or press Tab.</li>
           <li>Tap <b>▶ Test</b> right there on that row to hear exactly what the class will hear. It plays through the app's real sound path, not a separate preview, so what you hear in Test is what plays during the lesson.</li>
         </ol>
@@ -1159,11 +1176,11 @@ const TOPICS = [
 
         <h4>⬇️ The daily backup file</h4>
         <p>The first time you change anything on a given school day — award a point, mark a quest done, anything — the app quietly saves a file named like <code>mrd-backup-${esc(new Date().toISOString().slice(0, 10))}.json</code> straight into this computer's ordinary <b>Downloads</b> folder. The same place any file you download normally lands. No folder to pick, no permission box to say yes to.</p>
-        <p>It is on by default. If you ever want to check it, or turn it off because the folder backup below is doing the job, that switch lives in <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>, along with a <b>Save a backup now</b> button for taking one on demand — worth tapping before a holiday, or to hand a copy to someone.</p>
+        <p>It is on by default. If you ever want to check it, or turn it off because the folder backup below is doing the job, that switch lives in <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b>, along with a <b>Save a backup now</b> button for taking one on demand — worth tapping before a holiday, or to hand a copy to someone.</p>
 
         <h4>🔄 The folder backup — better, but needs setting up</h4>
         <ol class="help-steps">
-          <li>Open <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> (or use the button at the bottom of this page).</li>
+          <li>Open <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b> (or use the button at the bottom of this page).</li>
           <li>Tap <b>🔄 Connect backup folder…</b> and pick somewhere safe — a Google Drive or OneDrive folder is ideal, because then the backups sync off the computer too.</li>
           <li>Say yes when the browser asks for permission to save files there.</li>
         </ol>
@@ -1175,7 +1192,7 @@ const TOPICS = [
         <p class="help-warn"><b>Not included: media.</b> Videos, PDFs and images you have uploaded are far too big for a backup file and stay in the browser's own storage. Restoring a backup on a new computer brings back everything except those, and you will need to upload them again.</p>
 
         <h4>Bringing a backup back in (restoring)</h4>
-        <p>This always happens in the same place: <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>. Tap <b>⬆ Import backup</b> and choose the file — whichever is newest, whether that's the one in Downloads or the one in your connected folder — or tap <b>Restore from folder…</b> if a folder is connected. Either way it asks you to confirm first, because it replaces <i>everything</i> currently on screen and cannot be undone.</p>
+        <p>This always happens in the same place: <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b>. Tap <b>⬆ Import backup</b> and choose the file — whichever is newest, whether that's the one in Downloads or the one in your connected folder — or tap <b>Restore from folder…</b> if a folder is connected. Either way it asks you to confirm first, because it replaces <i>everything</i> currently on screen and cannot be undone.</p>
 
         <h4 style="margin-top:16px">The one thing neither backup protects you from</h4>
         <p class="help-warn"><b>Both</b> of these backups write their file to <i>this computer</i>. If this computer is ever replaced, or the school wipes its browser profile, both are gone at the same time as everything else — unless you have already copied a backup file somewhere else: a Google Drive folder, a memory stick, or just emailed to yourself. That copy, sitting outside this computer, is the only thing that survives the computer itself disappearing. It costs two minutes and is well worth doing once a term.</p>
@@ -1189,10 +1206,10 @@ const TOPICS = [
     keywords: 'move computer transfer new laptop copy migrate another machine home school',
     body: `
       <ol class="help-steps">
-        <li>On the <b>old</b> computer, get a fresh backup file: if you have a folder connected, Settings → <b>Save now</b>; either way, Settings → <b>Save a backup now</b> takes a fresh daily file too, or use <b>⬇ Export backup</b>. Any of these is fine — you just want the newest one.</li>
+        <li>On the <b>old</b> computer, get a fresh backup file: if you have a folder connected, 🛡️ Data &amp; Safety → <b>Save now</b>; either way, 🛡️ Data &amp; Safety → <b>Save a backup now</b> takes a fresh daily file too, or use <b>⬇ Export backup</b>. Any of these is fine — you just want the newest one.</li>
         <li>Copy that file (and your backup folder, if you use one) to the new computer any way that's easy — a USB stick, a synced Drive folder, or emailing it to yourself all work.</li>
         <li>On the <b>new</b> computer, start the app the same way you start it now.</li>
-        <li>Go to <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> and tap <b>⬆ Import backup</b>, choosing the file you copied over. (Or, if you copied a whole backup folder and are in Chrome or Edge, <b>🔄 Connect backup folder…</b> then <b>Restore from folder…</b>.)</li>
+        <li>Go to <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b> and tap <b>⬆ Import backup</b>, choosing the file you copied over. (Or, if you copied a whole backup folder and are in Chrome or Edge, <b>🔄 Connect backup folder…</b> then <b>Restore from folder…</b>.)</li>
         <li>Re-upload your PDFs and any videos — <a href="#" data-help-go="potw-pdf">those do not travel in the backup</a>. Run <a href="#" data-help-go="system-check">System check</a>; it will name any destination whose presentation is missing.</li>
       </ol>
     `,
@@ -1206,14 +1223,14 @@ const TOPICS = [
       <h4>If it has already happened</h4>
       <ol class="help-steps">
         <li>Do not panic and do not start re-entering points.</li>
-        <li>Open the app, go to <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b>.</li>
+        <li>Open the app, go to <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b>.</li>
         <li>If you had a backup folder connected: tap <b>🔄 Connect backup folder…</b>, pick it again, then <b>Restore from folder…</b> and confirm. You are back to within a few seconds of where you were.</li>
         <li>If you did not: tap <b>⬆ Import backup</b> and choose the newest <code>mrd-backup-YYYY-MM-DD.json</code> file in this computer's Downloads folder — that is the daily backup file, and it saves itself even if you never set anything up. Confirm the restore. You are back to within a day of where you were.</li>
         <li>Re-upload your PDFs and videos.</li>
       </ol>
       <h4>If there is truly no backup file anywhere</h4>
-      <p>That only happens if the daily backup file was switched off <i>and</i> no folder was ever connected. In that case the data is gone and cannot be recovered by anyone. Check <b>🗝️ Admin → ⚙️ Settings → Backup &amp; Restore</b> today and make sure at least the daily file is on — it takes no setup at all. <a href="#" data-help-go="data-backup">Here is how it works →</a></p>
-      <p>If you genuinely want a clean slate, use <b>Settings → Danger Zone</b> instead. It only clears this app, not the browser.</p>
+      <p>That only happens if the daily backup file was switched off <i>and</i> no folder was ever connected. In that case the data is gone and cannot be recovered by anyone. Check <b>🗝️ Admin → 🛡️ Data &amp; Safety → Backup &amp; Restore</b> today and make sure at least the daily file is on — it takes no setup at all. <a href="#" data-help-go="data-backup">Here is how it works →</a></p>
+      <p>If you genuinely want a clean slate, use <b>🛡️ Data &amp; Safety → Danger Zone</b> instead. It only clears this app, not the browser.</p>
     `,
   },
   {
@@ -1222,14 +1239,14 @@ const TOPICS = [
     body: `
       <h4>A new term, keeping the history</h4>
       <ol class="help-steps">
-        <li>Make sure today's dated snapshot exists — in your backup folder if you have one connected, or in Downloads if you are relying on the daily backup file. Tap <b>Save a backup now</b> in Settings if you want to be certain.</li>
-        <li><b>🗝️ Admin → ⚙️ Settings → Term Timeline</b>: set <b>Term Start</b> to the new Monday and the number of weeks.</li>
+        <li>Make sure today's dated snapshot exists — in your backup folder if you have one connected, or in Downloads if you are relying on the daily backup file. Tap <b>Save a backup now</b> in 🛡️ Data &amp; Safety if you want to be certain.</li>
+        <li><b>🗝️ Admin → ⚙️ Term &amp; World → Term Timeline</b>: set <b>Term Start</b> to the new Monday and the number of weeks.</li>
       </ol>
       <p>The week counter restarts and the dashboard follows. Points are <b>not</b> zeroed — term totals still count everything in the log.</p>
       <h4>A new school year, starting from zero</h4>
       <ol class="help-steps">
         <li>Copy the latest dated snapshot — out of your backup folder, or out of Downloads — and keep it somewhere off this computer too (a Drive folder, a memory stick, or emailed to yourself). That is your archive of last year.</li>
-        <li><b>🗝️ Admin → ⚙️ Settings → Danger Zone</b>, type <b>RESET</b>.</li>
+        <li><b>🗝️ Admin → 🛡️ Data &amp; Safety → Danger Zone</b>, type <b>RESET</b>.</li>
         <li>Set the new term dates. Reconnect your backup folder if you use one; the daily backup file needs nothing done to it.</li>
         <li>Re-upload the presentations you still want.</li>
       </ol>
@@ -1256,7 +1273,7 @@ const TOPICS = [
       <h4>Changing names, mottos and colours</h4>
       <p>The app is built so all four can be renamed and recoloured without losing a single point — the change flows straight through to the top bar, the standings and the battle cards. There is a full editor for this already built into the app — you never need to ask anyone else to do it.</p>
       <ol class="help-steps">
-        <li>Open <b>🗝️ Admin → ⚙️ Settings → 🏰 Houses</b>.</li>
+        <li>Open <b>🗝️ Admin → ⚙️ Term &amp; World → 🏰 Houses</b>.</li>
         <li>Tap <b>Edit</b> on the house you want to change.</li>
         <li>Change any of: <b>Name</b>, <b>Motto</b>, <b>Accent colour</b> (pick with the swatch or type a hex code), the <b>Crest image</b> filename and the <b>Banner image</b> filename.</li>
         <li>Watch the <b>live preview</b> at the top of the box update as you type, so you see exactly how the name, motto and colour will look before you commit to them.</li>
@@ -1278,7 +1295,7 @@ const TOPICS = [
         }).join('');
       } catch (e) { rows = ''; }
       return `
-        <p><b>🗝️ Admin → ⚙️ Settings → 🎨 Screen colours.</b></p>
+        <p><b>🗝️ Admin → 🎨 Look &amp; Sound → 🎨 Screen colours.</b></p>
         <p>Three screens read this setting:</p>
         <ul class="help-list">${rows || '<li class="help-muted">Not available right now.</li>'}</ul>
         <p>Each one has a <b>Match house colour</b> toggle next to a colour swatch:</p>
@@ -1304,7 +1321,7 @@ const TOPICS = [
         }).join('');
       } catch (e) { rows = ''; }
       return `
-        <p><b>🗝️ Admin → ⚙️ Settings → 🗂️ Screen layout.</b></p>
+        <p><b>🗝️ Admin → 🎨 Look &amp; Sound → 🗂️ Screen layout.</b></p>
         <p>Two screens read this setting:</p>
         <ul class="help-list">${rows || '<li class="help-muted">Not available right now.</li>'}</ul>
         <p>Each one has a two-button switch:</p>
@@ -1321,7 +1338,7 @@ const TOPICS = [
     id: 'theme', cat: 'setup', title: 'Light mode, dark mode and seasonal decoration',
     keywords: 'theme light dark mode seasonal snow leaves colours appearance bright projector',
     body: `
-      <p><b>🗝️ Admin → ⚙️ Settings → Display &amp; Theme.</b></p>
+      <p><b>🗝️ Admin → 🎨 Look &amp; Sound → Display &amp; Theme.</b></p>
       <ul class="help-list">
         <li><b>🌙 Dark</b> — the default. Best on a projector or a smartboard in a dim room.</li>
         <li><b>☀️ Light</b> — better in a bright room or on a very washed-out projector.</li>
@@ -1354,7 +1371,7 @@ const TOPICS = [
       <ol class="help-steps">
         <li>Create a key in the Google Cloud console with the <b>Maps JavaScript API</b> enabled.</li>
         <li>Restrict it to <b>Websites (HTTP referrers)</b> so nobody else can use it.</li>
-        <li>Paste it into <b>🗝️ Admin → ⚙️ Settings → Maps API key</b>.</li>
+        <li>Paste it into <b>🗝️ Admin → 🎨 Look &amp; Sound → Display &amp; Theme → Maps API key</b>.</li>
         <li><b>Reload the page</b> — the key is only read when the app starts up.</li>
       </ol>
       <p>Leave the box empty to go back to the bundled key.</p>

@@ -1,5 +1,7 @@
 // admin.js — Teacher's Admin Panel for Mr. D's Classroom OS
-// Tabs: 📅 Planner, 🗺️ Quests, 🔮 Shop, 🌍 Place of the Week, ⚔️ Battle Day, ❓ Help, ⚙️ Settings (always last).
+// Tabs: 📅 Planner, 🗺️ Quests, 🔮 Shop, 🌍 Place of the Week, ⚔️ Battle Day, then the
+// three settings tabs, always last: ⚙️ Term & World, 🎨 Look & Sound, 🛡️ Data & Safety.
+// The ❓ handbook is a corner control beside the tab bar, not a tab of its own.
 // Owns ONLY this file. Renders into #module-root. All state flows through the
 // store APIs (never mutated directly). Media blobs go through js/core/media.js.
 // Injects <style id="admin-styles"> once; styles are theme-token aware (light/dark).
@@ -9,24 +11,37 @@ import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
 import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
-import { buildSampleState } from '../core/sampledata.js';  // ⚙️ Settings → "Load sample data"
+import { buildSampleState } from '../core/sampledata.js';  // 🛡️ Data & Safety → "Load sample data"
 import { escapeHtml as esc } from '../core/escape.js';
 import { ymd, todayStr, makeTimerSet } from '../core/util.js';
 
-// Tab order — future tabs insert into MAIN_TABS; Settings is pinned last.
+// Tab order — future tabs insert into MAIN_TABS; the settings tabs are pinned last.
 const MAIN_TABS = [
-  { id: 'planner', label: '📅 Planner' },
+  { id: 'planner', label: '<span class="admin-seg-ico">📅</span>Planner' },
   { id: 'quests', label: "<img src='images/icon-quest.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Quests" },
   { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
   { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
 ];
 // ⚔️ Battle Day sits right after the main tabs — every Battle-Day-only control
 // (prize rules, hit points, punching down, live shields/defenses) lives here.
-// ❓ Help sits immediately before Settings; Settings is always last.
+// The three settings tabs are always last; the handbook has no tab at all.
 const BATTLE_TAB = { id: 'battle', label: "<img src='images/icon-battle.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Battle Day" };
-const HELP_TAB = { id: 'help', label: '❓ Help' };
-const SETTINGS_TAB = { id: 'settings', label: '⚙️ Settings' };
-const TABS = [...MAIN_TABS, BATTLE_TAB, HELP_TAB, SETTINGS_TAB];
+// ❓ Help is NOT in TABS. Nine tab buttons plus a labelled Help tab measured
+// 1237px of the 1240px a 1280-wide board has to give — it fitted by three
+// pixels, which is not fitting at all. So the handbook became the compact ❓
+// control pinned to the right end of the tab row (DESIGN-PLAN 9.1 pre-approves
+// this): same data-action, same setTab('help'), one seventh of the width.
+// One "⚙️ Settings" tab used to hold thirteen cards spanning three unrelated
+// jobs — planning the term, dressing the room, and keeping the data safe — so
+// finding anything meant scrolling past everything. Same cards, same handlers,
+// three doors: what the term IS, what it LOOKS and SOUNDS like, and what
+// keeps it SAFE. Every one of them is still pinned to the end of the bar.
+const SETTINGS_TABS = [
+  { id: 'world', label: '<span class="admin-seg-ico">⚙️</span>Term &amp; World' },
+  { id: 'look',  label: '<span class="admin-seg-ico">🎨</span>Look &amp; Sound' },
+  { id: 'data',  label: '<span class="admin-seg-ico">🛡️</span>Data &amp; Safety' },
+];
+const TABS = [...MAIN_TABS, BATTLE_TAB, ...SETTINGS_TABS];
 
 // Article ids in js/core/help.js. Kept in one place so a rename over there is a
 // one-line fix here. (These are TOPIC ids, not category ids — openHelp() takes
@@ -60,7 +75,7 @@ const presUrls = new Set();   // object URLs we own for presentation image thumb
 // per-screen slider debounce independently — see debounceVolumeCommit below.
 const volumeCommitTimers = new Map();
 
-let activeTab = 'planner';            // 'planner' | 'quests' | 'shop' | 'potw' | 'battle' | 'help' | 'settings'
+let activeTab = 'planner';            // 'planner' | 'quests' | 'shop' | 'potw' | 'battle' | 'help' | 'world' | 'look' | 'data'
 const cal = { year: 0, month: 0 };    // currently-viewed calendar month
 let panelView = null;                 // null | 'day' | 'form'  (right side panel)
 let panelDate = null;                 // 'YYYY-MM-DD' the day editor is showing
@@ -73,10 +88,10 @@ let backupStatusTimer = null;         // interval that keeps the auto-backup "la
 let shopGuideOpen = false;            // "How magic items work" accordion state
 let questGuideOpen = false;           // "How quests work" accordion state
 let questForm = null;                 // in-progress quest editor
-let houseForm = null;                 // in-progress house editor (Settings tab)
+let houseForm = null;                 // in-progress house editor (Term & World tab)
 let videoForm = null;                 // in-progress intro-video preset editor (POTW tab)
-let awardForm = null;                 // in-progress quick-award preset editor (Settings tab)
-// Teacher PIN card (Settings tab). mode is only meaningful once a PIN exists:
+let awardForm = null;                 // in-progress quick-award preset editor (Term & World tab)
+// Teacher PIN card (Data & Safety tab). mode is only meaningful once a PIN exists:
 // null = the default on/off summary view, 'change' / 'off' = the inline form
 // asking for the current PIN before either action goes through.
 // The PIN boxes deliberately start EMPTY — they used to seed DEFAULT_PIN as
@@ -157,8 +172,12 @@ function renderShell() {
             <div class="admin-sub">Plan the term, tune settings, curate the world.</div>
           </div>
         </div>
-        <div class="admin-seg" role="tablist">
-          ${TABS.map((t) => `<button class="admin-seg-btn" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('')}
+        <div class="admin-tabrow">
+          <div class="admin-seg" role="tablist">
+            ${TABS.map((t) => `<button class="admin-seg-btn" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('')}
+          </div>
+          <button class="admin-help-corner" data-action="tab" data-tab="help"
+            title="Teacher's handbook" aria-label="Teacher's handbook">❓</button>
         </div>
       </div>
       <div id="admin-body" class="admin-body"></div>
@@ -170,7 +189,7 @@ function renderShell() {
 }
 
 function syncSegActive() {
-  rootEl.querySelectorAll('.admin-seg-btn').forEach((b) =>
+  rootEl.querySelectorAll('.admin-seg-btn,.admin-help-corner').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === activeTab));
 }
 
@@ -188,7 +207,9 @@ function renderBody({ force = false } = {}) {
   else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
   else if (activeTab === 'battle') body.innerHTML = renderBattleDay();
   else if (activeTab === 'help') body.innerHTML = renderHelp();
-  else if (activeTab === 'settings') body.innerHTML = renderSettings();
+  else if (activeTab === 'world') body.innerHTML = renderTermWorld();
+  else if (activeTab === 'look') body.innerHTML = renderLookSound();
+  else if (activeTab === 'data') body.innerHTML = renderDataSafety();
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
 }
 
@@ -2689,21 +2710,21 @@ function renderBattleDay() {
     </div>`;
 }
 
-// The one place a version number lives. It is shown in Settings so a teacher on
-// the phone can read it out — a git tag is invisible from the classroom.
+// The one place a version number lives. It is shown on Data & Safety so a
+// teacher on the phone can read it out — a git tag is invisible from the classroom.
 const APP_VERSION = '1.01';
 
-function renderSettings() {
+// ===========================================================================
+// TAB — ⚙️ TERM & WORLD
+// What the term IS: the dates it runs between, the houses competing in it,
+// and the two tables of outcomes handed out inside it (quick awards, and the
+// Die of Destiny's prophecies). Nothing here is decoration and nothing here
+// is about backups — those are the other two settings tabs.
+// ===========================================================================
+function renderTermWorld() {
   const store = ctxRef.store;
   const s = store.getSettings();
   const info = store.getTermInfo();
-  const theme = s.theme || { mode: 'dark', seasonal: false };
-  const mode = theme.mode === 'light' ? 'light' : 'dark';
-  const seasonal = !!theme.seasonal;
-  // Quiet mode lands as a store contract from a sibling change — guard so this
-  // row simply no-ops (stays off, does nothing on click) if it hasn't landed yet.
-  const quietMode = typeof store.getQuietMode === 'function' ? !!store.getQuietMode() : false;
-  const apiKey = s.mapsApiKeyOverride || '';
   const termEvents = store.getEvents({ type: 'term-start' })
     .concat(store.getEvents({ type: 'term-end' }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -2730,16 +2751,6 @@ function renderSettings() {
         <div class="admin-hint" style="margin-top:.75rem">The top-bar term label and the Morning Dashboard update the moment you save.</div>
       </div>
 
-      ${renderHousesCard()}
-
-      ${renderScreenColoursCard()}
-
-      ${renderScreenLayoutCard()}
-
-      ${renderAwardPresetsCard()}
-
-      ${renderDiceProphecyCard()}
-
       <div class="admin-card">
         <div class="admin-card-title">Term Start / End Markers</div>
         <div class="admin-mini">Read-only here — add or edit these on the 📅 Planner calendar.</div>
@@ -2756,6 +2767,38 @@ function renderSettings() {
           }).join('') : '<div class="admin-empty admin-empty-sm">No term markers planned yet.</div>'}
         </div>
       </div>
+
+      ${renderHousesCard()}
+
+      ${renderAwardPresetsCard()}
+
+      ${renderDiceProphecyCard()}
+    </div>`;
+}
+
+// ===========================================================================
+// TAB — 🎨 LOOK & SOUND
+// Everything that changes how the room looks and sounds and nothing that
+// changes a single point: screen colours, which tiles show, the light/dark
+// theme (and the quiet-mode switch that stills it all), the background loops,
+// and the teacher's own recorded sound effects.
+// ===========================================================================
+function renderLookSound() {
+  const store = ctxRef.store;
+  const s = store.getSettings();
+  const theme = s.theme || { mode: 'dark', seasonal: false };
+  const mode = theme.mode === 'light' ? 'light' : 'dark';
+  const seasonal = !!theme.seasonal;
+  // Quiet mode lands as a store contract from a sibling change — guard so this
+  // row simply no-ops (stays off, does nothing on click) if it hasn't landed yet.
+  const quietMode = typeof store.getQuietMode === 'function' ? !!store.getQuietMode() : false;
+  const apiKey = s.mapsApiKeyOverride || '';
+
+  return `
+    <div class="admin-settings">
+      ${renderScreenColoursCard()}
+
+      ${renderScreenLayoutCard()}
 
       <div class="admin-card">
         <div class="admin-card-title">Display &amp; Theme</div>
@@ -2798,7 +2841,18 @@ function renderSettings() {
       ${renderMusicCard()}
 
       ${renderSfxCard()}
+    </div>`;
+}
 
+// ===========================================================================
+// TAB — 🛡️ DATA & SAFETY
+// The cards that decide whether a term of house points survives a bad
+// afternoon. Backup & Restore comes first because it is the one that matters:
+// it used to sit eleventh of thirteen in the old Settings scroll.
+// ===========================================================================
+function renderDataSafety() {
+  return `
+    <div class="admin-settings">
       <div class="admin-card">
         <div class="admin-card-title">Backup &amp; Restore</div>
         <div class="admin-help-row">${helpLink(HELP_TOPICS.backups, 'What backups do, and how to restore one')}</div>
@@ -3394,7 +3448,7 @@ function openResetModal() {
 function doReset() {
   ctxRef.store.resetAll();
   closeModal();
-  activeTab = 'settings';
+  activeTab = 'data';
   dangerOpen = false;
   cal.year = new Date().getFullYear();
   cal.month = new Date().getMonth();
@@ -3509,7 +3563,7 @@ function importBackup(file) {
   reader.readAsText(file);
 }
 
-// ----- sample data (Settings tab — demoing on a machine that starts empty) --
+// ----- sample data (Data & Safety tab — demoing on a machine that starts empty) --
 // A brand-new machine has nothing on it, which makes it hard to show anyone
 // — including Mr. D himself — what a busy term actually looks like. This
 // builds four invented weeks of activity and writes it the same way a backup
@@ -5292,7 +5346,7 @@ function onClick(e) {
         }, { yesLabel: 'Clear reduction' });
       break;
     }
-    // background music (Settings tab)
+    // background music (Look & Sound tab)
     case 'ambient-toggle': {
       const cur = store.getAmbient();
       store.updateAmbient({ enabled: !cur.enabled });
@@ -5552,7 +5606,7 @@ function injectStyles() {
   .admin-head{flex-shrink:0;padding:16px 20px 12px;border-bottom:1px solid var(--color-card2);
     background:linear-gradient(180deg,rgba(245,158,11,.06),transparent);}
   /* The title and the tab bar sit over the work area, not off in the corner
-     away from it. Every tab's content is a centred column — 820px on Settings,
+     away from it. Every tab's content is a centred column — 820px on the settings tabs,
      wider elsewhere — so centring the header on the page lines it up with all
      of them rather than with any one tab's width. */
   .admin-titlebar{display:flex;align-items:center;gap:14px;margin-bottom:12px;
@@ -5563,10 +5617,34 @@ function injectStyles() {
   .admin-seg{display:flex;width:max-content;max-width:100%;margin-inline:auto;
     gap:4px;padding:4px;background:var(--color-card);border:1px solid var(--color-line);
     border-radius:1rem;flex-wrap:wrap;justify-content:center;}
-  .admin-seg-btn{min-height:44px;padding:10px 20px;border:none;border-radius:.75rem;background:transparent;
+  /* 16px, not the 20px this carried while there were seven tabs: eight buttons
+     at 20px measured 1139px of the 1240px a 1280-wide board gives, and the
+     board is the one screen that must never wrap this bar. */
+  .admin-seg-btn{min-height:44px;padding:10px 16px;border:none;border-radius:.75rem;background:transparent;
     color:var(--color-text-soft);font-weight:700;font-size:.95rem;cursor:pointer;transition:background .18s ease,color .18s ease;}
+  /* Emoji tabs get the same .3em the image-icon tabs carry, rather than a
+     plain space: the gear, palette and shield glyphs render with almost no
+     right side bearing, so a space alone left them visibly tighter to their
+     word than 📅 was to "Planner". Measured, not eyeballed — every icon in
+     the bar now sits the same distance from its label. */
+  .admin-seg-ico{margin-right:.3em;}
   .admin-seg-btn:hover{color:var(--color-text);}
   .admin-seg-btn.active{background:#f59e0b;color:#0b0f19;box-shadow:0 4px 16px rgba(245,158,11,.35);}
+  /* The tab bar stays dead-centred on the page (see the note above the
+     titlebar); the ❓ handbook button is pinned to the right edge instead of
+     riding in the flow, because a ninth item in the row would shove the bar
+     off centre by half its own width. The 52px reserved on BOTH sides — the
+     44px button plus 8px of air — keeps that centring honest and stops the bar
+     ever sliding under the button on a narrow screen. */
+  .admin-tabrow{position:relative;display:flex;align-items:center;justify-content:center;}
+  .admin-tabrow>.admin-seg{max-width:calc(100% - 104px);}
+  .admin-help-corner{position:absolute;right:0;top:50%;transform:translateY(-50%);
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+    border-radius:.9rem;border:1px solid var(--color-line);background:var(--color-card);
+    color:var(--color-text-soft);font-size:1.15rem;line-height:1;cursor:pointer;
+    transition:background .18s ease,color .18s ease,border-color .18s ease;}
+  .admin-help-corner:hover{color:var(--color-text);border-color:#f59e0b;}
+  .admin-help-corner.active{background:#f59e0b;border-color:#f59e0b;box-shadow:0 4px 16px rgba(245,158,11,.35);}
   .admin-body{flex:1;overflow-y:auto;padding:20px;}
   .admin-body::-webkit-scrollbar{width:9px;}
   .admin-body::-webkit-scrollbar-thumb{background:var(--color-line);border-radius:8px;}
@@ -5837,7 +5915,7 @@ function injectStyles() {
   .admin-steps{margin:0 0 12px 18px;padding:0;color:var(--color-text-soft);font-size:.82rem;line-height:1.6;display:flex;flex-direction:column;gap:4px;}
   .admin-steps code{background:var(--color-card2);padding:1px 6px;border-radius:.35rem;color:#fbbf24;}
 
-  /* background music (Settings tab) */
+  /* background music (Look & Sound tab) */
   .admin-music-volume{width:100%;max-width:360px;accent-color:#f59e0b;height:30px;}
   .admin-music-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
   .admin-music-row{padding:10px 12px;background:var(--color-page);border:1px solid var(--color-line);border-radius:.75rem;}
@@ -6102,7 +6180,7 @@ function injectStyles() {
   html[data-mode="light"] .admin-btn-accent{color:#92400e;}
   html[data-mode="light"] .admin-award-pts.pos{color:#166534;}
 
-  /* houses editor (Settings tab) */
+  /* houses editor (Term & World tab) */
   .admin-house-crest{flex-shrink:0;width:48px;height:48px;border-radius:.6rem;background:var(--color-card2);
     border:1px solid var(--color-line);display:flex;align-items:center;justify-content:center;overflow:hidden;}
   .admin-house-crest-img{width:100%;height:100%;object-fit:contain;}
@@ -6296,9 +6374,9 @@ export default {
 
     // keep the auto-backup "last saved …" line and the Active Defenses
     // countdowns live (writes don't emit store changes). Backup status only
-    // exists on Settings; shield/reduction timers now live on Battle Day.
+    // exists on Data & Safety; shield/reduction timers now live on Battle Day.
     backupStatusTimer = setInterval(() => {
-      if (activeTab === 'settings') updateBackupStatusLine();
+      if (activeTab === 'data') updateBackupStatusLine();
       if (activeTab === 'battle') updateShieldTimes();
     }, 5000);
 
