@@ -659,6 +659,10 @@ function load() {
         // so a video the teacher chose themselves is left alone.
         if (p.introVideoId === 'rock') p.introVideoId = 'intro-01';
         else if (p.introVideoId === 'classic') p.introVideoId = 'intro-02';
+        // Flight music is chosen once, in Admin → Background music, not per
+        // destination. Nothing reads a saved flyoverUrl any more; drop it here
+        // so it stops riding along in every backup the teacher exports.
+        delete p.flyoverUrl;
       }
       // Same for settings (new keys like theme/mapsApiKeyOverride).
       merged.settings = { ...def.settings, ...(merged.settings || {}) };

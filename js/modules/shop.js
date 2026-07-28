@@ -112,8 +112,7 @@ window.addEventListener('mrd:media-changed', (e) => {
 // the top bar (store.getActiveHouse()), read fresh on every render.
 function initState() {
   return {
-    targetPicker: null,     // itemId currently choosing a target ('attack'/'pierce' items)
-    confirm: null,          // { itemId, buyerId, targetId }
+    confirm: null,          // { itemId, buyerId } — every kind now confirms untargeted
   };
 }
 
@@ -124,37 +123,6 @@ function later(fn, ms) {
 }
 function clearTimers() { timers.forEach(clearTimeout); timers.clear(); }
 function clearFx() { fxNodes.forEach((n) => { try { n.remove(); } catch (e) {} }); fxNodes.clear(); }
-
-function prefersReducedMotion() {
-  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
-
-// Spawns a transient fx node inside `parent` (setting position:relative on it
-// if needed so absolutely-positioned fx anchor correctly), auto-removed after
-// `ttl`ms and force-removed on unmount via `fxNodes`.
-function spawnFx(parent, className, ttl, text) {
-  if (!parent) return null;
-  parent.style.position = parent.style.position || 'relative';
-  const el = document.createElement('div');
-  el.className = className;
-  if (text != null) el.textContent = text;
-  parent.appendChild(el);
-  fxNodes.add(el);
-  later(() => { el.remove(); fxNodes.delete(el); }, ttl);
-  return el;
-}
-
-// Same, but never touches the parent's inline position — used for the shared
-// #overlay-root (lead-owned); its fx children are all position:fixed.
-function spawnFxPlain(parent, className, ttl) {
-  if (!parent) return null;
-  const el = document.createElement('div');
-  el.className = className;
-  parent.appendChild(el);
-  fxNodes.add(el);
-  later(() => { el.remove(); fxNodes.delete(el); }, ttl);
-  return el;
-}
 
 function houseImg(house, cls) {
   return `<img src="${house.image}" alt="${esc(house.name)} artwork" class="${cls}"
@@ -169,14 +137,6 @@ function fmtRemain(ms) {
   const mins = totalMins % 60;
   return hrs > 0 ? `${hrs}h ${mins}m left` : `${mins}m left`;
 }
-function fmtRemainShort(ms) {
-  if (ms <= 0) return null;
-  const totalMins = Math.max(1, Math.round(ms / 60000));
-  const hrs = Math.floor(totalMins / 60);
-  const mins = totalMins % 60;
-  return hrs > 0 ? `${hrs}h` : `${mins}m`;
-}
-
 function kindLabel(kind) {
   return {
     // hit-points kinds
@@ -359,18 +319,6 @@ function injectStyles() {
   .shop-bought-badge{font-size:.75rem;color:#c4b5fd;font-weight:700;background:rgba(167,139,250,.14);
     border:1px solid rgba(167,139,250,.35);border-radius:.6rem;padding:.15rem .6rem;}
 
-  /* target picker */
-  .shop-target-picker{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;width:100%;}
-  .shop-target-chip{min-height:48px;padding:0 .9rem;border-radius:.85rem;font-weight:700;font-size:.85rem;
-    border:2px solid var(--tc-accent,#374151);background:#111827;color:var(--tc-accent,#e5e7eb);
-    cursor:pointer;display:flex;align-items:center;gap:.4rem;touch-action:manipulation;
-    transition:transform .12s ease;}
-  .shop-target-chip:active{transform:scale(.93);}
-  .shop-target-thumb{width:22px;height:22px;border-radius:.3rem;overflow:hidden;border:1px solid var(--tc-accent,#374151);}
-  .shop-target-thumb img{width:100%;height:100%;object-fit:cover;}
-  .shop-target-cancel{min-height:44px;padding:0 .9rem;border-radius:.75rem;background:transparent;
-    border:1px solid #4b5563;color:#9ca3af;font-weight:600;cursor:pointer;}
-
   /* ---- carousel layout — opt-in alternative to .shop-grid above, toggled via
      store.getLayout('shop'); the grid itself is untouched by any of this.
      ONE strip across every buyable item (offensive+defensive+wildcards+
@@ -382,23 +330,6 @@ function injectStyles() {
   .shop-carousel-outer{max-width:1200px;margin:0 auto 1.75rem;
     height:clamp(460px,58vh,520px);display:flex;
     --carousel-card-w:clamp(215px,18vw,250px);--carousel-card-maxh:440px;}
-
-  /* Card content at this narrower width: .shop-card-name, .shop-kind-tag,
-     .shop-flavor and .shop-card-status (above) already reserve a fixed height
-     with flex-shrink:0 — that was already built to survive a fixed card
-     height, so none of them needed retuning to avoid the quest carousel's
-     "crushed description" bug. The one child that did NOT reserve space is
-     the attack/pierce target-picker: at 250px wide its house chips wrap to
-     multiple rows, and without flex-shrink:0 that block would get squeezed
-     instead of simply wrapping taller. It also loses its thumbnail and shrinks
-     its chips so two fit per row instead of one, keeping the tallest
-     (mid-pick) state within the same reserved card height as every other
-     card in the strip. */
-  .shop-carousel-outer .shop-target-picker,
-  .shop-carousel-outer .shop-target-cancel{flex-shrink:0;}
-  .shop-carousel-outer .shop-target-thumb{display:none;}
-  .shop-carousel-outer .shop-target-chip{min-height:40px;padding:0 .5rem;font-size:.72rem;white-space:nowrap;}
-  .shop-carousel-outer .shop-target-cancel{min-height:38px;font-size:.85rem;}
 
   /* confirm modal */
   .shop-modal-backdrop{position:fixed;inset:0;z-index:65;background:rgba(0,0,0,.72);
@@ -539,135 +470,17 @@ function injectStyles() {
     background:#fde68a;border-radius:999px;padding:.2rem .7rem;}
   .shop-mythic-card-desc{color:#e9d9b8;font-size:1.05rem;line-height:1.42;}
 
-  /* ---- combat effects: attack landing / steal travel / block / pierce / reduce ---- */
-  /* (all ≤900ms, pointer-events:none) */
-  .shop-fx-num{position:absolute;top:-6px;left:50%;font-weight:800;font-size:1.05rem;
-    text-shadow:0 2px 8px rgba(0,0,0,.75);pointer-events:none;z-index:20;
-    animation:shop-fx-num-kf .9s ease-out both;white-space:nowrap;}
-  .shop-fx-num-bad{color:#f87171;}
-  .shop-fx-num-good{color:#fde68a;}
-  @keyframes shop-fx-num-kf{
-    0%{opacity:0;transform:translate(-50%,0) scale(.7);}
-    20%{opacity:1;transform:translate(-50%,-8px) scale(1.2);}
-    100%{opacity:0;transform:translate(-50%,-46px) scale(1);}
-  }
-
-  .shop-fx-flash{position:absolute;inset:-2px;border-radius:1rem;opacity:0;pointer-events:none;z-index:15;
-    animation:shop-fx-flash-kf .5s ease both;}
-  .shop-fx-flash-red{background:rgba(239,68,68,.5);}
-  .shop-fx-flash-blue{background:rgba(96,165,250,.5);}
-  .shop-fx-flash-amber{background:rgba(217,119,6,.5);}
-  @keyframes shop-fx-flash-kf{0%{opacity:0;}15%{opacity:1;}100%{opacity:0;}}
-
-  .shop-fx-hit{animation:shop-fx-hit-kf .45s cubic-bezier(.36,.07,.19,.97) both;}
-  @keyframes shop-fx-hit-kf{
-    0%,100%{transform:translate(0,0);}
-    20%{transform:translate(-5px,0);}
-    40%{transform:translate(4px,0);}
-    60%{transform:translate(-3px,0);}
-    80%{transform:translate(2px,0);}
-  }
-
-  .shop-fx-slash{position:absolute;inset:0;pointer-events:none;z-index:16;overflow:hidden;border-radius:1rem;}
-  .shop-fx-slash-mark{position:absolute;top:50%;left:50%;width:150%;height:4px;
-    background:linear-gradient(90deg,transparent,rgba(255,255,255,.95),transparent);
-    transform:translate(-50%,-50%) rotate(-25deg) scaleX(0);opacity:0;
-    animation:shop-fx-slash-kf .4s ease both;}
-  @keyframes shop-fx-slash-kf{
-    0%{opacity:0;transform:translate(-50%,-50%) rotate(-25deg) scaleX(0);}
-    35%{opacity:1;transform:translate(-50%,-50%) rotate(-25deg) scaleX(1);}
-    100%{opacity:0;transform:translate(-50%,-50%) rotate(-25deg) scaleX(1);}
-  }
-
-  .shop-fx-shield-ring{position:absolute;top:50%;left:50%;width:24px;height:24px;
-    border:3px solid rgba(147,197,253,.9);border-radius:50%;
-    transform:translate(-50%,-50%) scale(.4);opacity:0;pointer-events:none;z-index:17;
-    box-shadow:0 0 18px rgba(96,165,250,.6);
-    animation:shop-fx-ring-kf .7s cubic-bezier(.2,.8,.3,1) both;}
-  @keyframes shop-fx-ring-kf{
-    0%{opacity:.9;transform:translate(-50%,-50%) scale(.4);}
-    70%{opacity:.5;}
-    100%{opacity:0;transform:translate(-50%,-50%) scale(3.2);}
-  }
-
-  .shop-fx-blocked-label{position:absolute;left:50%;bottom:-26px;transform:translate(-50%,0);
-    background:rgba(15,23,42,.92);border:1px solid rgba(147,197,253,.7);color:#bfdbfe;
-    font-weight:800;font-size:.68rem;padding:.25rem .5rem;border-radius:.5rem;white-space:nowrap;
-    pointer-events:none;z-index:20;
-    animation:shop-fx-label-kf .9s ease both;}
-  @keyframes shop-fx-label-kf{
-    0%{opacity:0;transform:translate(-50%,6px) scale(.85);}
-    15%{opacity:1;transform:translate(-50%,0) scale(1);}
-    80%{opacity:1;}
-    100%{opacity:0;transform:translate(-50%,-4px) scale(.97);}
-  }
-
-  /* pierce: ghostly phase-through, then normal damage lands */
-  .shop-fx-phase{position:absolute;inset:-2px;border-radius:1rem;pointer-events:none;z-index:14;
-    background:linear-gradient(120deg,rgba(196,181,253,.4),rgba(96,165,250,.28));
-    opacity:0;filter:blur(1px);animation:shop-fx-phase-kf .35s ease both;}
-  @keyframes shop-fx-phase-kf{
-    0%{opacity:0;transform:scale(.95);}
-    30%{opacity:.85;transform:scale(1.03);}
-    60%{opacity:.4;transform:scale(1);}
-    100%{opacity:0;transform:scale(1.05);}
-  }
-
-  .shop-fx-vignette-red{position:fixed;inset:0;z-index:66;pointer-events:none;
-    animation:shop-fx-vignette-kf .7s ease both;}
-  @keyframes shop-fx-vignette-kf{
-    0%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
-    35%{box-shadow:inset 0 0 100px 22px rgba(239,68,68,.4);}
-    100%{box-shadow:inset 0 0 0 0 rgba(239,68,68,0);}
-  }
-
-  .shop-fx-travel-dot{position:fixed;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
-    background:radial-gradient(circle,#fde68a,#f59e0b 70%);box-shadow:0 0 12px 3px rgba(245,158,11,.7);
-    pointer-events:none;z-index:70;
-    animation:shop-fx-travel-kf .6s ease-in-out both;}
-  @keyframes shop-fx-travel-kf{
-    0%{opacity:0;transform:translate(0,0) scale(.4);}
-    15%{opacity:1;transform:translate(0,0) scale(1);}
-    90%{opacity:1;}
-    100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.6);}
-  }
-
   @media (prefers-reduced-motion:reduce){
     .shop-card.shake,.shop-banner,.shop-toast,.shop-modal,.shop-modal-backdrop{animation:none;}
-    .shop-fx-num,.shop-fx-blocked-label,.shop-wild-number,.shop-wild-rolled-number{animation:none;}
+    .shop-wild-number,.shop-wild-rolled-number{animation:none;}
   }
   `;
   document.head.appendChild(style);
 }
 
 // =============================================================================
-// helpers — attack math
-// =============================================================================
-function otherHouses(store, buyerId) {
-  return Object.values(store.HOUSES).filter((h) => h.id !== buyerId);
-}
-
-function topHouseExcluding(store, buyerId) {
-  const totals = store.getTotals('term').filter((t) => t.house.id !== buyerId);
-  return totals[0] ? totals[0].house : null;
-}
-
-// =============================================================================
 // item catalog helpers — validation + image resolution
 // =============================================================================
-// The points pill should span exactly the width of the heading text above it
-// (title/subtitle block), with the two shields sitting outside that span.
-// Measured after paint because the heading is fluid-typed.
-function sizeTreasuryToHeadings(root) {
-  try {
-    const headings = root.querySelector('.shop-headings');
-    const pill = root.querySelector('.shop-treasury');
-    if (!headings || !pill) return;
-    const w = Math.round(headings.getBoundingClientRect().width);
-    if (w > 0) { pill.style.width = w + 'px'; }
-  } catch (e) { /* presentation only — never break the shop */ }
-}
-
 // An item is renderable when the ACTIVE combat mode's engine implements it.
 // The store owns the two kind lists (SHOP_KINDS for hit points, DUEL_KINDS for
 // Mr. D's rules), so this can never drift from Admin's own save-time
@@ -828,29 +641,7 @@ function itemCard(store, s, item, buyerId) {
 
   // Stockpiled kinds (attack/steal/pierce, per store.isStockpiled) never need
   // a target at purchase time — they're banked in the armoury and spent on
-  // Battle Day — so the target picker only ever opens for a hypothetical
-  // non-stockpiled attack/pierce item (none exist in the current catalog).
-  if (!store.isStockpiled(item) && (kind === 'attack' || kind === 'pierce') && s.targetPicker === item.id) {
-    const targets = otherHouses(store, buyerId);
-    return `
-      <div class="shop-card" data-card="${esc(item.id)}">
-        <div class="shop-cost-badge">${item.cost} pts</div>
-        ${art}
-        <div class="shop-card-name" title="${esc(item.name)}">${esc(item.name)}</div>
-        ${kindTag}
-        <div class="shop-flavor">Choose a target house:</div>
-        <div class="shop-target-picker">
-          ${targets.map((h) => `
-            <button type="button" class="shop-target-chip" data-target-item="${esc(item.id)}" data-target-house="${h.id}" style="--tc-accent:${h.accent}">
-              <span class="shop-target-thumb" style="border-color:${h.accent}">${houseImg(h, 'w-full h-full')}</span>
-              ${esc(h.name)}
-            </button>`).join('')}
-        </div>
-        <button type="button" class="shop-target-cancel" data-target-cancel="${esc(item.id)}">Cancel</button>
-      </div>`;
-  }
-
-  // attack / pierce (no picker open) / steal / wild all use the plain BUY card.
+  // Battle Day, so attack / steal / pierce / wild all use the plain BUY card.
   const boughtCount = CONSUMABLE_KINDS.has(kind) ? boughtThisWeekCount(store, buyerId, item.name) : 0;
   // Stockpiled items (attack/steal/pierce) show what the house already holds
   // in its armoury from earlier purchases this week — the "you already have
@@ -871,32 +662,12 @@ function itemCard(store, s, item, buyerId) {
     </div>`;
 }
 
-function defenseWarnHtml(store, target) {
-  if (!target) return '';
-  if (store.isShielded(target.id)) {
-    return `<br><br>⚠️ ${esc(target.name)} is shielded — the attack will be <b>blocked</b>, but the cost is still paid.`;
-  }
-  if (store.hasReduction(target.id)) {
-    return `<br><br>🕵️ ${esc(target.name)} has damage reduction active — this hit will be <b>halved</b>.`;
-  }
-  return '';
-}
-
-function pierceNoteHtml(store, target) {
-  if (!target) return '';
-  const defended = store.isShielded(target.id) || store.hasReduction(target.id);
-  return defended
-    ? `<br><br>🫥 ${esc(target.name)} is defended, but this strike <b>ignores shields and damage reduction</b> entirely.`
-    : `<br><br>🫥 This strike <b>ignores any shield or damage reduction</b>.`;
-}
-
 function confirmModalHtml(store, s) {
   if (!s.confirm) return '';
   const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
   if (!item || itemIssues(store, item).length) return '';
-  const { buyerId, targetId } = s.confirm;
+  const { buyerId } = s.confirm;
   const buyer = store.HOUSES[buyerId];
-  const target = targetId != null ? store.HOUSES[targetId] : null;
   const amount = item.effect.amount;
   const kind = item.effect.kind;
 
@@ -922,17 +693,6 @@ function confirmModalHtml(store, s) {
     const owned = store.countOwned(buyerId, item.id);
     const ownedNote = owned > 0 ? ` <b>${esc(buyer.name)}</b> already holds <b>${owned}</b> of these in the armoury.` : '';
     bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to add <b>${esc(item.name)}</b> to the armoury — it's saved to use on <b>Battle Day</b>, not fired now.${ownedNote}`;
-  } else if (kind === 'steal') {
-    // Unreachable while store.STOCKPILE_KINDS includes 'steal' (it always
-    // does today) — kept only so a future non-stockpiled steal kind still
-    // gets a sensible confirm message instead of a blank modal.
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to steal <b>${amount} pts</b> from the leading rival, <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
-  } else if (kind === 'attack') {
-    // Unreachable while store.STOCKPILE_KINDS includes 'attack' — see note above.
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to deduct <b>${amount} pts</b> from <b>${target ? esc(target.name) : '—'}</b>.${defenseWarnHtml(store, target)}`;
-  } else if (kind === 'pierce') {
-    // Unreachable while store.STOCKPILE_KINDS includes 'pierce' — see note above.
-    bodyHtml = `<b>${esc(buyer.name)}</b> will spend <b>${item.cost} pts</b> to strike <b>${target ? esc(target.name) : '—'}</b> for <b>${amount} pts</b>.${pierceNoteHtml(store, target)}`;
   }
 
   return `
@@ -1147,94 +907,6 @@ function animateTreasuryCount(el, from, to, durationMs, onDone) {
     else if (onDone) onDone();
   };
   tick();
-}
-
-// =============================================================================
-// COMBAT EFFECTS — attack landing, steal travel, block, pierce, reduce.
-// Pure CSS/DOM, ≤900ms, pointer-events:none, respects prefers-reduced-motion,
-// tracked in fxNodes for guaranteed cleanup.
-// =============================================================================
-function screenVignette() {
-  if (prefersReducedMotion()) return; // decorative-only — skip entirely under reduced motion
-  const host = document.getElementById('overlay-root');
-  if (!host) return;
-  spawnFxPlain(host, 'shop-fx-vignette-red', 700);
-}
-
-function attackLandingFx(targetChip, amount) {
-  screenVignette();
-  if (!targetChip) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(targetChip, 'shop-fx-flash shop-fx-flash-red', 500);
-    const slash = spawnFx(targetChip, 'shop-fx-slash', 450);
-    if (slash) slash.innerHTML = '<span class="shop-fx-slash-mark"></span>';
-    targetChip.classList.remove('shop-fx-hit');
-    void targetChip.offsetWidth;
-    targetChip.classList.add('shop-fx-hit');
-    later(() => targetChip.classList.remove('shop-fx-hit'), 450);
-  }
-  spawnFx(targetChip, 'shop-fx-num shop-fx-num-bad', 900, `-${amount}`);
-}
-
-// Pierce: a ghostly phase-through beat, then the normal attack landing plays.
-function pierceFx(targetChip, appliedAmount) {
-  if (!targetChip) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) spawnFx(targetChip, 'shop-fx-phase', 350);
-  later(() => attackLandingFx(targetChip, appliedAmount), reduced ? 0 : 220);
-}
-
-// Reduction: shows the halving explicitly ("30 → 15") and flares the reduce badge.
-function reducedFx(targetChip, rawAmount, appliedAmount) {
-  screenVignette();
-  if (!targetChip) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(targetChip, 'shop-fx-flash shop-fx-flash-amber', 500);
-    const slash = spawnFx(targetChip, 'shop-fx-slash', 450);
-    if (slash) slash.innerHTML = '<span class="shop-fx-slash-mark"></span>';
-    targetChip.classList.remove('shop-fx-hit');
-    void targetChip.offsetWidth;
-    targetChip.classList.add('shop-fx-hit');
-    later(() => targetChip.classList.remove('shop-fx-hit'), 450);
-  }
-  spawnFx(targetChip, 'shop-fx-num shop-fx-num-bad', 900, `${rawAmount} → ${appliedAmount}`);
-}
-
-// Traveling golden dot from the target chip to the buyer chip, using
-// getBoundingClientRect() + position:fixed so it reads correctly regardless
-// of where the chips sit in the (scrollable) buyer row.
-function travelDot(fromEl, toEl) {
-  if (prefersReducedMotion()) return;
-  if (!fromEl || !toEl || !rootEl) return;
-  const a = fromEl.getBoundingClientRect();
-  const b = toEl.getBoundingClientRect();
-  const dot = document.createElement('div');
-  dot.className = 'shop-fx-travel-dot';
-  dot.style.left = `${a.left + a.width / 2}px`;
-  dot.style.top = `${a.top + a.height / 2}px`;
-  dot.style.setProperty('--dx', `${(b.left + b.width / 2) - (a.left + a.width / 2)}px`);
-  dot.style.setProperty('--dy', `${(b.top + b.height / 2) - (a.top + a.height / 2)}px`);
-  rootEl.appendChild(dot);
-  fxNodes.add(dot);
-  later(() => { dot.remove(); fxNodes.delete(dot); }, 650);
-}
-
-function stealFx(buyerChip, targetChip, amount) {
-  spawnFx(targetChip, 'shop-fx-num shop-fx-num-bad', 900, `-${amount}`);
-  spawnFx(buyerChip, 'shop-fx-num shop-fx-num-good', 900, `+${amount}`);
-  travelDot(targetChip, buyerChip);
-}
-
-function blockFx(targetChip) {
-  if (!targetChip) return;
-  const reduced = prefersReducedMotion();
-  if (!reduced) {
-    spawnFx(targetChip, 'shop-fx-shield-ring', 700);
-    spawnFx(targetChip, 'shop-fx-flash shop-fx-flash-blue', 500);
-  }
-  spawnFx(targetChip, 'shop-fx-blocked-label', 900, '🛡️ BLOCKED');
 }
 
 // =============================================================================
@@ -1472,7 +1144,7 @@ async function resolvePurchase(s) {
   const audio = ctxRef.audio;
   const item = store.getShopItems().find((i) => i.id === s.confirm.itemId);
   if (!item || itemIssues(store, item).length) { s.confirm = null; render(s); return; }
-  const { buyerId, targetId } = s.confirm;
+  const { buyerId } = s.confirm;
   const kind = item.effect.kind;
 
   // In-flight guard: a double-tap on Confirm in the same tick must not spend
@@ -1512,7 +1184,6 @@ async function resolvePurchase(s) {
       store.addToInventory(buyerId, item.id);
       audio.sfx('coin');
       s.confirm = null;
-      s.targetPicker = null;
       render(s);
       const held = store.countOwned(buyerId, item.id);
       showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${held}) — ready for Battle Day! ${item.emoji || '✨'}`);
@@ -1521,8 +1192,10 @@ async function resolvePurchase(s) {
 
     if (kind === 'wild') { resolveWildPurchase(s, item, buyerId); return; }
 
+    // The only kinds that reach here are shield/reduce (self-buffs) — attack/
+    // steal/pierce are always stockpiled (store.isStockpiled), so buying one
+    // banks it in the armoury via the branch above and never fires live.
     const buyer = store.HOUSES[buyerId];
-    const target = targetId != null ? store.HOUSES[targetId] : null;
     const amount = item.effect.amount;
     const emoji = item.emoji || '✨';
 
@@ -1535,45 +1208,22 @@ async function resolvePurchase(s) {
     }
     audio.sfx('coin');
 
-    let result = null;
     if (kind === 'shield') {
       store.activateShield(buyerId, amount);
     } else if (kind === 'reduce') {
       store.activateReduction(buyerId, amount);
     } else if (store.isStockpiled(item)) {
       // Buying an offensive item (attack/steal/pierce) no longer fires it — it
-      // goes into the buyer's armoury and is spent later, on Battle Day. No
-      // target, no store.applyAttack call, no loot.
+      // goes into the buyer's armoury and is spent later, on Battle Day.
       store.addToInventory(buyerId, item.id);
-    } else if (kind === 'attack' || kind === 'pierce') {
-      // Unreachable while store.STOCKPILE_KINDS includes these kinds (it
-      // always does today) — kept only so a future non-stockpiled item still
-      // resolves as a live attack instead of silently doing nothing.
-      result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: kind === 'pierce', label: item.name });
-    } else if (kind === 'steal') {
-      // The ONE combat rule resolves shield/reduction on the deduction; the
-      // buyer then loots exactly what was actually taken (0 if blocked, half
-      // if reduced) — never more than the target really lost.
-      result = store.applyAttack({ fromId: buyerId, toId: target.id, amount, pierce: false, label: item.name });
-      if (result.outcome !== 'blocked' && result.applied > 0) {
-        store.addPoints(buyerId, result.applied, { reason: `${item.name} loot from ${target.name}`, tag: 'attack' });
-      }
     }
 
     // Every store mutation above would normally fire its own synchronous
     // re-render via store.subscribe, but that's suspended while
     // purchaseInFlight is true (see mount()) — close the modal and render
-    // explicitly instead. Only after this render are buyer/target chip
-    // elements guaranteed to be the ones actually attached to the page;
-    // querying them any earlier risks grabbing nodes that are about to be
-    // replaced, and spawning banner/fx nodes before this render would just
-    // get wiped by it.
+    // explicitly instead.
     s.confirm = null;
-    s.targetPicker = null;
     render(s);
-
-    const buyerChip = rootEl.querySelector(`[data-buyer="${buyerId}"]`);
-    const targetChip = target ? rootEl.querySelector(`[data-buyer="${target.id}"]`) : null;
 
     if (kind === 'shield') {
       showBanner(`${buyer.name} raised the ${item.name}! ${emoji}`);
@@ -1586,31 +1236,6 @@ async function resolvePurchase(s) {
     if (store.isStockpiled(item)) {
       const owned = store.countOwned(buyerId, item.id);
       showBanner(`${buyer.name} stashed ${item.name} in the armoury (×${owned}) — ready for Battle Day! ${emoji}`);
-      return;
-    }
-
-    // attack / steal / pierce share the same outcome-driven fx. Unreachable
-    // while store.STOCKPILE_KINDS covers these kinds (it always does today) —
-    // kept only so a future non-stockpiled item still gets combat fx/banner.
-    if (result.outcome === 'blocked') {
-      audio.sfx('sword');
-      blockFx(targetChip);
-      showBanner(`🛡️ ${target.name} blocked the ${item.name} from ${buyer.name}!`);
-      return;
-    }
-
-    audio.sfx('thud');
-    if (result.outcome === 'pierced') pierceFx(targetChip, result.applied);
-    else if (result.outcome === 'reduced') reducedFx(targetChip, amount, result.applied);
-    else attackLandingFx(targetChip, result.applied);
-
-    if (kind === 'steal') {
-      const note = result.outcome === 'reduced' ? ` (defenses halved it: ${amount} → ${result.applied})`
-        : result.outcome === 'pierced' ? ' (slipped past defenses!)' : '';
-      showBanner(`${buyer.name} stole ${result.applied} pts from ${target.name}!${note} ${emoji}`);
-    } else {
-      const verb = result.outcome === 'pierced' ? 'pierced' : result.outcome === 'reduced' ? 'struck (halved)' : 'struck';
-      showBanner(`${buyer.name} ${verb} ${target.name} for ${result.applied} pts! ${emoji}`);
     }
   } finally {
     purchaseInFlight = false;
@@ -1664,7 +1289,7 @@ export default {
         if (store.getCombatMode() === 'duel') {
           const gate = store.duelCanBuy(buyerId, item.id);
           if (!gate.ok) { showToast(gate.reason); shakeCard(itemId); return; }
-          s.confirm = { itemId, buyerId, targetId: null };
+          s.confirm = { itemId, buyerId };
           doRender();
           return;
         }
@@ -1675,7 +1300,7 @@ export default {
           return;
         }
         if (kind === 'shield' || kind === 'reduce' || kind === 'wild') {
-          s.confirm = { itemId, buyerId, targetId: null };
+          s.confirm = { itemId, buyerId };
           doRender();
           return;
         }
@@ -1684,36 +1309,10 @@ export default {
         // just banks it in the armoury for Battle Day, so BUY goes straight
         // to the confirm modal with no target.
         if (store.isStockpiled(item)) {
-          s.confirm = { itemId, buyerId, targetId: null };
+          s.confirm = { itemId, buyerId };
           doRender();
           return;
         }
-        if (kind === 'steal') {
-          const target = topHouseExcluding(store, buyerId);
-          s.confirm = { itemId, buyerId, targetId: target ? target.id : null };
-          doRender();
-          return;
-        }
-        if (kind === 'attack' || kind === 'pierce') {
-          s.targetPicker = itemId;
-          doRender();
-          return;
-        }
-        return;
-      }
-
-      const targetCancel = e.target.closest('[data-target-cancel]');
-      if (targetCancel) { s.targetPicker = null; doRender(); return; }
-
-      const targetPick = e.target.closest('[data-target-item]');
-      if (targetPick) {
-        const activeHouse = store.getActiveHouse();
-        if (!activeHouse) return;
-        const itemId = targetPick.getAttribute('data-target-item');
-        const houseId = Number(targetPick.getAttribute('data-target-house'));
-        s.confirm = { itemId, buyerId: activeHouse.id, targetId: houseId };
-        s.targetPicker = null;
-        doRender();
         return;
       }
 

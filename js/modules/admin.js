@@ -4314,8 +4314,6 @@ function openPotwEditor(key) {
       // saved before openUrl existed fall back to the stored embed url.
       pres: { type: p.presentation?.type || null, pdf: null, images: [], url: p.presentation?.type === 'gslides' ? (p.presentation.openUrl || p.presentation.url || '') : '' },
       links: (p.links || []).map((l) => ({ title: l.title || '', url: l.url || '' })),
-      flyover: { file: null, existing: false, name: '', size: 0, url: '' },
-      flyoverUrl: p.flyoverUrl || '',
     };
   } else {
     potwForm = {
@@ -4330,13 +4328,10 @@ function openPotwEditor(key) {
       bountyPoints: '',
       pres: { type: null, pdf: null, images: [], url: '' },
       links: [],
-      flyover: { file: null, existing: false, name: '', size: 0, url: '' },
-      flyoverUrl: '',
     };
   }
   renderPotwModal();
   if (!potwForm.isNew && potwForm.pres.type && potwForm.pres.type !== 'gslides') hydratePresentation(key);
-  if (!potwForm.isNew) hydrateFlyover(key);
 }
 
 // Load existing presentation media (PDF info / image thumbnails) for an editor
@@ -4357,20 +4352,6 @@ async function hydratePresentation(key) {
     pres.images = items;
   }
   if (potwForm && el('admin-p-title')) renderPotwModal();
-}
-
-// Load an already-stored flyover audio blob (if any) for an editor that was
-// just opened, so "Remove" / the audio preview reflect what's really saved.
-async function hydrateFlyover(key) {
-  if (!potwForm) return;
-  const info = await media.info(`potw:${key}:flyover`);
-  if (!info || !potwForm) return;
-  let url = '';
-  try { url = await media.url(`potw:${key}:flyover`); } catch (e) {}
-  if (url) presUrls.add(url);
-  if (!potwForm) return; // editor closed mid-await
-  potwForm.flyover = { file: null, existing: true, name: info.name, size: info.size, url };
-  if (el('admin-p-title')) renderPotwModal();
 }
 
 function renderPotwModal() {
@@ -4490,8 +4471,6 @@ function renderPotwModal() {
           <select id="admin-p-video" class="admin-input" style="max-width:240px">${vidOptions}</select>
           ${legacyNote}
           <div class="admin-mini" style="margin-top:6px">Want a different option here? Add, edit, or remove presets in the <b>🎬 Intro Video Presets</b> list at the top of the Place of the Week screen.</div>
-
-          ${flyoverBlockHTML()}
         </div>
 
         <div class="admin-step">
@@ -4533,35 +4512,6 @@ function renderPotwModal() {
         <button class="admin-btn admin-btn-lg" data-action="potw-close">Cancel</button>
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-save">Save this week's destination</button>
       </div>
-    </div>`;
-}
-
-// Optional ambient audio for the 3D flyover, per destination. A stored file
-// always wins over a URL; with neither, the flight is silent.
-function flyoverBlockHTML() {
-  const f = potwForm;
-  const fl = f.flyover || {};
-  const area = (fl.file || fl.existing)
-    ? `<div class="admin-drop-body admin-pres-file">
-         <div class="admin-drop-file">
-           <span class="admin-drop-name" title="${esc(fl.name)}">${esc(fl.name)}</span>
-           <span class="admin-drop-size">${humanSize(fl.size)} · ${fl.file ? 'pending save' : 'stored'}</span>
-         </div>
-         ${fl.url ? `<audio controls src="${esc(fl.url)}" style="width:100%;margin-top:8px;height:32px"></audio>` : ''}
-         <button type="button" class="admin-btn admin-btn-sm admin-btn-danger" data-action="flyover-del" style="margin-top:8px">Remove</button>
-       </div>`
-    : `<div class="admin-drop" data-flyover="1" data-action="media-browse" title="Drop or click to browse">
-         <input type="file" class="admin-file" data-flyover="1" accept="audio/*" hidden />
-         <span class="admin-drop-prompt">⬇ Drop an audio file here, or click to browse</span>
-       </div>`;
-
-  return `
-    <div class="admin-flyover-block">
-      <label class="admin-flabel" style="margin:0">🎵 Flyover music <span class="admin-faint">(optional)</span></label>
-      ${area}
-      <label class="admin-flabel" for="admin-p-flyover-url" style="margin-top:10px">Or a music URL</label>
-      <input id="admin-p-flyover-url" class="admin-input" type="text" value="${esc(f.flyoverUrl)}" placeholder="audio/flight.mp3 or https://…" spellcheck="false" autocomplete="off" />
-      <div class="admin-mini" style="margin-top:8px">Plays during the 27-second flight and fades out 3 seconds after the presentation opens. Aim for a ~30 second track. An uploaded file always wins over the URL; with neither set, the flight plays silently. Follows the app's sound on/off switch — mute it and this stays silent too.</div>
     </div>`;
 }
 
@@ -4684,44 +4634,9 @@ function revokeImageUrls(images) {
 }
 function revokePresUrls() { presUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) {} }); presUrls.clear(); }
 
-// Stage a dropped/selected flyover audio file in memory (committed to IndexedDB
-// on Save, same pattern as the PDF/image presentation staging above).
-function stageFlyoverFile(file) {
-  if (!potwForm || !file) return;
-  const isAudio = file.type ? /^audio\//.test(file.type) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name || '');
-  if (!isAudio) { toast('Please choose an audio file (mp3, wav, ogg, m4a…).'); return; }
-  syncPotwFromDom();
-  const prev = potwForm.flyover;
-  if (prev?.url && presUrls.has(prev.url)) { try { URL.revokeObjectURL(prev.url); } catch (e) {} presUrls.delete(prev.url); }
-  const url = URL.createObjectURL(file);
-  presUrls.add(url);
-  potwForm.flyover = { file, existing: false, name: file.name, size: file.size, url };
-  renderPotwModal();
-}
-
-function removeFlyoverFile() {
-  if (!potwForm) return;
-  syncPotwFromDom();
-  const prev = potwForm.flyover;
-  if (prev?.url && presUrls.has(prev.url)) { try { URL.revokeObjectURL(prev.url); } catch (e) {} presUrls.delete(prev.url); }
-  potwForm.flyover = { file: null, existing: false, name: '', size: 0, url: '' };
-  renderPotwModal();
-}
-
-// Reconcile IndexedDB with the chosen flyover audio. Mirrors commitPresentation:
-// a staged file is stored, an untouched existing blob is left alone, and an
-// explicit removal (or a brand-new destination with nothing staged) deletes it.
-async function commitFlyover(key) {
-  const fl = potwForm.flyover || {};
-  const mkey = `potw:${key}:flyover`;
-  if (fl.file) { await media.put(mkey, fl.file); return; }
-  if (fl.existing) return;
-  await media.delete(mkey);
-}
-
-// A resource link (or the flyover URL fallback) must be a real web link or a
-// site-relative path — never a bare scheme like javascript: or a protocol-
-// relative //host link, and never contain whitespace.
+// A resource link must be a real web link or a site-relative path — never a
+// bare scheme like javascript: or a protocol-relative //host link, and never
+// contain whitespace.
 function isValidResourceUrl(raw) {
   const s = String(raw || '').trim();
   if (!s) return true; // caller decides whether empty is acceptable
@@ -4883,7 +4798,6 @@ function syncPotwFromDom() {
   potwForm.weekOf = g('admin-p-week');
   if (has('admin-p-maps')) potwForm.mapsLink = g('admin-p-maps');
   if (has('admin-p-video')) potwForm.introVideoId = g('admin-p-video');
-  if (has('admin-p-flyover-url')) potwForm.flyoverUrl = g('admin-p-flyover-url');
   potwForm.camera = {
     // lat/lng come from the parsed maps link unless the manual escape hatch is open
     lat: has('admin-c-lat') ? g('admin-c-lat') : potwForm.camera.lat,
@@ -4942,17 +4856,12 @@ async function savePotw() {
     toast(`“${badLink.title || badLink.url}” needs a link starting with http:// or https://, or a site-relative path like videos/intro.mp4.`);
     return;
   }
-  const flyoverUrl = (f.flyoverUrl || '').trim();
-  if (flyoverUrl && !isValidResourceUrl(flyoverUrl)) {
-    toast('The flyover music URL must start with http:// or https://, or be a site-relative path like audio/flight.mp3.');
-    return;
-  }
   const num = (v, d) => { const n = Number(v); return Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d; };
   // A NEW DESTINATION MUST NEVER LAND ON AN EXISTING ONE. slugify('Egypt') is
   // 'egypt', which is already a shipped profile — and the commit steps below
   // delete that key's stored media BEFORE savePotwProfile overwrites the
   // profile itself. So adding a second Egypt used to silently destroy the first
-  // one: its slides, its flyover, its facts, its coordinates. Uniquify instead.
+  // one: its slides, its facts, its coordinates. Uniquify instead.
   let finalKey = slugify(f.isNew ? (f.key.trim() || title) : f.key);
   if (f.isNew) {
     const taken = ctxRef.store.getPotwProfiles() || {};
@@ -4966,8 +4875,6 @@ async function savePotw() {
   }
   const weekOf = f.weekOf ? mondayOfDate(f.weekOf) : '';
   const presentation = await commitPresentation(finalKey);
-  if (!potwForm) return; // editor was closed mid-await
-  await commitFlyover(finalKey);
   if (!potwForm) return; // editor was closed mid-await
 
   // Coordinates: a freshly parsed maps link wins, else the manual/existing values.
@@ -4998,7 +4905,6 @@ async function savePotw() {
   const presetChanged = f.introVideoId && f.introVideoId !== f.legacyPresetAtOpen;
   if (f.legacyVideoUrl && !presetChanged) profile.videoUrl = f.legacyVideoUrl;
   if (linksRaw.length) profile.links = linksRaw;
-  if (flyoverUrl) profile.flyoverUrl = flyoverUrl;
 
   const ok = ctxRef.store.savePotwProfile(finalKey, profile);
   if (!ok) { toast('Save failed — check the place name.'); return; }
@@ -5589,8 +5495,6 @@ function onClick(e) {
     case 'potw-link-up': { syncPotwFromDom(); const i = Number(btn.dataset.i); const a = potwForm.links; if (i > 0) { [a[i - 1], a[i]] = [a[i], a[i - 1]]; } renderPotwModal(); break; }
     case 'potw-link-down': { syncPotwFromDom(); const i = Number(btn.dataset.i); const a = potwForm.links; if (i < a.length - 1) { [a[i + 1], a[i]] = [a[i], a[i + 1]]; } renderPotwModal(); break; }
 
-    // flyover music
-    case 'flyover-del': removeFlyoverFile(); break;
     case 'potw-parse-maps': {
       syncPotwFromDom();
       const res = parseMapsLink(potwForm.mapsLink);
@@ -5874,9 +5778,6 @@ function injectStyles() {
   .admin-link-row .admin-brow-ctrls{margin-top:2px;}
   @media (max-width:600px){.admin-link-row{grid-template-columns:1fr;}}
   .admin-input-err{border-color:#ef4444 !important;}
-
-  /* flyover music (POTW editor) */
-  .admin-flyover-block{margin-top:16px;padding-top:14px;border-top:1px solid var(--color-line);}
 
   /* quests tab */
   .admin-quests{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:18px;}
@@ -6297,7 +6198,6 @@ export default {
         else if (inp.dataset.presdrop) handlePresDrop(inp.dataset.presdrop, files[0]);
         else if (inp.dataset.assets) handleAssetFiles(inp.dataset.assets, files);
         else if (inp.dataset.pres) handlePresFiles(inp.dataset.pres, files);
-        else if (inp.dataset.flyover) stageFlyoverFile(files[0]);
         else handleMediaFile(inp.dataset.mkey, files[0]);
       }
       inp.value = ''; // allow re-picking the same file
@@ -6378,7 +6278,6 @@ export default {
       else if (z.dataset.presdrop) handlePresDrop(z.dataset.presdrop, files[0]);
       else if (z.dataset.assets) handleAssetFiles(z.dataset.assets, files);
       else if (z.dataset.pres) handlePresFiles(z.dataset.pres, files);
-      else if (z.dataset.flyover) stageFlyoverFile(files[0]);
       else handleMediaFile(z.dataset.mkey, files[0]);
     };
     rootEl.addEventListener('dragover', dragOverHandler);
