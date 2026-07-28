@@ -232,34 +232,46 @@ function stepLock() {
 
 const STEPS = [stepWelcome, stepBackup, stepTerm, stepHouses, stepLock, stepDone];
 
+// 6.6 — the only thing that ever blocks "done" is the backup folder
+// (needsSetup lived in the same idea before it was retired as dead code); a
+// returning visit jumps straight here instead of the whole tour.
+const BACKUP_STEP_INDEX = STEPS.indexOf(stepBackup);
+
 // ---------------------------------------------------------------------------
 // rendering
 // ---------------------------------------------------------------------------
 function render() {
   if (!rootEl) return;
   const s = STEPS[step]();
+  // 6.6 — a returning visit is one step, not six: no dots (there is no tour
+  // to show progress through), no Back (there is nowhere else in this visit
+  // to go back to), a one-line "just this" framing instead of the generic
+  // eyebrow, and the Next button is honestly labelled Done, because tapping
+  // it finishes setup on the spot rather than advancing to step 3.
+  const eyebrow = returnBanner ? 'Welcome back' : s.eyebrow;
+  const nextLabel = returnBanner ? 'Done' : s.next;
   rootEl.innerHTML = `
     <div class="fr-backdrop"></div>
     <div class="fr-panel" role="dialog" aria-modal="true" aria-label="Setup">
       <div class="fr-head">
-        <div class="fr-dots" aria-hidden="true">
+        ${returnBanner ? '' : `<div class="fr-dots" aria-hidden="true">
           ${STEPS.map((_, i) => `<span class="fr-dot" data-on="${i <= step}"></span>`).join('')}
-        </div>
+        </div>`}
         <button type="button" class="fr-skip" data-fr-action="skip">Skip for now</button>
       </div>
       <div class="fr-body">
         ${returnBanner ? `
           <div class="fr-status fr-status-warn">
-            <b>Picking up where you left off.</b> You skipped this before — no trouble, it's still quick, and it's worth a minute before the term gets busy.
+            <b>Just this one thing left.</b> Everything else from before is still set the way you left it — this is the only step that still matters.
           </div>` : ''}
-        <div class="fr-eyebrow">${esc(s.eyebrow)}</div>
+        <div class="fr-eyebrow">${esc(eyebrow)}</div>
         <h2 class="fr-title">${esc(s.title)}</h2>
         ${s.html}
       </div>
       <div class="fr-foot">
-        <button type="button" class="fr-btn fr-btn-ghost" data-fr-action="back"${step === 0 ? ' hidden' : ''}>← Back</button>
+        <button type="button" class="fr-btn fr-btn-ghost" data-fr-action="back"${(returnBanner || step === 0) ? ' hidden' : ''}>← Back</button>
         <div class="fr-foot-spacer"></div>
-        ${s.next ? `<button type="button" class="fr-btn ${s.nextWarn ? '' : 'fr-btn-primary'}" data-fr-action="next">${esc(s.next)}</button>` : ''}
+        ${nextLabel ? `<button type="button" class="fr-btn ${s.nextWarn ? '' : 'fr-btn-primary'}" data-fr-action="next">${esc(nextLabel)}</button>` : ''}
       </div>
     </div>`;
 }
@@ -326,6 +338,8 @@ function onClick(e) {
   if (what === 'finish') { markDone(); close(); return; }
   if (what === 'back') { goto(step - 1); return; }
   if (what === 'next') {
+    // 6.6 — a returning single-step visit: Next IS Done, wherever it lands.
+    if (returnBanner) { markDone(); close(); return; }
     if (step >= STEPS.length - 1) { markDone(); close(); return; }
     goto(step + 1);
     return;
@@ -403,7 +417,10 @@ function close() {
 
 function openWizard(atStep = 0, returning = false) {
   if (isOpen()) return;
-  step = atStep;
+  // 6.6 — a returning visit ignores atStep and jumps straight to the backup
+  // step; only the true first run (and Help → "Run the setup wizard again",
+  // which always calls this with returning=false) walks in at atStep.
+  step = returning ? BACKUP_STEP_INDEX : atStep;
   returnBanner = returning;
   rootEl = document.createElement('div');
   rootEl.id = ROOT_ID;
@@ -429,11 +446,15 @@ export function startSetup() { openWizard(0); }
  * stop the app from starting.
  *
  * Skipping never counts as finishing. Instead:
- *  - Never skipped yet → opens right away, at the welcome step.
+ *  - Never skipped yet → opens right away, at the welcome step, full tour.
  *  - Skipped before → opens again on a LATER calendar day (never twice in
  *    the same day — that would feel exactly like the trap this file is
- *    built to avoid), resuming at the step it was on, with a short line
- *    owning that it's back.
+ *    built to avoid). This is NOT a resume of the whole tour: the backup
+ *    folder is the only thing that was ever still open (6.6), so it jumps
+ *    straight to that one step with a short line owning that it's back —
+ *    see openWizard()'s `returning` branch. setupResumeStep is still
+ *    recorded on every skip, but nothing reads it any more; a returning
+ *    visit no longer cares which step the teacher was on.
  *  - Skipped three times → stops volunteering itself. Still one tap away
  *    from ❓ Help → "Run the setup wizard again", so nothing is lost.
  *  - A backup folder connected by ANY route (including later, from Admin)
@@ -459,13 +480,10 @@ export function maybeRunFirstRun() {
     }
 
     const returning = !!skippedAt;
-    const resumeStep = returning
-      ? Math.max(0, Math.min(STEPS.length - 1, Number(s.setupResumeStep) || 0))
-      : 0;
 
     // One frame's delay so the dashboard is painted behind the wizard — it
     // reads as "here is your app, plus a hand getting started", not a gate.
-    setTimeout(() => { try { openWizard(resumeStep, returning); } catch (e) { console.warn('firstrun: open failed', e); } }, 350);
+    setTimeout(() => { try { openWizard(0, returning); } catch (e) { console.warn('firstrun: open failed', e); } }, 350);
     return true;
   } catch (e) {
     console.warn('firstrun: skipped', e);
