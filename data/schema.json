@@ -486,62 +486,33 @@
     },
     "shop": {
       "type": "object",
-      "description": "Magic Shop catalogs (teacher-edited in Admin → 🔮 Shop). There are really TWO catalogs, one per settings.combatMode ('duel' = Mr. D's rules, 'hp' = hit points) — see COMBAT_MODES in store.js. 'catalog' below is always whichever mode is CURRENTLY active; 'parked' holds the other mode's catalog untouched while it waits its turn, so switching combatMode swaps the whole shop and switching back finds the teacher's edits exactly as left. Each mode also tracks its own 'seeded' item-id list, independently, so a newly-shipped default item reaches a saved catalog exactly once per mode without resurrecting an item the teacher deliberately deleted.",
-      "required": ["catalog"],
+      "description": "TEACHER OVERRIDES ONLY — what the teacher has changed about the Magic Shop (Admin → 🔮 Shop). Neither catalog is stored here. There are TWO catalogs, one per settings.combatMode ('duel' = Mr. D's rules, 'hp' = hit points, see COMBAT_MODES in store.js), both ship in code (defaultDuelCatalog() / defaultHpCatalog()), and store.js merges these overrides over the shipped list at load — the active mode's into 'catalog' and the other mode's into 'parked', in memory only. THE TWO CATALOGS ARE INDEPENDENT ID NAMESPACES and every key below is split by mode for exactly that reason: 'catapult' and 'cloak' each name a completely different item in the two, and the old by-id migrations each needed a hand-written scope note to avoid rewriting one with the other. Because the shipped items are read from code on every load, a price rebalance, a wording fix, a new piece of artwork or a brand-new item reaches an install that has already saved — which is what the three one-time patches this replaced (a 'seeded' id list, 'descRev' and 'artRev') each existed to do once, by hand. LEGACY: a save holding 'catalog'/'parked'/'seeded' is the old full-copy shape; store.js load() converts it once (per mode, using that mode's 'seeded' list to tell a deliberate deletion from an item shipped since), backfills shipped artwork into any item that has no image at all — the last thing 'artRev' was for — and the next save writes the shape below. 'descRev'/'artRev' are dropped and never written again.",
       "properties": {
-        "catalog": {
-          "type": "array",
-          "description": "Purchasable items in the CURRENTLY ACTIVE combat mode's shop (houses spend TERM points). Item shape differs by mode — see the 'effect.kind' enum below and the 'slot'/'counteredBy'/'blocks' fields, which apply to the duel catalog only.",
-          "items": { "$ref": "#/definitions/shopItem" },
-          "example": [
-            {
-              "id": "sword",
-              "name": "The Sword of Destiny",
-              "emoji": "🗡️",
-              "image": "images/shop/sword-of-destiny.png",
-              "cost": 450,
-              "slot": "attack",
-              "desc": "Strike another House for 2d6 × 100 points. The Shield of Protection stops it dead.",
-              "effect": { "kind": "damage", "dice": "2d6", "mult": 100 },
-              "counteredBy": ["shield"]
-            },
-            {
-              "id": "shield",
-              "name": "The Shield of Protection",
-              "emoji": "🛡️",
-              "image": "images/shop/shield-of-protection.png",
-              "cost": 500,
-              "slot": "defense",
-              "desc": "Stops the Sword of Destiny or the Legendary Ice Axe for one Battle Day.",
-              "effect": { "kind": "block" },
-              "blocks": ["sword", "iceaxe"]
-            }
-          ]
-        },
-        "seeded": {
+        "edits": {
           "type": "object",
-          "description": "Which shipped default item ids this browser has already been shown, PER combat mode, so store.js load() can append a genuinely new default item exactly once while an item the teacher deliberately deleted stays deleted. An older saved state from before combat modes existed stored this as a flat array (the whole thing WAS the hit-points catalog then); load() converts it into the 'hp' side of this object on first load under the new shape and starts the 'duel' side fresh.",
+          "description": "Per-mode, per-id diffs against the SHIPPED item: only the fields the teacher actually changed in Admin's shop editor. An item edited back to its shipped values drops out entirely.",
           "properties": {
-            "duel": { "type": "array", "items": { "type": "string" }, "description": "Default duel-catalog item ids already introduced to this browser's 'duel' shop." },
-            "hp": { "type": "array", "items": { "type": "string" }, "description": "Default hit-points-catalog item ids already introduced to this browser's 'hp' shop." }
+            "duel": { "$ref": "#/definitions/shopEdits" },
+            "hp": { "$ref": "#/definitions/shopEdits" }
           },
-          "example": { "duel": ["sword", "net", "iceaxe"], "hp": ["catapult", "greekfire"] }
+          "example": { "duel": { "sword": { "name": "The Sword of Mr. D", "cost": 1234 } }, "hp": {} }
         },
-        "parked": {
+        "added": {
           "type": "object",
-          "description": "The combat mode that is NOT currently active keeps its whole catalog here, untouched, while it waits its turn — 'catalog' above is always the active mode's list. Switching settings.combatMode (store.setCombatMode) swaps these: the outgoing mode's live catalog is moved into 'parked[outgoingMode]' and 'parked[incomingMode]' is promoted to 'catalog'. A mode that has never been active on this browser holds null here until its first activation, at which point it is seeded from the shipped default catalog for that mode.",
+          "description": "Items the teacher created themselves, per mode, stored whole — there is no shipped item to diff them against. An id here that later becomes a shipped id is ignored in favour of the shipped item, so the same id can never appear twice in one catalog.",
           "properties": {
-            "duel": { "oneOf": [{ "type": "array", "items": { "$ref": "#/definitions/shopItem" } }, { "type": "null" }] },
-            "hp": { "oneOf": [{ "type": "array", "items": { "$ref": "#/definitions/shopItem" } }, { "type": "null" }] }
+            "duel": { "type": "array", "items": { "$ref": "#/definitions/shopItem" } },
+            "hp": { "type": "array", "items": { "$ref": "#/definitions/shopItem" } }
           }
         },
-        "descRev": {
-          "type": "integer",
-          "description": "One-time revision marker for the hit-points catalog's shipped item descriptions (SHOP_DESC_REV in store.js). The shop catalog is SAVED STATE, so a wording fix in store.js does not reach a browser that has already saved its own copy — this marker lets load() replace a description exactly once, ONLY if it still exactly matches a previous shipped wording (never a description the teacher edited themselves), then stamps this field so the same browser is never touched again."
-        },
-        "artRev": {
-          "type": "integer",
-          "description": "One-time revision marker for the duel catalog's shipped item artwork (SHOP_ART_REV in store.js). Backfills the 'image' path by id into a saved duel item that has none — an Admin upload or any image path the teacher set by hand is never touched — then stamps this field so art the teacher deliberately removes afterwards stays removed instead of reappearing on reload."
+        "deleted": {
+          "type": "object",
+          "description": "Ids of SHIPPED items the teacher deleted in Admin, per mode. This is how a deletion is recorded now that the catalog is not copied: before, the item was simply missing from the saved copy and a separate 'seeded' id list existed to stop the next load putting it straight back.",
+          "properties": {
+            "duel": { "type": "array", "items": { "type": "string" } },
+            "hp": { "type": "array", "items": { "type": "string" } }
+          },
+          "example": { "duel": ["stone"], "hp": [] }
         }
       }
     },
@@ -742,6 +713,17 @@
     }
   },
   "definitions": {
+    "shopEdits": {
+      "type": "object",
+      "description": "itemId -> the fields of that SHIPPED item the teacher changed, and nothing else. Values follow the same shapes as 'shopItem' below. One extra key can appear: '__unset', an array naming shipped fields the teacher's version does not have AT ALL — Admin's shop editor rebuilds an item field by field, so clearing every counter off the Sword of Destiny leaves it with no 'counteredBy' key, and without this the shipped item merging back over it would quietly restore the counter they just removed.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "__unset": { "type": "array", "items": { "type": "string" }, "description": "Shipped fields this item no longer has at all." }
+        }
+      },
+      "example": { "net": { "image": "media:abc123", "desc": "My own words about the net." }, "sword": { "__unset": ["counteredBy"] } }
+    },
     "shopItem": {
       "type": "object",
       "description": "One Magic Shop item. Shape overlaps between the two combat modes (id/name/emoji/image/cost/desc/effect are common to both) but 'slot'/'counteredBy'/'blocks' apply ONLY to the duel ('duel' combatMode) catalog, and 'mythicOnly' applies only to the hit-points ('hp') catalog — Mr. D's rules ship no mythic-only items out of the box, though a teacher could still flag one.",

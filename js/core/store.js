@@ -227,50 +227,6 @@ const STOCKPILE_KINDS = new Set(['attack', 'steal', 'pierce']);
 // app can never promise a prize larger than it is able to pay.
 const MAX_DELTA = 9999;
 
-// Bump when a shipped shop description needs to reach browsers that have
-// already saved their own copy of the catalog. See the migration in load().
-const SHOP_DESC_REV = 3;
-
-// Same idea for shipped item ARTWORK (images/shop/): bump when new art needs
-// to reach saved catalogs. One-time by design — running the fill on every
-// load would resurrect art the teacher deliberately removed in Admin.
-const SHOP_ART_REV = 1;
-
-// Every description these items have EVER shipped with, recovered from git
-// history (two of them shipped under more than one wording). A saved
-// description matching any of these was written by the app, not the teacher,
-// so it is safe to replace. Anything else is the teacher's own words and is
-// left alone. All of these describe the retired points-damage model.
-const OLD_SHOP_DESCS = {
-  catapult: [
-    'Deduct 20 pts from a target house.',
-    'Roman siege engines hurl stones over the walls. Deduct 20 pts from a house you choose.',
-  ],
-  greekfire: ['The Byzantine secret weapon that burned on water. Deduct 25 pts from a house you choose.'],
-  elephants: ['Over the Alps and into Roman territory. Deduct 30 pts from a house you choose.'],
-  heatray:   ['Mirrors focus the sun on enemy ships at Syracuse. Deduct 35 pts from a house you choose.'],
-  trojan: [
-    'Steal 25 pts from the leading house.',
-    'A gift hiding an army. Steal 25 pts from whichever house is leading.',
-  ],
-  cloak:   ['Strike unseen — ignores shields AND damage reduction. Deduct 20 pts.'],
-  fogbank: ['Advance under cover — ignores shields AND damage reduction. Deduct 25 pts.'],
-};
-
-// Rev 2 was a same-day internal iteration: the wording was right but ran to
-// four lines, and the shop card clamps at three, so students saw it cut off
-// mid-sentence. Listed here only so a browser that saved it still gets the
-// shorter rev-3 text instead of keeping a truncated description for ever.
-Object.assign(OLD_SHOP_DESCS, {
-  catapult:  OLD_SHOP_DESCS.catapult.concat('Roman siege engines hurl stones over the walls. Waits in your armoury until Battle Day, then takes 20 HP off a house you choose. A shield stops it; damage reduction halves it.'),
-  greekfire: OLD_SHOP_DESCS.greekfire.concat('The Byzantine secret weapon that burned on water. Waits in your armoury until Battle Day, then takes 25 HP off a house you choose. A shield stops it; damage reduction halves it.'),
-  elephants: OLD_SHOP_DESCS.elephants.concat('Over the Alps and into Roman territory. Waits in your armoury until Battle Day, then takes 30 HP off a house you choose. A shield stops it; damage reduction halves it.'),
-  heatray:   OLD_SHOP_DESCS.heatray.concat('Mirrors focus the sun on enemy ships at Syracuse. Waits in your armoury until Battle Day, then takes 35 HP off a house you choose. A shield stops it; damage reduction halves it.'),
-  trojan:    OLD_SHOP_DESCS.trojan.concat('A gift hiding an army. Waits in your armoury until Battle Day, then takes 25 HP off the leading house — and you gain points equal to the damage you actually land.'),
-  cloak:     OLD_SHOP_DESCS.cloak.concat('Strike unseen. Waits in your armoury until Battle Day, then takes 20 HP off a house you choose — ignoring shields AND damage reduction. Always lands in full.'),
-  fogbank:   OLD_SHOP_DESCS.fogbank.concat('Advance under cover. Waits in your armoury until Battle Day, then takes 25 HP off a house you choose — ignoring shields AND damage reduction. Always lands in full.'),
-});
-
 // ---- Battle Day combat ------------------------------------------------------
 // Hit points are SEPARATE from house points. Points are the currency (and the
 // scoreboard); HP is what a strike removes. A house is beaten when its HP hits
@@ -470,14 +426,11 @@ function defaultState() {
       //   'wild'    — random swing of ±amount in POINTS, resolved at purchase
       //               (never stockpiled — the gamble IS the purchase)
       // mythicOnly items can't be bought; a Nat 20 grants them.
+      // Both of these are the MERGED, in-memory catalogs — shipped items with
+      // the teacher's edits applied. Only the edits are ever written to disk
+      // (see toSaved), so a shipped price or description fixed in this file
+      // reaches an install that has already saved.
       catalog: defaultDuelCatalog(),
-      // Which shipped items this browser has already been shown, per mode, so
-      // an item the teacher DELETED stays deleted instead of reappearing on
-      // every reload — and so a newly shipped one still arrives.
-      seeded: {
-        duel: defaultDuelCatalog().map((i) => i.id),
-        hp: defaultHpCatalog().map((i) => i.id),
-      },
       // The OTHER mode's catalog, parked. Each mode keeps its own items and its
       // own edits, so switching swaps the shop wholesale and switching back
       // finds everything as the teacher left it. `catalog` above is always
@@ -777,6 +730,191 @@ function introVideoOverrides(list) {
   };
 }
 
+// ---- item-level diffs -------------------------------------------------------
+// Shared by the shop and the quest board: both are lists of objects with stable
+// ids, and both need the same three answers out of a save — which shipped items
+// were edited and how, which items the teacher wrote themselves, and which
+// shipped items they deleted.
+
+// Order-insensitive deep compare, so a diff is never recorded for two effect
+// objects that merely spell their keys in a different order.
+function stableJson(v) {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stableJson(v[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v) ?? 'null';
+}
+function sameValue(a, b) { return a === b || stableJson(a) === stableJson(b); }
+
+// The fields where this item differs from the one that ships. `__unset` names
+// shipped fields the teacher's version does not have AT ALL, which is a real
+// edit and not an omission: saveShopItem rebuilds an item field by field, so
+// clearing every counter off the Sword of Destiny leaves it with no
+// `counteredBy` key, and merging the shipped item back over it would quietly
+// restore the counter the teacher just removed.
+function diffItem(shipped, item) {
+  const diff = {};
+  for (const key of Object.keys(item)) {
+    if (key === 'id') continue;
+    if (!sameValue(item[key], shipped[key])) diff[key] = item[key];
+  }
+  const unset = Object.keys(shipped).filter((key) => key !== 'id' && !(key in item));
+  if (unset.length) diff.__unset = unset;
+  return diff;
+}
+
+function applyItemDiff(shipped, diff) {
+  const out = { ...shipped, ...diff };
+  for (const key of (diff.__unset || [])) delete out[key];
+  delete out.__unset;
+  return out;
+}
+
+// Shipped list + overrides = the live list. Returns the shipped objects
+// untouched where nothing was edited, so an unedited install is not merely
+// equivalent to a fresh one, it is identical to it.
+function mergeOverrides(shipped, ov) {
+  const deleted = new Set(Array.isArray(ov.deleted) ? ov.deleted : []);
+  const edits = (ov.edits && typeof ov.edits === 'object') ? ov.edits : {};
+  const added = Array.isArray(ov.added) ? ov.added : [];
+  const out = [];
+  for (const s of shipped) {
+    if (deleted.has(s.id)) continue;
+    const diff = edits[s.id];
+    out.push(diff && Object.keys(diff).length ? applyItemDiff(s, diff) : s);
+  }
+  // Teacher-written entries keep the order they were created in, after
+  // everything that ships. An id that has since BECOME a shipped id is dropped
+  // rather than listed twice — the shipped one above is now the real item.
+  for (const item of added) {
+    if (item && item.id && !shipped.some((s) => s.id === item.id)) out.push({ ...item });
+  }
+  return out;
+}
+
+// The reverse: what is worth saving out of a live list. `seen` is the set of
+// shipped ids this save is entitled to call deleted — an id that is simply
+// newer than the save has never been offered and must not be suppressed.
+function splitOverrides(shipped, list, seen = null) {
+  const live = (Array.isArray(list) ? list : []).filter((i) => i && i.id);
+  const shippedById = new Map(shipped.map((s) => [s.id, s]));
+  const edits = {};
+  const added = [];
+  for (const item of live) {
+    const s = shippedById.get(item.id);
+    if (!s) { added.push({ ...item }); continue; }
+    const diff = diffItem(s, item);
+    if (Object.keys(diff).length) edits[item.id] = diff;
+  }
+  const liveIds = new Set(live.map((i) => i.id));
+  const deleted = shipped
+    .filter((s) => !liveIds.has(s.id) && (!seen || seen.has(s.id)))
+    .map((s) => s.id);
+  return { edits, added, deleted };
+}
+
+// ---- Magic Shop catalogs ----------------------------------------------------
+// TWO catalogs, one per combat mode, and they must never meet: 'catapult' and
+// 'cloak' name a completely different item in each. Every function here takes
+// the mode and looks the shipped list up itself, which is what makes crossing
+// them impossible rather than merely unlikely — the old by-id migrations each
+// had to be scoped by hand, with a paragraph explaining why.
+function shippedCatalog(mode) {
+  return mode === 'hp' ? defaultHpCatalog() : defaultDuelCatalog();
+}
+function otherCombatMode(mode) { return mode === 'duel' ? 'hp' : 'duel'; }
+
+function emptyOverrides() { return { edits: {}, added: [], deleted: [] }; }
+
+function materializeShopCatalog(mode, ov) {
+  return mergeOverrides(shippedCatalog(mode), ov || emptyOverrides());
+}
+
+// One-time conversion of a saved full-copy catalog. `seededIds` is the old
+// `shop.seeded` list for this mode: the shipped ids this browser has already
+// been shown, and therefore the only ones its catalog is allowed to call
+// deleted. Anything shipped since is simply new and appears as normal.
+function overridesFromLegacyCatalog(mode, list, seededIds) {
+  const shipped = shippedCatalog(mode);
+  const seen = new Set(Array.isArray(seededIds) ? seededIds : []);
+  // Shipped artwork (images/shop/) arrived after some catalogs were saved, and
+  // a copy made before it has no image at all. An empty image is not a choice
+  // the teacher could have expressed in Admin — clearing one there writes a
+  // blank over a path they can see — so it takes the shipped art rather than
+  // converting into an override that would hide it for ever. Runs once, here,
+  // in place of the SHOP_ART_REV pass that used to run on every load.
+  const art = new Map(shipped.filter((s) => s.image).map((s) => [s.id, s.image]));
+  const filled = (Array.isArray(list) ? list : []).map((item) => (
+    item && item.id && !item.image && art.has(item.id) ? { ...item, image: art.get(item.id) } : item
+  ));
+  return splitOverrides(shipped, filled, seen);
+}
+
+// Read a save's shop, whichever of the three shapes it is in, as per-mode
+// overrides. `modeReset` says the save predates combat modes altogether.
+function shopOverridesFromSaved(savedShop, savedMode) {
+  const out = { duel: emptyOverrides(), hp: emptyOverrides(), modeReset: false };
+  const shop = savedShop && typeof savedShop === 'object' ? savedShop : {};
+  const take = (mode, o) => {
+    if (!o || typeof o !== 'object') return;
+    out[mode] = {
+      edits: (o.edits && typeof o.edits === 'object') ? o.edits : {},
+      added: Array.isArray(o.added) ? o.added.filter((i) => i && i.id) : [],
+      deleted: Array.isArray(o.deleted) ? o.deleted.filter((id) => typeof id === 'string') : [],
+    };
+  };
+  if (shop.edits || shop.added || shop.deleted) {
+    // Current shape: overrides per mode, no catalog anywhere in the file.
+    take('duel', { edits: shop.edits?.duel, added: shop.added?.duel, deleted: shop.deleted?.duel });
+    take('hp', { edits: shop.edits?.hp, added: shop.added?.hp, deleted: shop.deleted?.hp });
+    return out;
+  }
+  // Legacy full copies. `seeded` was a flat array before combat modes existed,
+  // and a save with no valid combatMode predates them too: either way what it
+  // holds IS the hit-points catalog, because that was the only one there was.
+  const flatSeeded = Array.isArray(shop.seeded) ? shop.seeded : null;
+  const validMode = COMBAT_MODES[savedMode] ? savedMode : null;
+  if (!validMode || flatSeeded) {
+    const oldCatalog = Array.isArray(shop.catalog) && shop.catalog.length ? shop.catalog : null;
+    if (oldCatalog) {
+      out.hp = overridesFromLegacyCatalog('hp', oldCatalog, flatSeeded || oldCatalog.map((i) => i.id));
+    }
+    out.modeReset = true;
+    return out;
+  }
+  const other = otherCombatMode(validMode);
+  const seeded = (shop.seeded && typeof shop.seeded === 'object') ? shop.seeded : {};
+  if (Array.isArray(shop.catalog)) {
+    out[validMode] = overridesFromLegacyCatalog(validMode, shop.catalog, seeded[validMode]);
+  }
+  // A mode that has never been active parks null and keeps no overrides at all.
+  const parked = shop.parked && typeof shop.parked === 'object' ? shop.parked[other] : null;
+  if (Array.isArray(parked) && parked.length) {
+    out[other] = overridesFromLegacyCatalog(other, parked, seeded[other]);
+  }
+  return out;
+}
+
+// The live catalogs, back into overrides. The active mode's list is `catalog`;
+// the other one is waiting in `parked` — see setCombatMode.
+function shopOverrides(st) {
+  const mode = COMBAT_MODES[st.settings && st.settings.combatMode] ? st.settings.combatMode : DEFAULT_COMBAT_MODE;
+  const other = otherCombatMode(mode);
+  const parked = st.shop && st.shop.parked ? st.shop.parked[other] : null;
+  const per = {
+    [mode]: splitOverrides(shippedCatalog(mode), st.shop && st.shop.catalog),
+    // Not an array only if a mode has never been activated on this browser, in
+    // which case it has nothing to override.
+    [other]: Array.isArray(parked) ? splitOverrides(shippedCatalog(other), parked) : emptyOverrides(),
+  };
+  return {
+    edits: { duel: per.duel.edits, hp: per.hp.edits },
+    added: { duel: per.duel.added, hp: per.hp.added },
+    deleted: { duel: per.duel.deleted, hp: per.hp.deleted },
+  };
+}
+
 // The single place the in-memory state is turned into the text on disk. Every
 // content family that ships defaults hands back its overrides here; everything
 // else is saved as it stands.
@@ -788,6 +926,7 @@ function toSaved(st) {
       diceProphecy: diceProphecyOverrides(st.settings && st.settings.diceProphecy),
       introVideos: introVideoOverrides(st.settings && st.settings.introVideos),
     },
+    shop: shopOverrides(st),
   };
 }
 
@@ -909,101 +1048,36 @@ function load() {
       });
       if (!merged.quests.active || typeof merged.quests.active !== 'object') merged.quests.active = {};
       if (!Array.isArray(merged.quests.completed)) merged.quests.completed = [];
-      merged.shop = { ...def.shop, ...(merged.shop || {}) };
-      if (!Array.isArray(merged.shop.catalog)) merged.shop.catalog = def.shop.catalog;
-      // Introduce newly-shipped shop items exactly once. `seeded` records every
-      // default id this browser has already seen, so an item the teacher chose
-      // to delete stays deleted instead of reappearing on every reload.
-      // NOTE: read this off the SAVED object — `merged` would have inherited the
-      // default's full seeded list via the spread and suppressed every new item.
-      // Combat modes arrived after some browsers had saved. Anything saved
-      // before then IS the hit-points catalog — that is all there was — so it
-      // becomes the 'hp' side, edits and deletions intact, and Mr. D's rules
-      // come in as the new active mode. `seeded` was a flat array then and is
-      // per-mode now.
-      const savedMode = COMBAT_MODES[merged.settings.combatMode] ? merged.settings.combatMode : null;
-      const flatSeeded = Array.isArray(saved.shop?.seeded) ? saved.shop.seeded : null;
-      if (!savedMode || flatSeeded) {
-        const oldCatalog = Array.isArray(saved.shop?.catalog) && saved.shop.catalog.length
-          ? saved.shop.catalog : defaultHpCatalog();
-        merged.shop.parked = { hp: oldCatalog, duel: null };
-        merged.shop.catalog = defaultDuelCatalog();
-        merged.shop.seeded = {
-          hp: flatSeeded || oldCatalog.map((i) => i.id),
-          duel: defaultDuelCatalog().map((i) => i.id),
-        };
-        merged.settings.combatMode = DEFAULT_COMBAT_MODE;
-        // Held items and damage belong to the mode they happened in.
-        merged.inventory = {};
-        merged.hp = {};
-      }
-      if (!merged.shop.seeded || Array.isArray(merged.shop.seeded)) merged.shop.seeded = { duel: [], hp: [] };
-      if (!merged.shop.parked || typeof merged.shop.parked !== 'object') merged.shop.parked = { hp: null, duel: null };
-
-      // Introduce newly shipped items for the ACTIVE mode only; the parked one
-      // is topped up when it next becomes active.
+      // Both shop catalogs ship in this file and the save holds only what the
+      // teacher changed, per mode (see the Magic Shop section above). Three
+      // separate one-time patches used to live here and are gone with the copy
+      // they existed to correct: `seeded` (introduce a newly shipped item once,
+      // without resurrecting a deleted one), SHOP_DESC_REV (weapons still
+      // promising "Deduct 20 pts" after Battle Day moved to hit points) and
+      // SHOP_ART_REV (hand-drawn art that reached fresh installs only). A
+      // shipped price, description or picture now arrives on its own.
       {
-        const mode = COMBAT_MODES[merged.settings.combatMode] ? merged.settings.combatMode : DEFAULT_COMBAT_MODE;
-        const shipped = mode === 'duel' ? defaultDuelCatalog() : defaultHpCatalog();
-        const seen = Array.isArray(merged.shop.seeded[mode]) ? merged.shop.seeded[mode] : [];
-        for (const item of shipped) {
-          if (!seen.includes(item.id)) {
-            merged.shop.catalog.push({ ...item });
-            seen.push(item.id);
-          }
+        const ov = shopOverridesFromSaved(saved.shop, merged.settings.combatMode);
+        if (ov.modeReset) {
+          // A save from before combat modes existed. Whatever it holds IS the
+          // hit-points catalog — that is all there was — so it becomes the
+          // parked 'hp' side with its edits and deletions intact, and Mr. D's
+          // rules come in as the active mode. Held items and damage belong to
+          // the mode they happened in and do not come with it.
+          merged.settings.combatMode = DEFAULT_COMBAT_MODE;
+          merged.inventory = {};
+          merged.hp = {};
         }
-        merged.shop.seeded[mode] = seen;
-      }
-      // The shop catalog is SAVED STATE, not source. Editing a description in
-      // this file therefore does NOT reach a browser that has already saved —
-      // it keeps its own copy for ever. When Battle Day moved from points to
-      // hit points, every shipped weapon still promised "Deduct 20 pts from a
-      // house you choose", which is now simply untrue: it removes HP, and the
-      // loser of a battle loses no points at all.
-      //
-      // So: refresh the descriptions of SHIPPED items once, keyed off a
-      // revision marker. Only items whose text still matches a previous
-      // shipped default are touched, so a description the teacher has written
-      // or edited themselves is never overwritten. The marker makes it a
-      // one-time correction rather than a permanent override — after this runs,
-      // their edits are safe again.
-      // Scoped to the HIT-POINTS catalog on purpose. OLD_SHOP_DESCS holds that
-      // model's wording, and two ids — 'catapult' and 'cloak' — exist in BOTH
-      // catalogs as completely different items. Matching by id alone would let
-      // this rewrite Mr. D's Catapult with the Catapult Volley's description.
-      // The two catalogs never meet anywhere else; this is the one place that
-      // could have crossed them.
-      if (Number(merged.shop.descRev) !== SHOP_DESC_REV) {
-        const hpById = Object.fromEntries(defaultHpCatalog().map((i) => [i.id, i]));
-        const refresh = (list) => (Array.isArray(list) ? list.map((item) => {
-          const d = hpById[item.id];
-          if (!d || typeof item.desc !== 'string') return item;
-          const stale = OLD_SHOP_DESCS[item.id];
-          return (stale && stale.includes(item.desc.trim())) ? { ...item, desc: d.desc } : item;
-        }) : list);
-        if (merged.settings.combatMode === 'hp') merged.shop.catalog = refresh(merged.shop.catalog);
-        merged.shop.parked.hp = refresh(merged.shop.parked.hp);
-        merged.shop.descRev = SHOP_DESC_REV;
-      }
-      // Shipped item artwork (images/shop/) arrived after browsers had saved
-      // their catalogs — and the catalog is SAVED STATE, so art added to
-      // defaultDuelCatalog() reaches fresh installs only. Backfill it by id
-      // into saved duel items that have NO image: an image the teacher set —
-      // an Admin upload ('media:…' key) or any hand-entered path — is never
-      // touched. One-time via SHOP_ART_REV (like the description refresh
-      // above) so art the teacher deliberately REMOVES afterwards stays
-      // removed instead of reappearing on every reload. Scoped to the DUEL
-      // catalog(s) on purpose: 'catapult' and 'cloak' also exist in the
-      // hit-points catalog as entirely different items, and this is the only
-      // other place a by-id pass could cross the two.
-      if (Number(merged.shop.artRev) !== SHOP_ART_REV) {
-        const duelArt = Object.fromEntries(defaultDuelCatalog().filter((i) => i.image).map((i) => [i.id, i.image]));
-        const fillArt = (list) => (Array.isArray(list) ? list.map((item) => (
-          item && duelArt[item.id] && !item.image ? { ...item, image: duelArt[item.id] } : item
-        )) : list);
-        if (merged.settings.combatMode === 'duel') merged.shop.catalog = fillArt(merged.shop.catalog);
-        merged.shop.parked.duel = fillArt(merged.shop.parked.duel);
-        merged.shop.artRev = SHOP_ART_REV;
+        const mode = COMBAT_MODES[merged.settings.combatMode] ? merged.settings.combatMode : DEFAULT_COMBAT_MODE;
+        const other = otherCombatMode(mode);
+        merged.settings.combatMode = mode;
+        merged.shop = {
+          catalog: materializeShopCatalog(mode, ov[mode]),
+          // The mode waiting its turn is materialised too, so switching to it
+          // finds the teacher's edits AND anything shipped since — the parked
+          // side used to be topped up only when it next became active.
+          parked: { [mode]: null, [other]: materializeShopCatalog(other, ov[other]) },
+        };
       }
       merged.planner = { ...def.planner, ...(merged.planner || {}) };
       if (!Array.isArray(merged.planner.events)) merged.planner.events = [];
