@@ -97,7 +97,7 @@ function renderLaunch() {
       <div class="potw-globe" aria-hidden="true"><span class="potw-globe-emoji">🌍</span></div>
       <h1 class="font-display potw-launch-title">Place of the Week</h1>
       <p class="potw-teaser">This week's destination is classified&hellip;</p>
-      <button type="button" class="potw-launch-btn font-display">🌍 Launch Place of the Week</button>
+      <button type="button" class="potw-launch-btn font-display"><img class="potw-launch-mark" src="images/icon-potw.png" alt="" onerror="this.outerHTML='🌍 '" />Launch Place of the Week</button>
     </div>`;
   rootEl.querySelector('.potw-launch-btn').addEventListener('click', openOverlay);
   mountGlobe(rootEl.querySelector('.potw-globe')); // async; falls back to the emoji on WebGL failure
@@ -1951,6 +1951,11 @@ function injectStyles() {
     transition:transform .2s ease,box-shadow .2s ease;}
   .potw-launch-btn:hover{transform:scale(1.04);box-shadow:0 16px 54px rgba(245,158,11,.55);}
   .potw-launch-btn:active{transform:scale(.98);}
+  /* The button's own mark, not the theatrical stage globe above it (that one
+     stays a spinning emoji/3D piece by design). Sized off the button's own
+     font-size so it scales with the same clamp(). */
+  .potw-launch-mark{height:1.1em;width:auto;max-width:none;object-fit:contain;
+    display:inline-block;vertical-align:-0.2em;margin-right:.35em;}
 
   /* ---- overlay shell ---- */
   .potw-overlay{position:fixed;inset:0;z-index:60;background:#000;overflow:hidden;
