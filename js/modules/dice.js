@@ -111,10 +111,14 @@ function createStyles() {
         padding: 0.02em 0.7em;
         background: radial-gradient(ellipse closest-side, rgba(0,0,0,.68), rgba(0,0,0,0));
         z-index: 5; pointer-events: none; white-space: nowrap;
-        font-size: clamp(2.6rem, 7vw, 4.4rem); font-weight: 800; color: #fde68a;
+        font-size: clamp(3.9rem, 10.5vw, 6.6rem); font-weight: 800; color: #fde68a;
         font-variant-numeric: tabular-nums;
         text-shadow: 0 2px 10px rgba(0,0,0,0.95), 0 0 22px rgba(252,211,77,0.35);
       }
+      /* No text, no plate: while a roll is tumbling the element is empty, and
+         an empty element must vanish entirely — its dark backing otherwise
+         hangs as a stray black smudge under the crystal ball. */
+      .dice-tray-result:empty { display: none; }
       .dice-tray-result.pop { animation: dice-num-pop 0.4s cubic-bezier(0.2,0.8,0.2,1); }
       @keyframes dice-num-pop {
         0% { transform: translateX(-50%) scale(0.55); opacity: 0.2; }
@@ -229,21 +233,19 @@ function createStyles() {
       .dice-prophecy-title { font-weight: bold; color: #fcd34d; }
       .dice-prophecy-desc { font-size: 0.85rem; color: #9ca3af; }
 
-      /* Controls float over the full-bleed chamber: ROLL bottom-center,
-         the prophecy link tucked under it. */
-      .dice-controls { position: absolute; bottom: 3.9rem; left: 50%;
-        transform: translateX(-50%); z-index: 6; display: flex; justify-content: center; }
+      /* ROLL lives in the mode row, one box among equals — same metrics as
+         .dice-mode-btn, its blue keeps it the verb of the row. */
       .dice-roll-btn {
-        padding: 1rem 3rem; min-height: 64px;
+        min-width: 120px; padding: 1rem 1.5rem; min-height: 64px;
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        color: #fff; border: none; border-radius: 0.75rem;
-        font-size: 1.375rem; font-weight: 700; cursor: pointer;
+        color: #fff; border: 2px solid #60a5fa; border-radius: 0.5rem;
+        font-size: 1.125rem; font-weight: 700; cursor: pointer;
         transition: all 200ms ease; touch-action: manipulation;
         box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
       }
       .dice-roll-btn:active:not(:disabled) { transform: scale(0.95); }
       .dice-roll-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      .dice-extra { position: absolute; bottom: 1rem; left: 50%;
+      .dice-extra { position: absolute; top: 6rem; left: 50%;
         transform: translateX(-50%); z-index: 6; display: flex; justify-content: center; }
       .dice-prophecy-btn {
         padding: 0.5rem 1rem; min-height: 44px; background: transparent;
@@ -317,9 +319,11 @@ async function performRoll(el) {
   setRollEnabled(el, false);
 
   // A new roll clears any lingering suspense timer / plaque and re-enables the
-  // one-award-per-roll lock.
+  // one-award-per-roll lock — and the previous roll's number leaves the stage
+  // the moment the dice fly, not when its replacement lands.
   clearTimeout(celebrateTimer);
   closePlaque(el);
+  updateTrayResult(el, '');
   awardedThisRoll = false;
   awardInFlight = false;
   relicClaimedThisRoll = false;
@@ -542,7 +546,7 @@ function showOutcomePlaque(el, prophecy, variant) {
 
 function fallbackRoll(el, mode) {
   const sides = mode === 'd20' ? 20 : 6;
-  const count = mode === '2d6' ? 2 : 1;
+  const count = { '1d6': 1, '2d6': 2, '3d6': 3 }[mode] || 1;
   const numEl = el.querySelector('.dice-fallback-num');
   audio.sfx('roll');
   if (numEl) { numEl.classList.add('rolling'); numEl.textContent = '?'; }
@@ -583,7 +587,9 @@ export default {
         <div class="dice-modes">
           <button class="dice-mode-btn active" data-mode="1d6">1d6</button>
           <button class="dice-mode-btn" data-mode="2d6">2d6</button>
-          <button class="dice-mode-btn d20-special" data-mode="d20">d20 — Die of Destiny</button>
+          <button class="dice-mode-btn" data-mode="3d6">3d6</button>
+          <button class="dice-mode-btn d20-special" data-mode="d20">d20</button>
+          <button class="dice-roll-btn" id="dice-roll-btn">ROLL</button>
         </div>
         <div class="dice-stage">
           <div class="dice-art">
@@ -591,9 +597,6 @@ export default {
             <div class="dice-tray-result"></div>
           </div>
           <div class="dice-plaque-backdrop"></div>
-        </div>
-        <div class="dice-controls">
-          <button class="dice-roll-btn" id="dice-roll-btn">ROLL</button>
         </div>
         <div class="dice-extra">
           <button class="dice-prophecy-btn" id="dice-prophecy-btn">Prophecy Table</button>
