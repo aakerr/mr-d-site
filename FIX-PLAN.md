@@ -350,21 +350,21 @@ Grep-verified dead. Delete unless marked "decide".
 ## Phase 4 — Documentation truth pass
 
 README.md and ARCHITECTURE.md are excellent but have drifted:
-- [ ] 4.1 Delete the schema-staleness caveats (README.md:604-613, 690, 753;
+- [x] 4.1 Delete the schema-staleness caveats (README.md:604-613, 690, 753;
   ARCHITECTURE.md:34-44) — `data/schema.json` was updated and now covers everything listed
   as missing. Fix schema.json's own stale claim that settings ship as null (they're seeded
   in `defaultState`, store.js:389-398).
-- [ ] 4.2 Rewrite the quest-carousel sections (README.md:318-322, 675-677;
+- [x] 4.2 Rewrite the quest-carousel sections (README.md:318-322, 675-677;
   ARCHITECTURE.md:557-568) — the carousel is now a shared, persisted, Admin-configured
   engine used by Quests and Shop.
-- [ ] 4.3 README.md:65, 750 — Admin has seven tabs. README.md:427 — no 1d12 mode.
+- [x] 4.3 README.md:65, 750 — Admin has seven tabs. README.md:427 — no 1d12 mode.
   README.md:116, 273, 521 — YouTube presets are retired, intros are local files.
   README.md:109 — shop seed prices are ×100 stale. README.md:18, 195, 581 — drop the
   "Safari 16+" backup claim (no `showDirectoryPicker`).
-- [ ] 4.4 ARCHITECTURE.md:278-279 — audio.sfx plays assigned mp3s first, synth fallback;
+- [x] 4.4 ARCHITECTURE.md:278-279 — audio.sfx plays assigned mp3s first, synth fallback;
   document the `battlecry`/`diceland` slots. Add `js/core/carousel.js`,
   `js/core/sampledata.js`, `tools/hero-tuner.js` to the file-layout block.
-- [ ] 4.5 After Phase 0: document the corrupt-save quarantine, `-prev` restore undo, and the
+- [x] 4.5 After Phase 0: document the corrupt-save quarantine, `-prev` restore undo, and the
   two-tab rule in README's Data & Persistence section.
 - [ ] 4.6 `js/core/sampledata.js:178` — quest-points ×10 scaling is not idempotent (second
   sample load → ×100). Guard it (only scale quests still < 100), and note in Admin that
