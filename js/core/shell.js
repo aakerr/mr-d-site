@@ -557,7 +557,11 @@ export function initShell(ctx) {
       try {
         const on = store.getSettings().soundEnabled !== false;
         store.updateSettings({ soundEnabled: !on });
-        if (!on && audio && typeof audio.sfx === 'function') audio.sfx('coin'); // audible proof it came back
+        // No "audible proof" chirp on unmute: sfx('coin') stopped being a tiny
+        // synth blip the day the sound slots mapped it to points_awarded.mp3 —
+        // unmuting played the full award fanfare. The glyph flip is the proof.
+        // Muting stops in-flight audio, matching what the M key already does.
+        if (on) { try { audio.stopAll(); } catch (err) {} }
       } catch (err) { console.warn('shell: sound toggle failed', err); }
       return;
     }
