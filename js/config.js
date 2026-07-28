@@ -53,7 +53,7 @@ export const CONFIG = {
     battle:    { src: 'music/storming-the-gates.mp3', volume: 0.5 },
     dice:      { src: 'music/looming-roll.mp3',       volume: 0.5 },
     wheel:     { src: 'music/breath-of-fate.mp3',     volume: 0.5 },
-    potw:      { src: 'music/vanguard-charge.mp3',    volume: 0.5 },
+    potw:      { src: 'music/bridging-the-path.mp3',  volume: 0.5 },
   },
 
   // ---- the economy's one scale ---------------------------------------------
