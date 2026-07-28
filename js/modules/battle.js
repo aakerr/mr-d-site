@@ -251,8 +251,8 @@ function injectStyles() {
      darkness — the room just remembers where it is. */
   .battle-cinematic{position:fixed;inset:0;z-index:60;overflow:hidden;
     background:
-      radial-gradient(ellipse at 50% 50%,rgba(127,29,29,.5),rgba(0,0,0,.86) 74%),
-      linear-gradient(180deg,rgba(4,5,10,.68),rgba(4,5,10,.6)),
+      radial-gradient(ellipse at 50% 50%,rgba(127,29,29,.42),rgba(0,0,0,.74) 78%),
+      linear-gradient(180deg,rgba(4,5,10,.48),rgba(4,5,10,.4)),
       url('images/four-armies.jpg') center 38%/cover no-repeat,#07090f;
     display:flex;align-items:center;justify-content:center;
     animation:battle-curtain .22s ease-out both;}
@@ -374,9 +374,9 @@ function injectStyles() {
      painting, anchored low so the ranks peek in behind the duel cards. */
   .duel-root{position:relative;height:100%;display:flex;flex-direction:column;
     overflow:hidden;padding:.85rem clamp(.75rem,2.2vw,1.75rem) 1rem;
-    background:radial-gradient(ellipse at 50% -10%,rgba(153,27,27,.4),rgba(11,15,25,.86) 55%),
+    background:radial-gradient(ellipse at 50% -10%,rgba(153,27,27,.35),rgba(11,15,25,.72) 58%),
       radial-gradient(ellipse at 100% 100%,rgba(127,29,29,.25),transparent 60%),
-      linear-gradient(180deg,rgba(6,8,14,.82),rgba(6,8,14,.72)),
+      linear-gradient(180deg,rgba(6,8,14,.6),rgba(6,8,14,.5)),
       url('images/four-armies.jpg') center 70%/cover no-repeat,#0b0f19;}
   .battle-embers{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;}
   .battle-ember{position:absolute;bottom:-10px;border-radius:50%;
