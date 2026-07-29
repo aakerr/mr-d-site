@@ -263,6 +263,7 @@ function patchPhase(phase) {
   entrancePhase = phase;
   const wrap = rootEl && rootEl.querySelector('.trivia-cardwrap');
   if (!wrap) { render(); return; }
+  wrap.classList.remove('trivia-entering');   // its sweep is done; keeping the animation kept the card on its own compositor layer
   wrap.classList.add('trivia-texted');
   if (phase === 'question' || phase === 'ready') wrap.classList.add('trivia-questioned');
   if (phase === 'ready') {
@@ -366,14 +367,31 @@ function wire() {
   if (!rootEl) return;
   // The reveal is a crossfade, not a swap: the hieroglyphs burn away first
   // (the recording covers it), then the answer fades up in their place.
+  // Both steps PATCH the live card — a full re-render here repainted the
+  // card art and its pixel snapping nudged the whole card a hair left and
+  // down mid-ceremony.
   const revealBtn = rootEl.querySelector('[data-reveal]');
   if (revealBtn) revealBtn.addEventListener('click', () => {
     if (unsealing || revealed) return;
     unsealing = true;
     audio?.sfx?.('triviaanswer', { volume: TRIVIA_SFX_VOL });
-    render();
+    const glyphs = rootEl.querySelector('.trivia-glyphs');
+    if (glyphs) glyphs.classList.add('trivia-glyphs-out');
+    revealBtn.classList.add('trivia-hot-veiled');
+    revealBtn.disabled = true;
     clearTimeout(unsealTimer);
-    unsealTimer = setTimeout(() => { unsealing = false; revealed = true; render(); }, 700);
+    unsealTimer = setTimeout(() => {
+      unsealing = false; revealed = true;
+      if (!rootEl) return;
+      const house = store.getActiveHouse();
+      const q = house && store.nextTriviaFor(house.id);
+      const zone = rootEl.querySelector('.trivia-zone-a');
+      if (zone && q) zone.innerHTML = `<div class="trivia-a">${esc(q.a)}</div>`;
+      rootEl.querySelectorAll('[data-verdict]').forEach((b) => {
+        b.classList.remove('trivia-hot-veiled');
+        b.disabled = false;
+      });
+    }, 700);
   });
 
   rootEl.querySelectorAll('[data-verdict]').forEach((btn) => {
