@@ -70,7 +70,7 @@ html[data-mode="light"] .dash-hw-badge {
      container, so without it the row is just a shrinkable child and gets
      squeezed back to whatever is left over — which is how a 238px row measured
      212px and put the standings back into a scrollbar. */
-  .dash-row { flex: 0 0 auto; height: clamp(238px, 34vh, 380px); min-height: 0; }
+  .dash-row { flex: 0 0 auto; height: clamp(260px, 50vh, 560px); min-height: 0; }
   .dash-row > * { min-height: 0; height: 100%; }
   .dash-col-card { height: 100%; min-height: 0; }
 }
@@ -609,15 +609,15 @@ function renderStandings(state, store) {
           return `
           <div class="rounded-xl border px-3 py-[clamp(2px,0.6vh,10px)] flex-1 min-h-0 flex flex-col justify-center ${isActive ? 'bg-card2' : 'border-transparent'} ${frozen ? 'dash-frost-tint' : ''}" ${borderColor ? `style="border-color:${borderColor}"` : ''}>
             <div class="flex items-center gap-3">
-              <div class="w-7 text-center font-bold text-gray-400 text-[clamp(0.8rem,1.6vh,1rem)] shrink-0">#${i + 1}</div>
-              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.6rem, 4.4vh, 3.25rem); max-height: 100%;"')}
+              <div class="w-8 text-center font-bold text-gray-400 text-[clamp(0.85rem,1.9vh,1.15rem)] shrink-0">#${i + 1}</div>
+              ${houseImg(t.house, 'w-auto object-contain shrink-0 drop-shadow', 'style="height: clamp(1.8rem, 5.6vh, 4.25rem); max-height: 100%;"')}
               <div class="flex-1 min-w-0">
                 <div class="flex items-baseline gap-5">
-                  <span class="font-bold text-[clamp(1rem,2.65vh,1.625rem)] truncate acc-text" style="--acc:${t.house.accent}">${escapeHtml(t.house.name)}</span>
+                  <span class="font-bold text-[clamp(1.05rem,3.2vh,2.1rem)] truncate acc-text" style="--acc:${t.house.accent}">${escapeHtml(t.house.name)}</span>
                   ${frozen ? `<span class="dash-frost-badge">❄️ ${escapeHtml(frost.label)}</span>` : ''}
-                  <span class="font-extrabold text-gray-100 text-[clamp(1rem,2.5vh,1.625rem)] shrink-0">${t.total}</span>
+                  <span class="font-extrabold text-gray-100 text-[clamp(1.05rem,3vh,2.1rem)] shrink-0">${t.total}</span>
                 </div>
-                <div class="mt-[clamp(2px,0.4vh,6px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(5px, 1vh, 10px);">
+                <div class="mt-[clamp(2px,0.5vh,8px)] rounded-full overflow-hidden" style="background: var(--color-line, #374151); height: clamp(6px, 1.2vh, 12px);">
                   <div class="dash-bar-fill h-full rounded-full" style="width:${pct}%; background:${t.house.accent};"></div>
                 </div>
               </div>
@@ -665,16 +665,16 @@ function findNextCore(store) {
 function itineraryItemsHtml(items) {
   return items.length ? items.map((it, i) => `
     <div class="flex items-start gap-2.5 shrink-0">
-      <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.25rem,2.7vh,1.6rem); height:clamp(1.25rem,2.7vh,1.6rem); font-size:clamp(0.65rem,1.3vh,0.85rem);">${i + 1}</span>
-      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(it.text)}</span>
+      <span class="shrink-0 flex items-center justify-center rounded-md bg-card2 border border-line font-bold text-gray-200" style="width:clamp(1.35rem,3.1vh,1.9rem); height:clamp(1.35rem,3.1vh,1.9rem); font-size:clamp(0.7rem,1.5vh,1rem);">${i + 1}</span>
+      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.95rem,2.2vh,1.4rem);">${escapeHtml(it.text)}</span>
     </div>`).join('') : '<div class="text-gray-500 italic">Nothing scheduled.</div>';
 }
 
 function homeworkItemsHtml(items) {
   return items.length ? items.map((hw) => `
     <div class="flex items-center gap-2.5 shrink-0">
-      <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla dash-hw-badge" style="padding:clamp(2px,0.4vh,5px) 9px; font-size:clamp(0.65rem,1.3vh,0.85rem);">Due ${escapeHtml(hw.due)}</span>
-      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.9rem,1.9vh,1.15rem);">${escapeHtml(hw.text)}</span>
+      <span class="shrink-0 rounded-md bg-valhalla/20 border border-valhalla/50 font-bold text-valhalla dash-hw-badge" style="padding:clamp(2px,0.5vh,6px) 10px; font-size:clamp(0.7rem,1.5vh,1rem);">Due ${escapeHtml(hw.due)}</span>
+      <span class="text-gray-200 leading-snug" style="font-size:clamp(0.95rem,2.2vh,1.4rem);">${escapeHtml(hw.text)}</span>
     </div>`).join('') : '<div class="text-gray-500 italic">Nothing due. Enjoy it!</div>';
 }
 
@@ -692,7 +692,7 @@ function renderItinerary(state, store) {
     const next = findNextCore(store);
     if (!next) {
       return `
-        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
+        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-1 min-h-0">
           ${itineraryHeaderHtml()}
           <div class="text-gray-400 italic flex-1 flex items-center justify-center text-center px-4">
             Pick a house core to see today's schedule.
@@ -701,7 +701,7 @@ function renderItinerary(state, store) {
     }
     const info = store.getItineraryInfo(next.core);
     return `
-      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
+      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-1 min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
         ${itineraryHeaderHtml()}
         ${upNextHeaderHtml(store, next)}
         ${info.sample ? sampleCaption() : ''}
@@ -710,7 +710,7 @@ function renderItinerary(state, store) {
   }
   const info = store.getItineraryInfo();
   return `
-    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-[3] min-h-0">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(6px,1.2vh,16px)] flex flex-col flex-1 min-h-0">
       ${itineraryHeaderHtml()}
       ${info.sample ? sampleCaption() : ''}
       <div data-scroll="itinerary" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${itineraryItemsHtml(info.items)}</div>
@@ -722,14 +722,14 @@ function renderHomework(state, store) {
     const next = findNextCore(store);
     if (!next) {
       return `
-        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
+        <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-1 min-h-0">
           ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
           <div class="text-gray-400 italic">Pick a house core to see assignments.</div>
         </div>`;
     }
     const info = store.getHomeworkInfo(next.core);
     return `
-      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
+      <div data-nextcore="${next.core}" class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-1 min-h-0 cursor-pointer" title="Tap to switch the board to this house core">
         ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
         ${info.sample ? sampleCaption() : ''}
         <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${homeworkItemsHtml(info.items)}</div>
@@ -737,7 +737,7 @@ function renderHomework(state, store) {
   }
   const info = store.getHomeworkInfo();
   return `
-    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-[2] min-h-0">
+    <div class="dash-in bg-card rounded-2xl border-2 dash-accent-line p-[clamp(4px,1vh,12px)] flex flex-col flex-1 min-h-0">
       ${sectionHeader('book', 'Homework &amp; Upcoming Quizzes')}
       ${info.sample ? sampleCaption() : ''}
       <div data-scroll="homework" class="flex flex-col gap-2 overflow-y-auto dash-scroll pr-1">${homeworkItemsHtml(info.items)}</div>
