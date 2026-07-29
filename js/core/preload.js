@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v2';   // v2: the intro films took their real names (classic/rock)
+const MANIFEST_VERSION = 'v3';   // v3: the owner recut both films watermark-free — re-pull them
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
