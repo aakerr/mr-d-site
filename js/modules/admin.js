@@ -1536,6 +1536,7 @@ function renderTrivia() {
   }).join('');
 
   return `
+    <div class="admin-trivia-wrap">
     <div class="admin-card">
       <div class="admin-card-title">❓ Trivia Tuesday <span class="admin-faint">(${list.length} question${list.length === 1 ? '' : 's'})</span></div>
       <div class="admin-mini">Every Tuesday, one question per class period: a correct answer earns the house the
@@ -1573,6 +1574,7 @@ function renderTrivia() {
           <button class="admin-btn" data-action="trivia-cancel">Cancel</button>
         </div>`
         : `<button class="admin-btn admin-btn-primary" data-action="trivia-new">+ Add a question</button>`}
+    </div>
     </div>`;
 }
 
@@ -4466,8 +4468,12 @@ function arrivalBadgeHTML(key, profile) {
     return `<span class="admin-arrival-badge ok" data-verify="images" data-key="${esc(key)}" data-count="${Number(pres.count) || 0}">▶ Presentation: ${pres.count || 0} slide${pres.count === 1 ? '' : 's'} — auto-plays on arrival</span>`;
   }
   if (pres?.type === 'gslides') {
-    // A Google Slides deck is a URL — nothing to verify locally.
-    return `<span class="admin-arrival-badge ok">▶ Presentation: Google Slides — auto-plays on arrival</span>`;
+    // A Google Slides deck is a URL — nothing to verify locally. The badge
+    // doubles as a door: the teacher can open the real deck in a tab from
+    // here, without digging into the editor.
+    const open = pres.openUrl || pres.url || '';
+    return `<span class="admin-arrival-badge ok">▶ Presentation: Google Slides — auto-plays on arrival</span>${
+      open ? ` <a class="admin-arrival-open" href="${esc(open)}" target="_blank" rel="noopener noreferrer">Open slides ↗</a>` : ''}`;
   }
   return '<span class="admin-arrival-badge none">No presentation attached</span>';
 }
@@ -4745,6 +4751,15 @@ async function hydratePresentation(key) {
 function renderPotwModal() {
   const m = el('admin-modal-root');
   const f = potwForm;
+  // This function rebuilds the modal's whole HTML, so its scroll container is
+  // a NEW element starting at zero — which is why picking a presentation
+  // source (or adding a source/quiz/link row) threw the teacher back to the
+  // top of a long form. Remember where they were and put them back after the
+  // swap. Same class of fix as the trivia card's in-place patching.
+  const prevScroll = (() => {
+    const box = m && m.querySelector('.admin-modal-scroll');
+    return box ? box.scrollTop : 0;
+  })();
   const srcRows = f.sources.map((s, i) => `
     <div class="admin-srow">
       <input class="admin-input admin-s-emoji" type="text" value="${esc(s.emoji)}" placeholder="⚖️" aria-label="Emoji" />
@@ -4901,6 +4916,17 @@ function renderPotwModal() {
         <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="potw-save">Save this week's destination</button>
       </div>
     </div>`;
+  restorePotwScroll(m, prevScroll);
+}
+
+// Put the rebuilt modal back where the teacher was reading. Two frames: the
+// first after layout settles, the second to survive any late reflow (details
+// blocks, images) that would otherwise clamp scrollTop back to 0.
+function restorePotwScroll(m, top) {
+  if (!m || !top) return;
+  const put = () => { const box = m.querySelector('.admin-modal-scroll'); if (box) box.scrollTop = top; };
+  put();
+  requestAnimationFrame(() => { put(); requestAnimationFrame(put); });
 }
 
 // Presentation editor — Google Slides featured first (Mr. D lives in Google
@@ -5287,7 +5313,16 @@ async function savePotw() {
     // or garbage value there falls back to the built-in default of 50).
     bountyPoints: f.bountyPoints,
   };
+  // Keep a deck that is already attached when this save had nothing new to
+  // commit. The profile object is REBUILT from the form and then replaces the
+  // stored one wholesale, so without this an unrelated edit (retitling the
+  // place, fixing a fact) silently detached the teacher's slides — the owner
+  // hit exactly this with the Egypt Google Slides deck.
+  const keptPres = (!presentation && potwForm.pres && potwForm.pres.type === null)
+    ? (ctxRef.store.getState().potw.profiles[finalKey] || {}).presentation
+    : null;
   if (presentation) profile.presentation = presentation;
+  else if (keptPres) profile.presentation = keptPres;
   // A legacy free-text videoUrl is preserved only while the teacher hasn't picked
   // a preset; picking one clears it so the preset actually takes effect.
   const presetChanged = f.introVideoId && f.introVideoId !== f.legacyPresetAtOpen;
@@ -6067,6 +6102,20 @@ function injectStyles() {
   .admin-btn-sm{min-height:38px;padding:7px 12px;font-size:.82rem;}
   .admin-btn-lg{min-height:48px;padding:12px 22px;font-size:1rem;}
   .admin-btn-block{width:100%;}
+  /* Breathing room by RULE, not by hand: any button (or button row) that
+     directly follows a field, a field pair, a status line or a hint gets a
+     gap above it. Two instances were reported — "Save backup now" hard
+     against the status line, "Turn on the lock" hard against the PIN pair —
+     and hand-patching those two would leave the next one to be found by the
+     teacher. Adjacent buttons keep sitting together as a row. */
+  .admin-input + .admin-btn, .admin-two + .admin-btn, .admin-key-row + .admin-btn,
+  .admin-auto-status + .admin-btn, .admin-step-hint + .admin-btn, .admin-mini + .admin-btn,
+  .admin-flabel + .admin-btn, textarea + .admin-btn, select + .admin-btn,
+  .admin-input + .admin-backup-row, .admin-two + .admin-backup-row,
+  .admin-auto-status + .admin-backup-row, .admin-mini + .admin-backup-row,
+  .admin-step-hint + .admin-backup-row, .admin-auto-status + .admin-btn-row,
+  .admin-input + .admin-btn-row, .admin-two + .admin-btn-row, .admin-mini + .admin-btn-row{
+    margin-top:14px;}
   .admin-btn-primary{background:#f59e0b;border-color:#f59e0b;color:#0b0f19;font-weight:800;}
   .admin-btn-primary:hover:not(:disabled){background:#fbbf24;border-color:#fbbf24;}
   .admin-btn-accent{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.5);color:#f59e0b;}
@@ -6091,6 +6140,9 @@ function injectStyles() {
   .admin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:.6rem;}
   .admin-field{display:flex;flex-direction:column;gap:.35rem;min-width:0;}
   .admin-btn-row{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap;}
+  /* Same measure as the other tabs' cards — the pool was running the full
+     width of a 1920 board, which read as a different app. */
+  .admin-trivia-wrap{max-width:1100px;margin:0 auto;}
   .admin-trivia-list{display:flex;flex-direction:column;gap:.55rem;margin-top:.8rem;}
   .admin-trivia-row{display:flex;align-items:center;gap:.9rem;padding:.65rem .8rem;
     border:1px solid var(--color-line,#374151);border-radius:.8rem;background:var(--color-card2,#1f2937);}
@@ -6403,6 +6455,9 @@ function injectStyles() {
     display:inline-block;vertical-align:-0.25em;}
   .admin-modal-body{padding:18px 22px;overflow-y:auto;}
   .admin-modal-scroll{max-height:64vh;}
+  .admin-arrival-open{display:inline-block;margin-left:.4rem;font-size:.72rem;font-weight:700;
+    color:#93c5fd;text-decoration:none;border-bottom:1px dotted rgba(147,197,253,.6);}
+  .admin-arrival-open:hover{color:#bfdbfe;}
   .admin-modal-lead{color:var(--color-text-soft);font-size:.9rem;line-height:1.55;margin-bottom:8px;}
   .admin-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 22px;border-top:1px solid var(--color-card2);}
   .admin-dow-picker{display:flex;gap:8px;flex-wrap:wrap;}
@@ -6553,7 +6608,10 @@ function injectStyles() {
   .admin-save-err{border-color:#ef4444;background:rgba(239,68,68,.12);}
 
   /* backup */
-  .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;}
+  /* Always its own band — this row of buttons follows a status line whose
+     class varies with backup state, so a sibling-selector rule can't reach
+     every case. */
+  .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
   .admin-auto-head{font-weight:700;font-size:.9rem;color:var(--color-text);margin:4px 0 8px;}
   .admin-hr{border:none;border-top:1px solid var(--color-line);margin:18px 0;}
   .admin-auto-note{padding:12px 14px;border-radius:.7rem;font-size:.85rem;line-height:1.5;}
