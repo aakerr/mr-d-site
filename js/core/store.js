@@ -373,12 +373,15 @@ function defaultState() {
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
       soundEnabled: true,       // master switch for sound effects/voice
+      // Overall sound-effects level (recordings and built-in beeps alike),
+      // 0-1. Applied with a perceptual curve in js/core/audio.js.
+      sfxVolume: 0.65,
       // Quiet per-screen background loops (see js/core/ambient.js). Ships ON:
       // tracks:null means "use CONFIG.AMBIENT_TRACKS" — the bundled per-screen
       // map — until the teacher edits a track in Admin, which materialises a
       // real map here. Config stays the single source for what a fresh
       // install sounds like.
-      ambient: { enabled: true, volume: 0.6, tracks: null },
+      ambient: { enabled: true, volume: 0.5, tracks: null },
       // Teacher PIN (js/core/lock.js). Empty pinHash = off, which is the default:
       // the app must never lock a teacher out of a fresh install. `len` is the
       // digit count so the PIN pad knows when an entry is complete.
@@ -1130,13 +1133,27 @@ function load() {
       // screen, and every existing map picks the newcomer up once (v2: the
       // Trivia Tuesday screen). A track the teacher cleared between versions
       // does come back that once — acceptable while the app is pre-delivery.
-      if ((Number(merged.settings.ambientSeeded) || 0) < 2 && merged.settings.ambient
+      if ((Number(merged.settings.ambientSeeded) || 0) < 3 && merged.settings.ambient
           && merged.settings.ambient.tracks && typeof merged.settings.ambient.tracks === 'object') {
-        merged.settings.ambientSeeded = 2;
+        const seedVer = Number(merged.settings.ambientSeeded) || 0;
+        merged.settings.ambientSeeded = 3;
         for (const [id, entry] of Object.entries(CONFIG.AMBIENT_TRACKS || {})) {
           if (!(id in merged.settings.ambient.tracks)) {
             merged.settings.ambient.tracks[id] = typeof entry === 'string' ? entry : { ...entry };
           }
+        }
+        // v3 (owner's levels): screens at 100%, master at 50%, sfx at 65% —
+        // lifted ONLY where the save still holds the old shipped numbers, so
+        // anything the teacher tuned by hand stays theirs.
+        if (seedVer > 0 && seedVer < 3) {
+          for (const [id, entry] of Object.entries(merged.settings.ambient.tracks)) {
+            const def = (CONFIG.AMBIENT_TRACKS || {})[id];
+            if (def && entry && typeof entry === 'object' && entry.src === def.src && entry.volume === 0.5 && !entry.muted) {
+              entry.volume = 1;
+            }
+          }
+          if (merged.settings.ambient.volume === 0.6) merged.settings.ambient.volume = 0.5;
+          if (merged.settings.sfxVolume === 1 || merged.settings.sfxVolume == null) merged.settings.sfxVolume = 0.65;
         }
       }
       // The revision marker that used to drive that fix by hand. Nothing reads

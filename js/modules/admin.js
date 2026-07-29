@@ -3254,15 +3254,15 @@ const SUGGESTED_MUSIC_FILES = [
 // Kept identical to CONFIG.AMBIENT_TRACKS (the shipped default), so this
 // button doubles as "put the music back the way it came".
 const SUGGESTED_MUSIC_SETUP = [
-  { screen: 'dashboard', src: 'music/the-grand-pavilion.mp3',  volume: 0.5 },
-  { screen: 'council',   src: 'music/the-grand-pavilion.mp3',  volume: 0.5 },
-  { screen: 'houses',    src: 'music/honor-roll.mp3',          volume: 0.5 },
-  { screen: 'potw',      src: 'music/vanguard-charge.mp3',     volume: 0.5 },
-  { screen: 'quests',    src: 'music/the-long-road-ahead.mp3', volume: 0.5 },
-  { screen: 'shop',      src: 'music/bridging-the-path.mp3',   volume: 0.5 },
-  { screen: 'dice',      src: 'music/looming-roll.mp3',        volume: 0.5 },
-  { screen: 'battle',    src: 'music/storming-the-gates.mp3',  volume: 0.5 },
-  { screen: 'wheel',     src: 'music/breath-of-fate.mp3',      volume: 0.5 },
+  { screen: 'dashboard', src: 'music/the-grand-pavilion.mp3',  volume: 1 },
+  { screen: 'council',   src: 'music/the-grand-pavilion.mp3',  volume: 1 },
+  { screen: 'houses',    src: 'music/honor-roll.mp3',          volume: 1 },
+  { screen: 'potw',      src: 'music/vanguard-charge.mp3',     volume: 1 },
+  { screen: 'quests',    src: 'music/the-long-road-ahead.mp3', volume: 1 },
+  { screen: 'shop',      src: 'music/bridging-the-path.mp3',   volume: 1 },
+  { screen: 'dice',      src: 'music/looming-roll.mp3',        volume: 1 },
+  { screen: 'battle',    src: 'music/storming-the-gates.mp3',  volume: 1 },
+  { screen: 'wheel',     src: 'music/breath-of-fate.mp3',      volume: 1 },
 ];
 
 // A screen's tracks entry is either a plain path (legacy) or { src, volume }
@@ -3415,7 +3415,10 @@ function previewMusicTrack(screen) {
   const entry = screenTrackEntry(ambient.tracks, screen);
   const gain = entry.src === src ? entry.volume : 1;
   const audio = new Audio(src);
-  audio.volume = isFlyover ? 1 : Math.min(1, Math.max(0, (Number(ambient.volume) || 0) * gain));
+  // Same perceptual square the live loop uses (see ambient.js targetVolume),
+  // so the audition IS what the room will hear.
+  const linear = Math.min(1, Math.max(0, (Number(ambient.volume) || 0) * gain));
+  audio.volume = isFlyover ? 1 : linear * linear;
   const fail = () => {
     if (musicPreview && musicPreview.el === audio) musicPreview = null;
     showMusicError(screen, "Couldn't play that file — check the name and that it's in /music.");
@@ -3550,6 +3553,8 @@ function renderSfxCard() {
       <div class="admin-card-title">🔊 Sound effects</div>
       <div class="admin-help-row">${helpLink(HELP_TOPICS.sfx, 'Recording your own sounds, step by step')}</div>
       ${!soundOn ? `<div class="admin-warn-line">🔇 <b>The master sound switch is currently OFF</b> (the speaker icon in the top bar, or press <b>M</b>). <b>▶ Test</b> below will stay silent until you turn it back on — that's the app correctly honouring the switch, not a bug. Typing and saving a file path still works fine either way, and it will play normally once sound is back on.</div>` : ''}
+      <label class="admin-flabel" for="admin-sfx-volume" style="margin-top:12px">Overall sound-effects volume — <span id="admin-sfx-vol-label">${Math.round(((Number(store.getSettings().sfxVolume) >= 0 ? Number(store.getSettings().sfxVolume) : 1)) * 100)}%</span></label>
+      <input id="admin-sfx-volume" class="admin-input admin-music-volume" type="range" min="0" max="100" step="1" value="${Math.round(((Number(store.getSettings().sfxVolume) >= 0 ? Number(store.getSettings().sfxVolume) : 1)) * 100)}" />
       <div class="admin-mini">Swap any of the app's built-in beeps — or the spoken Battle Day line — for your own recording. A phone voice memo is all you need; no editing software or special equipment required. Drop <b>.mp3</b> or <b>.m4a</b> files straight into the <code>sfx</code> folder that ships right next to <code>index.html</code>, then type the path into a row below (e.g. <code>sfx/battle-cry.mp3</code>) and tap <b>▶ Test</b> to hear it exactly as the class will hear it — this plays through the app's own sound, not a preview. Keep every clip <b>short</b>, since these fire in the middle of play: a second or two is plenty for the quick cues (sword clash, blocked hit, points chime, dice rattle), and up to about three seconds for the war cry or the fanfare. Anything you leave blank simply keeps working exactly as it does today — no sound goes missing just because a file hasn't been recorded yet.</div>
       <div class="admin-music-list">${rows}</div>
       <div class="admin-mini" style="margin-top:12px">📁 <b>These recordings are not included in your backup .json.</b> Just like your videos and images, they're plain files that live in the <code>sfx</code> folder rather than inside the app's saved data, so exporting or restoring a backup never touches them. Keep your own copies somewhere safe — the same place you keep copies of your videos — in case you ever reinstall the app or move it to a new computer.</div>
@@ -6760,6 +6765,14 @@ export default {
         // debounceVolumeCommit).
         debounceVolumeCommit('ambient', () => {
           ctxRef.store.updateAmbient({ volume: Math.min(1, Math.max(0, pct / 100)) });
+        });
+      }
+      else if (e.target.id === 'admin-sfx-volume') {
+        const pct = Number(e.target.value);
+        const label = el('admin-sfx-vol-label');
+        if (label) label.textContent = `${pct}%`;
+        debounceVolumeCommit('sfx-master', () => {
+          ctxRef.store.updateSettings({ sfxVolume: Math.min(1, Math.max(0, pct / 100)) });
         });
       }
       else if (e.target.classList && e.target.classList.contains('admin-music-screen-volume')) {

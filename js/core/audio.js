@@ -12,6 +12,29 @@ function ac() {
   return actx;
 }
 
+// The teacher's overall sound-effects level (Look & Sound), applied to
+// recordings AND the built-in synth beeps. Squared before use: el.volume and
+// gain nodes are LINEAR amplitude while ears hear logarithmically, so a
+// linear slider felt like it did nothing until the very bottom — squaring
+// makes 50% sound about half as loud, which is what the slider promises.
+function sfxMaster() {
+  let v = 1;
+  try { v = Number(store.getSettings().sfxVolume); } catch (e) { v = 1; }
+  if (!Number.isFinite(v)) v = 1;
+  v = Math.min(1, Math.max(0, v));
+  return v * v;
+}
+
+// One shared gain stage for every synth beep, so the master level has a
+// single knob to turn instead of a gain per oscillator.
+let synthBus = null;
+function bus() {
+  const c = ac();
+  if (!synthBus) { synthBus = c.createGain(); synthBus.connect(c.destination); }
+  synthBus.gain.value = sfxMaster();
+  return synthBus;
+}
+
 function tone({ freq = 440, type = 'sine', dur = 0.3, delay = 0, gain = 0.25, sweep = null }) {
   try {
     const c = ac();
@@ -23,7 +46,7 @@ function tone({ freq = 440, type = 'sine', dur = 0.3, delay = 0, gain = 0.25, sw
     if (sweep) osc.frequency.exponentialRampToValueAtTime(sweep, t0 + dur);
     g.gain.setValueAtTime(gain, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    osc.connect(g).connect(c.destination);
+    osc.connect(g).connect(bus());
     osc.start(t0); osc.stop(t0 + dur + 0.05);
   } catch (e) { /* audio unavailable — stay silent */ }
 }
@@ -40,7 +63,7 @@ function noise({ dur = 0.3, delay = 0, gain = 0.2, highpass = 2000 }) {
     const t0 = c.currentTime + delay;
     g.gain.setValueAtTime(gain, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    src.connect(f).connect(g).connect(c.destination);
+    src.connect(f).connect(g).connect(bus());
     src.start(t0);
   } catch (e) { /* silent */ }
 }
@@ -108,7 +131,7 @@ export const audio = {
     if (src) {
       try {
         const el = new Audio(src);
-        el.volume = Math.min(1, Math.max(0, Number(volume) || 1));
+        el.volume = Math.min(1, Math.max(0, sfxMaster() * (Number(volume) || 1)));
         playing.add(el);
         const done = () => { playing.delete(el); };
         el.addEventListener('ended', done);

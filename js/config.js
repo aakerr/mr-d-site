@@ -44,20 +44,21 @@ export const CONFIG = {
   // map is live (store ships ambient tracks:null, which means "use this"), so
   // Mr. D hears the same assignment Anthony approved without touching Admin.
   // Editing any track in Admin → Look & Sound copies the whole map into the
-  // save and takes over from here. Each volume is a multiplier of the master
-  // ambient volume (0.6 shipped). The voyage overlay inside Place of the Week
-  // makes its own noise — potw here is its LANDING screen only.
+  // save and takes over from here. Owner's levels: every screen at 100% and
+  // the MASTER at 50% — one knob to rule the room, per-screen only for
+  // exceptions. The voyage overlay inside Place of the Week makes its own
+  // noise — potw here is its LANDING screen only.
   AMBIENT_TRACKS: {
-    dashboard: { src: 'music/the-grand-pavilion.mp3', volume: 0.5 },
-    council:   { src: 'music/the-grand-pavilion.mp3', volume: 0.5 },
-    houses:    { src: 'music/honor-roll.mp3',         volume: 0.5 },
-    quests:    { src: 'music/the-long-road-ahead.mp3', volume: 0.5 },
-    shop:      { src: 'music/bridging-the-path.mp3',  volume: 0.5 },
-    battle:    { src: 'music/storming-the-gates.mp3', volume: 0.5 },
-    dice:      { src: 'music/looming-roll.mp3',       volume: 0.5 },
-    wheel:     { src: 'music/breath-of-fate.mp3',     volume: 0.5 },
-    potw:      { src: 'music/bridging-the-path.mp3',  volume: 0.5 },
-    trivia:    { src: 'music/ancient-sands.mp3',      volume: 0.5 },
+    dashboard: { src: 'music/the-grand-pavilion.mp3', volume: 1 },
+    council:   { src: 'music/the-grand-pavilion.mp3', volume: 1 },
+    houses:    { src: 'music/honor-roll.mp3',         volume: 1 },
+    quests:    { src: 'music/the-long-road-ahead.mp3', volume: 1 },
+    shop:      { src: 'music/bridging-the-path.mp3',  volume: 1 },
+    battle:    { src: 'music/storming-the-gates.mp3', volume: 1 },
+    dice:      { src: 'music/looming-roll.mp3',       volume: 1 },
+    wheel:     { src: 'music/breath-of-fate.mp3',     volume: 1 },
+    potw:      { src: 'music/bridging-the-path.mp3',  volume: 1 },
+    trivia:    { src: 'music/ancient-sands.mp3',      volume: 1 },
   },
 
   // ---- the economy's one scale ---------------------------------------------

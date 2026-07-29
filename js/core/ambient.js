@@ -44,7 +44,12 @@ function targetVolume(moduleId = current?.moduleId) {
   const { enabled, volume, soundOn } = settings();
   if (!enabled || !soundOn) return 0;
   const e = moduleId ? entryFor(moduleId) : null;
-  return volume * (e ? e.gain : 1);
+  // Master × per-screen, then SQUARED: Audio.volume is linear amplitude but
+  // loudness is logarithmic, so the honest product (25% × 50% = 0.125) still
+  // sounded close to half volume and the sliders felt broken (owner-reported).
+  // Squaring maps slider percentages to perceived loudness.
+  const linear = volume * (e ? e.gain : 1);
+  return linear * linear;
 }
 
 // Each element owns its fade timer. A single shared timer meant that starting
@@ -95,6 +100,11 @@ function stopCurrent(fade = true) {
 // Play the track assigned to `moduleId`, or fade out if that screen has none.
 export function ambientFor(moduleId) {
   try {
+    // A Place of the Week voyage makes its own noise (intro video, flight
+    // music, presentation). While its overlay is up, no background loop may
+    // start — whatever asked for one is a stray (owner-reported: music
+    // starting unbidden at the map reveal on a first load).
+    if (document.querySelector('#overlay-root .potw-map-layer, #overlay-root .potw-intro-layer')) return;
     const entry = entryFor(moduleId);
     if (!entry) { stopCurrent(true); return; }
     if (current && current.moduleId === moduleId && current.src === entry.src) {
