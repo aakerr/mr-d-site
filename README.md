@@ -625,7 +625,23 @@ centre and lands on one of them:
 - **☀️ Fortune** → teacher picks a house to receive **+100**
 - **🌙 Misfortune** → teacher picks a house to lose **50**
 
-One award per spin; every award logs to the ledger as "Wheel of Fate".
+One award per spin; every award logs to the ledger as "Wheel of Fate", and
+the card fades away once its decree is applied.
+
+**The second wheel — Wheel of Fate (`wheel-center-fate.png`)**: the tile opens
+whichever wheel is selected in Admin → ⚙️ Term & World → 🎡 The Wheels. This
+one spins OUTCOMES, not houses, so the teacher picks who each lands on from
+the four crest chips:
+- 👑 **Royal Favor** / 🪔 **Wish Granted** / 🏅 **Victory Earned** /
+  🧰 **Hidden Treasure** — **+100** each
+- ⚔️ **Battle Lost** / 💰 **Fortune Lost** — **−100** each
+- 📜 **Hero's Challenge** / ⏳ **Trial of Fate** — draw a real task from the
+  task pool: **+150** completed, **−50** failed or declined
+
+Every value on both wheels is teacher-editable in that same Admin card, which
+also holds the challenge task pool (nine class-benefiting starters ship in the
+box — study guide, Kahoot review game, five-minute room reset — each taggable
+to either black wedge or both).
 Unlike the d20, the pick is a plain, uniform random draw — it isn't wired
 into the fate-audited dice path the Prophecy Table uses, because it isn't
 gambling for points, just fate picking a name.

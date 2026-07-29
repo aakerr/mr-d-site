@@ -68,6 +68,7 @@ const ART_PRELOAD = [
   'images/wheel-background.jpg',  // Wheel of Fate (three pieces)
   'images/wheel-outside.png',
   'images/wheel-center.png',
+  'images/wheel-center-fate.png',
   'images/council-chamber.jpg',   // Council of Four
   'images/trivia-background.jpg', // Trivia Tuesday temple
   'images/trivia-card.png',       // Trivia Tuesday card

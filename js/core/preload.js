@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v3';   // v3: the owner recut both films watermark-free — re-pull them
+const MANIFEST_VERSION = 'v4';   // v4: the fate wheel's disc joins the warm-up
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
@@ -45,6 +45,7 @@ const MANIFEST = [
     'images/four-armies.jpg', 'images/quest-hall.jpg', 'images/magic-shop.jpg',
     'images/potw-background.jpg', 'images/die-of-destiny.jpg', 'images/council-chamber.jpg',
     'images/wheel-background.jpg', 'images/wheel-outside.png', 'images/wheel-center.png',
+    'images/wheel-center-fate.png',
     'images/trivia-background.jpg', 'images/trivia-card.png',
   ] },
   { label: 'the sound effects', files: [

@@ -1,4 +1,16 @@
-// wheel.js — the Wheel of Fate.
+// wheel.js — the two wheels.
+//
+// TWO discs share one rig, one spin engine and one reveal card; which is on
+// stage is a teacher setting (Admin -> Term & World -> Wheels):
+//   • the HOUSE wheel (wheel-center.png) picks a house, all four, or the
+//     sun/moon Fortune-Misfortune pair — the original.
+//   • the FATE wheel (wheel-center-fate.png) spins OUTCOMES: four blessings
+//     (crown, lamp, laurel, treasure), two penalties (broken sword, spilled
+//     purse) and two black challenge wedges that set the class a real task
+//     worth a bigger swing. No fate wedge names a house, so the teacher picks
+//     who it lands on from the same crest chips the sun/moon already use.
+// Every point value on both wheels is teacher-editable; nothing is a constant.
+
 // A themed random-picker for the thing every teacher already does with a
 // pointing finger or a popsicle stick: "who answers first", "who presents",
 // "tie-break". It deliberately picks a HOUSE, never a student — this app has
@@ -29,11 +41,13 @@ let actedThisSpin = false;    // one award/deduction per spin; a new spin re-ena
 let actionInFlight = false;   // an action is mid-PIN-check; blocks a second tap
 let revealTimer = null;       // fallback timer if the CSS transitionend never fires
 
-const QUICK_AWARD = 50;       // a house (or all four) picked by the wheel
-const FORTUNE_AWARD = 100;    // the sun smiles on a house of the teacher's choosing
-const MISFORTUNE_LOSS = 50;   // the moon frowns on a house of the teacher's choosing
+// Point values live in the store now (Admin -> Term & World -> Wheels), so a
+// teacher can retune either wheel without a code change. These read the live
+// settings every time they're needed — never cached at module scope.
+function housePts() { return store.getWheelSettings().house; }
+function fatePts() { return store.getWheelSettings().fate; }
 
-// The disc art, clockwise from the pointer at twelve o'clock. Index i's wedge
+// The HOUSE disc, clockwise from the pointer at twelve o'clock. Index i's wedge
 // center sits at exactly 45*i degrees. House ids follow store.HOUSES
 // (1 Camelot, 2 Atlantis, 3 Valhalla, 4 Rivendell).
 const WEDGES = [
@@ -46,6 +60,26 @@ const WEDGES = [
   { type: 'house', houseId: 3 },   // gold axe
   { type: 'sun' },                 // purple sun — Fortune
 ];
+
+// The FATE disc (wheel-center-fate.png), same geometry, same 1254x1254 canvas.
+// Clockwise from twelve: crown, scroll, lamp, coin pouch, laurel, hourglass,
+// treasure chest, broken sword. `pts` names the settings key each wedge reads.
+const FATE_WEDGES = [
+  { id: 'crown',  kind: 'award',     pts: 'crown',  emoji: '👑', name: 'Royal Favor',      label: 'The crown bestows its favor' },
+  { id: 'hero',   kind: 'challenge', pts: null,     emoji: '📜', name: "Hero's Challenge", label: 'A quest is set before you', task: 'hero' },
+  { id: 'lamp',   kind: 'award',     pts: 'lamp',   emoji: '🪔', name: 'Wish Granted',     label: 'The lamp answers' },
+  { id: 'pouch',  kind: 'penalty',   pts: 'pouch',  emoji: '💰', name: 'Fortune Lost',     label: 'The purse spills…' },
+  { id: 'laurel', kind: 'award',     pts: 'laurel', emoji: '🏅', name: 'Victory Earned',   label: 'The laurel is placed' },
+  { id: 'trial',  kind: 'challenge', pts: null,     emoji: '⏳', name: 'Trial of Fate',    label: 'The sands are running', task: 'trial' },
+  { id: 'chest',  kind: 'award',     pts: 'chest',  emoji: '🧰', name: 'Hidden Treasure',  label: 'The chest is opened' },
+  { id: 'sword',  kind: 'penalty',   pts: 'sword',  emoji: '⚔️', name: 'Battle Lost',      label: 'The blade is broken…' },
+];
+
+// Which wheel is on stage. Read from settings at mount; the tile opens
+// whichever one the teacher set as active.
+let activeWheel = 'house';
+let fateTask = null;        // the task drawn for the current challenge spin
+let fateHouseId = null;     // house chosen for a challenge, before the verdict
 
 
 function createStyles() {
@@ -134,6 +168,29 @@ function createStyles() {
         animation: wheel-reveal-in 0.4s cubic-bezier(0.2,0.85,0.2,1) both;
       }
       .wheel-reveal.wheel-reveal-moon { border-color: #a78bfa; }
+      .wheel-reveal.wheel-reveal-challenge { border-color: #e5e7eb; }
+      /* The card bows out once its decree is applied (owner's ritual). */
+      .wheel-reveal.wheel-reveal-out {
+        transition: opacity 0.6s ease, transform 0.6s ease;
+        opacity: 0; transform: scale(0.94) translateY(-6px); pointer-events: none;
+      }
+      .wheel-reveal-pts {
+        font-family: 'Cinzel', Georgia, serif; font-weight: 800; font-size: 1.35rem;
+        margin: -0.35rem 0 0.7rem;
+      }
+      /* The challenge's task, quoted on parchment-ish stock so it reads as the
+         thing being asked rather than another label. */
+      .wheel-task {
+        margin: 0 0 0.55rem; padding: 0.6rem 0.7rem; border-radius: 0.5rem;
+        background: rgba(253,230,138,0.09); border: 1px solid rgba(253,230,138,0.35);
+        color: #fde68a; font-size: 0.92rem; line-height: 1.35; text-align: left;
+      }
+      .wheel-stakes { font-size: 0.9rem; font-weight: 800; color: #d1d5db; margin-bottom: 0.55rem; }
+      .wheel-chip-hint {
+        font-size: 0.78rem; color: #9ca3af; text-transform: uppercase;
+        letter-spacing: 0.08em; margin-bottom: 0.4rem;
+      }
+      .wheel-chip-win, .wheel-chip-fail { flex: 1 1 45%; font-size: 0.85rem; }
       @keyframes wheel-reveal-in { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
       .wheel-reveal-label { font-size: 0.85rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.3rem; }
       .wheel-reveal-name {
@@ -198,8 +255,11 @@ async function performSpin(el) {
   // Uniform pick over the eight painted wedges — this is a picker, not the
   // fate-audited dice, so a plain Math.random() draw is exactly the right
   // amount of ceremony. Two of the eight are all-houses by design.
-  const idx = Math.floor(Math.random() * WEDGES.length);
+  const table = activeWheel === 'fate' ? FATE_WEDGES : WEDGES;
+  const idx = Math.floor(Math.random() * table.length);
   pendingIdx = idx;
+  fateTask = null;
+  fateHouseId = null;
 
   const disc = el.querySelector('.wheel-disc-img');
   if (!disc) { spinInProgress = false; return; }
@@ -258,6 +318,7 @@ function revealOutcome(el, idx) {
   spinInProgress = false;
   setSpinEnabled(el, true);
   if (!mounted) return;
+  if (activeWheel === 'fate') { revealFateOutcome(el, idx); return; }
 
   const wedge = WEDGES[idx];
   const host = el.querySelector('#wheel-reveal-host');
@@ -270,7 +331,7 @@ function revealOutcome(el, idx) {
       <div class="wheel-reveal">
         <div class="wheel-reveal-label">The Wheel of Fate has spoken</div>
         <div class="wheel-reveal-name" style="color:${esc(house.accent)}">${esc(house.name)}</div>
-        <button type="button" class="wheel-award-btn" data-kind="house" data-house="${house.id}">+${QUICK_AWARD} to them</button>
+        <button type="button" class="wheel-award-btn" data-kind="house" data-house="${house.id}">+${housePts().quick} to them</button>
         <div id="wheel-award-result"></div>
       </div>`;
   } else if (wedge.type === 'all') {
@@ -279,7 +340,7 @@ function revealOutcome(el, idx) {
       <div class="wheel-reveal">
         <div class="wheel-reveal-label">The Wheel of Fate has spoken</div>
         <div class="wheel-reveal-name" style="color:#e5e7eb">ALL FOUR HOUSES</div>
-        <button type="button" class="wheel-award-btn" data-kind="all">+${QUICK_AWARD} to all four</button>
+        <button type="button" class="wheel-award-btn" data-kind="all">+${housePts().quick} to all four</button>
         <div id="wheel-award-result"></div>
       </div>`;
   } else if (wedge.type === 'sun') {
@@ -287,7 +348,7 @@ function revealOutcome(el, idx) {
     host.innerHTML = `
       <div class="wheel-reveal">
         <div class="wheel-reveal-label">The sun shines — Fortune!</div>
-        <div class="wheel-reveal-name" style="color:#fcd34d">☀️ +${FORTUNE_AWARD} to a house</div>
+        <div class="wheel-reveal-name" style="color:#fcd34d">☀️ +${housePts().fortune} to a house</div>
         ${houseChipRow('fortune')}
         <div id="wheel-award-result"></div>
       </div>`;
@@ -296,7 +357,7 @@ function revealOutcome(el, idx) {
     host.innerHTML = `
       <div class="wheel-reveal wheel-reveal-moon">
         <div class="wheel-reveal-label">The moon frowns — Misfortune…</div>
-        <div class="wheel-reveal-name" style="color:#c4b5fd">🌙 −${MISFORTUNE_LOSS} from a house</div>
+        <div class="wheel-reveal-name" style="color:#c4b5fd">🌙 −${Math.abs(housePts().misfortune)} from a house</div>
         ${houseChipRow('misfortune')}
         <div id="wheel-award-result"></div>
       </div>`;
@@ -305,6 +366,150 @@ function revealOutcome(el, idx) {
   host.querySelectorAll('[data-kind]').forEach((btn) => {
     btn.addEventListener('click', () => applyOutcome(el, idx, btn));
   });
+}
+
+// ---- the FATE wheel's reveal ------------------------------------------------
+// Four blessings, two penalties, two challenges. No wedge names a house, so
+// the teacher always picks who it lands on — the same crest-chip row the
+// house wheel's Fortune/Misfortune outcomes already use.
+function revealFateOutcome(el, idx) {
+  const wedge = FATE_WEDGES[idx];
+  const host = el.querySelector('#wheel-reveal-host');
+  if (!host) return;
+  const p = fatePts();
+
+  if (wedge.kind === 'challenge') {
+    // Draw a task for this spin. An empty pool is not a dead end: the wedge
+    // still pays, the teacher just sets the task aloud.
+    const pool = store.getWheelTasks(wedge.task);
+    fateTask = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    audio?.sfx?.('reveal');
+    host.innerHTML = `
+      <div class="wheel-reveal wheel-reveal-challenge">
+        <div class="wheel-reveal-label">${esc(wedge.label)}</div>
+        <div class="wheel-reveal-name" style="color:#e5e7eb">${wedge.emoji} ${esc(wedge.name)}</div>
+        <div class="wheel-task">${fateTask ? esc(fateTask.text) : 'Set the class a task — your call.'}</div>
+        <div class="wheel-stakes">✓ +${p.challengeWin} &nbsp;·&nbsp; ✗ ${p.challengeFail}</div>
+        <div class="wheel-chip-hint">Which house takes it on?</div>
+        ${houseChipRow('fate-pick')}
+        <div id="wheel-award-result"></div>
+      </div>`;
+  } else {
+    const pts = Number(p[wedge.pts]) || 0;
+    const good = wedge.kind === 'award';
+    audio?.sfx?.(good ? 'fanfare' : 'thud');
+    host.innerHTML = `
+      <div class="wheel-reveal ${good ? '' : 'wheel-reveal-moon'}">
+        <div class="wheel-reveal-label">${esc(wedge.label)}</div>
+        <div class="wheel-reveal-name" style="color:${good ? '#fcd34d' : '#c4b5fd'}">${wedge.emoji} ${esc(wedge.name)}</div>
+        <div class="wheel-reveal-pts" style="color:${good ? '#6ee7b7' : '#fca5a5'}">${good ? '+' : '−'}${Math.abs(pts)} points</div>
+        ${houseChipRow(good ? 'fate-award' : 'fate-penalty')}
+        <div id="wheel-award-result"></div>
+      </div>`;
+  }
+
+  host.querySelectorAll('[data-kind]').forEach((btn) => {
+    btn.addEventListener('click', () => applyFate(el, idx, btn));
+  });
+}
+
+// A challenge is two decisions: who takes it, then whether they did it. The
+// first tap swaps the chips for the two verdict buttons rather than paying
+// anything — nothing moves until the teacher rules.
+function showChallengeVerdict(el, idx, houseId) {
+  const host = el.querySelector('#wheel-reveal-host');
+  const card = host && host.querySelector('.wheel-reveal');
+  if (!card) return;
+  const house = store.HOUSES[houseId];
+  const p = fatePts();
+  const row = card.querySelector('.wheel-house-row');
+  const hint = card.querySelector('.wheel-chip-hint');
+  if (hint) hint.textContent = `${house.name} takes the challenge`;
+  if (row) {
+    row.outerHTML = `
+      <div class="wheel-house-row">
+        <button type="button" class="wheel-house-chip wheel-chip-win" style="--wh:#22c55e"
+          data-kind="fate-win" data-house="${house.id}">✓ Done &nbsp;+${p.challengeWin}</button>
+        <button type="button" class="wheel-house-chip wheel-chip-fail" style="--wh:#ef4444"
+          data-kind="fate-lose" data-house="${house.id}">✗ Not done &nbsp;${p.challengeFail}</button>
+      </div>`;
+    card.querySelectorAll('[data-kind]').forEach((b) => {
+      b.addEventListener('click', () => applyFate(el, idx, b));
+    });
+  }
+}
+
+// Every fate outcome lands here. Same discipline as the house wheel: the
+// in-flight flag goes up before the PIN await, and the spin's one action is
+// only burned once the store has actually written.
+async function applyFate(el, idx, btn) {
+  if (actedThisSpin || actionInFlight || idx !== pendingIdx) return;
+  const kind = btn.dataset.kind;
+  const houseId = Number(btn.dataset.house);
+  const house = store.HOUSES[houseId];
+  if (!house) return;
+
+  // Picking who takes a challenge moves nothing — no PIN, no spend.
+  if (kind === 'fate-pick') { fateHouseId = houseId; showChallengeVerdict(el, idx, houseId); return; }
+
+  actionInFlight = true;
+  const ok = await lock.requireUnlock('apply the wheel’s decree');
+  actionInFlight = false;
+  if (!mounted) return;
+  if (!ok) return;
+
+  const wedge = FATE_WEDGES[idx];
+  const p = fatePts();
+  const resultEl = el.querySelector('#wheel-award-result');
+  let delta = 0;
+  let why = wedge.name;
+  if (kind === 'fate-award') delta = Math.abs(Number(p[wedge.pts]) || 0);
+  else if (kind === 'fate-penalty') delta = -Math.abs(Number(p[wedge.pts]) || 0);
+  else if (kind === 'fate-win') { delta = Math.abs(p.challengeWin); why = `${wedge.name} — completed`; }
+  else if (kind === 'fate-lose') { delta = -Math.abs(p.challengeFail); why = `${wedge.name} — not completed`; }
+
+  if (delta > 0) {
+    const refusal = store.explainRefusal(houseId, delta);
+    if (refusal) { if (resultEl) resultEl.innerHTML = `<div class="wheel-award-refused">${esc(refusal)}</div>`; return; }
+  }
+  const tx = store.addPoints(houseId, delta, { reason: `Wheel of Fate — ${why}`, tag: 'manual' });
+  actedThisSpin = !!tx;
+  if (!resultEl) return;
+  if (!tx) { resultEl.innerHTML = `<div class="wheel-award-refused">${esc(house.name)} had nothing left to take.</div>`; return; }
+
+  const moved = Math.abs(tx.delta);
+  const asked = Math.abs(delta);
+  audio?.sfx?.(delta >= 0 ? 'coin' : 'thud');
+  resultEl.innerHTML = delta >= 0
+    ? `<div class="wheel-awarded">✓ +${moved} to ${esc(house.name)}</div>`
+    : `<div class="wheel-award-refused">${moved < asked
+        ? `Fate asked for ${asked}, but ${moved} was all ${esc(house.name)} had.`
+        : `${esc(house.name)} loses ${moved} points.`}</div>`;
+  disableAll(el);
+  dismissCard(el);
+}
+
+// Every chip and button on the card, spent. Shared by both wheels' apply
+// paths — it used to be a local const inside applyOutcome, which meant the
+// fate path referenced a name that did not exist there and threw before it
+// could dismiss the card.
+function disableAll(el) {
+  el.querySelectorAll('[data-kind]').forEach((b) => { b.disabled = true; });
+}
+
+// The owner's ritual: once a decree is applied, the card bows out rather than
+// sitting on the board until the next spin. The confirmation holds long
+// enough to read, then the whole card fades.
+function dismissCard(el) {
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(() => {
+    if (!mounted) return;
+    const host = el.querySelector('#wheel-reveal-host');
+    const card = host && host.querySelector('.wheel-reveal');
+    if (!card) return;
+    card.classList.add('wheel-reveal-out');
+    setTimeout(() => { if (mounted) clearReveal(el); }, 700);
+  }, 2200);
 }
 
 async function applyOutcome(el, idx, btn) {
@@ -322,10 +527,10 @@ async function applyOutcome(el, idx, btn) {
 
   const resultEl = el.querySelector('#wheel-award-result');
   const kind = btn.dataset.kind;
-  const disableAll = () => el.querySelectorAll('[data-kind]').forEach((b) => { b.disabled = true; });
+
 
   if (kind === 'all') {
-    const made = store.awardAll(QUICK_AWARD, { reason: 'Wheel of Fate — all houses', tag: 'manual' });
+    const made = store.awardAll(housePts().quick, { reason: 'Wheel of Fate — all houses', tag: 'manual' });
     actedThisSpin = made.length > 0;
     if (!resultEl) return;
     if (!made.length) {
@@ -334,8 +539,9 @@ async function applyOutcome(el, idx, btn) {
     }
     audio?.sfx?.('coin');
     const skipped = 4 - made.length;
-    resultEl.innerHTML = `<div class="wheel-awarded">✓ +${QUICK_AWARD} to ${made.length === 4 ? 'all four houses' : `${made.length} houses`}${skipped ? ' — ' + skipped + ' frozen' : ''}</div>`;
-    disableAll();
+    resultEl.innerHTML = `<div class="wheel-awarded">✓ +${housePts().quick} to ${made.length === 4 ? 'all four houses' : `${made.length} houses`}${skipped ? ' — ' + skipped + ' frozen' : ''}</div>`;
+    disableAll(el);
+    dismissCard(el);
     return;
   }
 
@@ -344,7 +550,8 @@ async function applyOutcome(el, idx, btn) {
   if (!house) return;
 
   if (kind === 'misfortune') {
-    const tx = store.addPoints(houseId, -MISFORTUNE_LOSS, { reason: 'Wheel of Fate — Misfortune', tag: 'manual' });
+    const loss = Math.abs(housePts().misfortune);
+    const tx = store.addPoints(houseId, -loss, { reason: 'Wheel of Fate — Misfortune', tag: 'manual' });
     actedThisSpin = !!tx;
     if (!resultEl) return;
     if (!tx) {
@@ -356,15 +563,16 @@ async function applyOutcome(el, idx, btn) {
     // moon demands. Say so, or the card's "-50" and a banner's "loses 5" read
     // as a broken calculation (owner-reported).
     const took = Math.abs(tx.delta);
-    resultEl.innerHTML = took < MISFORTUNE_LOSS
-      ? `<div class="wheel-award-refused">The moon asked for ${MISFORTUNE_LOSS}, but ${took} was all ${esc(house.name)} had.</div>`
-      : `<div class="wheel-award-refused">${esc(house.name)} loses ${MISFORTUNE_LOSS} points to Misfortune.</div>`;
-    disableAll();
+    resultEl.innerHTML = took < loss
+      ? `<div class="wheel-award-refused">The moon asked for ${loss}, but ${took} was all ${esc(house.name)} had.</div>`
+      : `<div class="wheel-award-refused">${esc(house.name)} loses ${loss} points to Misfortune.</div>`;
+    disableAll(el);
+    dismissCard(el);
     return;
   }
 
   // 'house' and 'fortune' are both a straight award; only the size differs.
-  const points = kind === 'fortune' ? FORTUNE_AWARD : QUICK_AWARD;
+  const points = kind === 'fortune' ? housePts().fortune : housePts().quick;
   const why = store.explainRefusal(houseId, points);
   const tx = why ? null : store.addPoints(houseId, points, { reason: kind === 'fortune' ? 'Wheel of Fate — Fortune' : 'Wheel of Fate', tag: 'manual' });
   actedThisSpin = !!tx;
@@ -375,7 +583,8 @@ async function applyOutcome(el, idx, btn) {
   }
   audio?.sfx?.('coin');
   resultEl.innerHTML = `<div class="wheel-awarded">✓ Awarded +${tx.delta} to ${esc(house.name)}</div>`;
-  disableAll();
+  disableAll(el);
+  dismissCard(el);
 }
 
 export default {
@@ -394,17 +603,23 @@ export default {
     actionInFlight = false;
     pendingIdx = null;
     wheelRotation = 0;
+    fateTask = null;
+    fateHouseId = null;
+    activeWheel = store.getWheelSettings().active;
+    const isFate = activeWheel === 'fate';
+    const discSrc = isFate ? 'images/wheel-center-fate.png' : 'images/wheel-center.png';
+    const titleText = isFate ? 'Wheel of Fate' : 'Wheel of Houses';
 
     el.innerHTML = createStyles() + `
       <div class="wheel-container">
         <div class="wheel-art">
           <div class="wheel-rig">
-            <img class="wheel-disc-img" src="images/wheel-center.png" alt="" />
+            <img class="wheel-disc-img" src="${discSrc}" alt="" />
             <img class="wheel-ring-img" src="images/wheel-outside.png" alt="" />
             <div id="wheel-reveal-host"></div>
           </div>
         </div>
-        <div class="wheel-title"><img class="wheel-title-mark" src="images/icon-wheel.png" alt="" onerror="this.outerHTML='🎡 '" />Wheel of Fate</div>
+        <div class="wheel-title"><img class="wheel-title-mark" src="images/icon-wheel.png" alt="" onerror="this.outerHTML='🎡 '" />${titleText}</div>
         <button type="button" class="wheel-spin-btn" id="wheel-spin-btn">SPIN</button>
       </div>
     `;
@@ -416,6 +631,8 @@ export default {
     mounted = false;
     spinInProgress = false;
     pendingIdx = null;
+    fateTask = null;
+    fateHouseId = null;
     actedThisSpin = false;
     actionInFlight = false;
     clearTimeout(revealTimer);

@@ -43,6 +43,43 @@ function defaultAwardPresets() {
 // or a roll could come up with nothing to show the class. Opening those up
 // risked breaking that guarantee for very little benefit, so only the points,
 // title, description and emoji can be changed — see saveDiceOutcome below.
+// The two wheels. The HOUSE wheel picks a house (or all four); the FATE wheel
+// spins outcomes — four blessings, two penalties, and two challenges the class
+// can actually earn. Every number here is teacher-editable in
+// Admin -> Term & World -> Wheels, which is why they live in settings rather
+// than as constants in wheel.js.
+function defaultWheelSettings() {
+  return {
+    active: 'fate',            // which wheel the dashboard tile opens (owner's shipped choice)
+    house: { quick: 50, fortune: 100, misfortune: 50 },
+    fate: {
+      crown: 100, lamp: 100, laurel: 100, chest: 100,   // the four blessings
+      sword: -100, pouch: -100,                          // the two penalties
+      challengeWin: 150, challengeFail: -50,             // both black wedges
+    },
+    // Tasks the black wedges draw from. `kind` is 'hero' (do it properly),
+    // 'trial' (do it against the clock) or 'any'. Everything shipped here is
+    // something a class can do on day one that genuinely helps the room or
+    // the next quiz — the point of the challenge wedges is real value, not
+    // busywork.
+    tasks: defaultWheelTasks(),
+  };
+}
+
+function defaultWheelTasks() {
+  return [
+    { id: 'wt-studyguide', kind: 'hero',  text: 'Build a one-page study guide for the next quiz and share a copy with the whole class.' },
+    { id: 'wt-kahoot',     kind: 'hero',  text: 'Make a Kahoot review game for this unit — then run it for the class.' },
+    { id: 'wt-questions',  kind: 'hero',  text: 'Write five review questions WITH answers for the next test and hand them in.' },
+    { id: 'wt-library',    kind: 'hero',  text: 'Put the classroom library and supply shelf back in proper order.' },
+    { id: 'wt-teach',      kind: 'hero',  text: 'Teach one idea from today\'s lesson back to the class in your own words.' },
+    { id: 'wt-reset',      kind: 'trial', text: 'Five minutes: desks straight, chairs in, floor clear, boards wiped.' },
+    { id: 'wt-terms',      kind: 'trial', text: 'Three minutes: name as many terms from this unit as the class can, out loud.' },
+    { id: 'wt-board',      kind: 'trial', text: 'Five minutes: every student writes one thing they learned today on the board.' },
+    { id: 'wt-sort',       kind: 'trial', text: 'Two minutes: sort and stack every material used in today\'s lesson.' },
+  ];
+}
+
 function defaultDiceProphecy() {
   return [
     { id: 'catastrophe', min: 1,  max: 1,  emoji: '💀', title: 'CATASTROPHE',    desc: 'House loses 100 points',                       points: -100, hasButton: true },
@@ -373,6 +410,9 @@ function defaultState() {
       theme: { mode: 'dark', seasonal: false },  // mode: 'dark' | 'light'
       mapsApiKeyOverride: '',   // teacher's own Maps key (blank = bundled default)
       soundEnabled: true,       // master switch for sound effects/voice
+      // The two wheels: which one the tile opens, both wheels' point values,
+      // and the challenge task pool. See defaultWheelSettings().
+      wheels: defaultWheelSettings(),
       // Overall sound-effects level (recordings and built-in beeps alike),
       // 0-1. Applied with a perceptual curve in js/core/audio.js.
       sfxVolume: 0.65,
@@ -1070,6 +1110,20 @@ function load() {
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
       if (!merged.inventory || typeof merged.inventory !== 'object') merged.inventory = {};
       merged.settings.combat = { ...defaultCombat(), ...(merged.settings.combat || {}) };
+      {
+        // Deep-merge each wheel's numbers so a value added later arrives on an
+        // existing save; the task pool is wholly teacher-owned once seeded.
+        const dw = defaultWheelSettings();
+        const w = merged.settings.wheels || {};
+        merged.settings.wheels = {
+          // A save that predates the fate wheel has no `active` at all — it
+          // adopts the shipped choice. Once the teacher picks, theirs wins.
+          active: w.active === 'house' ? 'house' : (w.active === 'fate' ? 'fate' : dw.active),
+          house: { ...dw.house, ...(w.house || {}) },
+          fate: { ...dw.fate, ...(w.fate || {}) },
+          tasks: Array.isArray(w.tasks) ? w.tasks : dw.tasks,
+        };
+      }
       if (!PRIZE_RULES[merged.settings.combat.prizeRule]) merged.settings.combat.prizeRule = 'gap';
       if (!merged.hp || typeof merged.hp !== 'object') merged.hp = {};
       {
@@ -2609,6 +2663,74 @@ export const store = {
     if (item.effect.kind === 'reduce') store.activateReduction(houseId, item.effect.amount);
     else if (item.effect.kind === 'shield') store.activateShield(houseId, item.effect.amount);
     return item;
+  },
+
+  // ----- the two wheels -----
+
+  getWheelSettings() {
+    const dw = defaultWheelSettings();
+    const w = state.settings.wheels || {};
+    return {
+      active: w.active === 'fate' ? 'fate' : 'house',
+      house: { ...dw.house, ...(w.house || {}) },
+      fate: { ...dw.fate, ...(w.fate || {}) },
+      tasks: Array.isArray(w.tasks) ? w.tasks.slice() : dw.tasks,
+    };
+  },
+
+  setActiveWheel(which) {
+    state.settings.wheels.active = which === 'fate' ? 'fate' : 'house';
+    emit();
+  },
+
+  // Patch one wheel's numbers. Values are clamped to +/-MAX_DELTA and rounded;
+  // a penalty's sign is preserved exactly as the teacher typed it, because
+  // "-100" and "100" both read as a penalty on a wedge that always subtracts.
+  updateWheelPoints(which, patch) {
+    const key = which === 'fate' ? 'fate' : 'house';
+    const cur = store.getWheelSettings()[key];
+    const next = { ...cur };
+    for (const [k, v] of Object.entries(patch || {})) {
+      const n = Math.round(Number(v));
+      if (!Number.isFinite(n)) continue;
+      next[k] = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, n));
+    }
+    state.settings.wheels[key] = next;
+    emit();
+    return next;
+  },
+
+  getWheelTasks(kind) {
+    const all = store.getWheelSettings().tasks;
+    if (!kind) return all;
+    return all.filter((t) => t.kind === kind || t.kind === 'any');
+  },
+
+  saveWheelTask(input) {
+    const text = String(input?.text || '').trim();
+    if (!text) return null;
+    const kind = ['hero', 'trial', 'any'].includes(input?.kind) ? input.kind : 'any';
+    const list = state.settings.wheels.tasks;
+    const i = input.id ? list.findIndex((x) => x.id === input.id) : -1;
+    const row = { id: input.id || `wt-${Date.now()}`, kind, text };
+    if (i >= 0) list[i] = row; else list.push(row);
+    emit();
+    return row;
+  },
+
+  deleteWheelTask(id) {
+    const before = state.settings.wheels.tasks.length;
+    state.settings.wheels.tasks = state.settings.wheels.tasks.filter((x) => x.id !== id);
+    if (state.settings.wheels.tasks.length !== before) emit();
+  },
+
+  moveWheelTask(id, dir) {
+    const list = state.settings.wheels.tasks;
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + (dir < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    emit();
   },
 
   // ----- Trivia Tuesday -----

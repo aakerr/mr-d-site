@@ -2633,6 +2633,125 @@ function renderAwardPresetsCard() {
     </div>`;
 }
 
+// ---- the two wheels (points + the challenge task pool) --------------------
+// Two toggle tabs inside one card, on the owner's spec: the HOUSE wheel's
+// three numbers, and the FATE wheel's eight wedges plus the shared challenge
+// stakes and the task pool the black wedges draw from.
+
+let wheelTab = null;           // 'house' | 'fate' — which toggle tab is open (defaults to the live wheel)
+let wheelTaskForm = null;      // null | { id, kind, text, error }
+
+const FATE_FIELDS = [
+  { key: 'crown',  emoji: '👑', name: 'Royal Favor',     hint: 'Red — the crown' },
+  { key: 'lamp',   emoji: '🪔', name: 'Wish Granted',    hint: 'Blue — the lamp' },
+  { key: 'laurel', emoji: '🏅', name: 'Victory Earned',  hint: 'Green — the laurel' },
+  { key: 'chest',  emoji: '🧰', name: 'Hidden Treasure', hint: 'Gold — the chest' },
+  { key: 'sword',  emoji: '⚔️', name: 'Battle Lost',     hint: 'Purple — the broken sword', penalty: true },
+  { key: 'pouch',  emoji: '💰', name: 'Fortune Lost',    hint: 'Purple — the spilled purse', penalty: true },
+];
+
+const TASK_KINDS = { hero: "📜 Hero's Challenge", trial: '⏳ Trial of Fate', any: '🎲 Either wedge' };
+
+function wheelsCardHTML() {
+  const store = ctxRef.store;
+  const w = store.getWheelSettings();
+  const f = wheelTaskForm;
+  // First open lands on whichever wheel is actually on the tile.
+  if (wheelTab === null) wheelTab = w.active;
+
+  const houseBody = `
+    <div class="admin-mini">The original wheel: eight painted wedges — one per house, two that pay all four, and the sun/moon pair the teacher aims at a house of their choosing.</div>
+    <div class="admin-wheel-grid">
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wh-quick">A house (or all four) — award</label>
+        <input id="admin-wh-quick" class="admin-input admin-wheel-num" data-wheel="house" data-key="quick" type="number" min="0" max="9999" value="${esc(String(w.house.quick))}" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wh-fortune">☀️ Fortune — award</label>
+        <input id="admin-wh-fortune" class="admin-input admin-wheel-num" data-wheel="house" data-key="fortune" type="number" min="0" max="9999" value="${esc(String(w.house.fortune))}" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wh-misfortune">🌙 Misfortune — deduction</label>
+        <input id="admin-wh-misfortune" class="admin-input admin-wheel-num" data-wheel="house" data-key="misfortune" type="number" min="0" max="9999" value="${esc(String(Math.abs(w.house.misfortune)))}" />
+      </div>
+    </div>`;
+
+  const taskRows = w.tasks.map((t, i) => `
+    <div class="admin-wtask-row">
+      <span class="admin-wtask-kind" title="${esc(TASK_KINDS[t.kind] || t.kind)}">${esc((TASK_KINDS[t.kind] || '🎲').split(' ')[0])}</span>
+      <div class="admin-wtask-text">${esc(t.text)}</div>
+      <div class="admin-trivia-actions">
+        <button class="admin-icon-btn" data-action="wtask-up" data-id="${esc(t.id)}" title="Move up"${i === 0 ? ' disabled' : ''}>↑</button>
+        <button class="admin-icon-btn" data-action="wtask-down" data-id="${esc(t.id)}" title="Move down"${i === w.tasks.length - 1 ? ' disabled' : ''}>↓</button>
+        <button class="admin-icon-btn" data-action="wtask-edit" data-id="${esc(t.id)}" title="Edit">✏️</button>
+        <button class="admin-icon-btn admin-icon-danger" data-action="wtask-del" data-id="${esc(t.id)}" title="Delete">🗑</button>
+      </div>
+    </div>`).join('');
+
+  const fateBody = `
+    <div class="admin-mini">The fate wheel spins outcomes rather than houses — the teacher picks who each one lands on. Four blessings, two penalties, and two black wedges that set the class a real task.</div>
+    <div class="admin-wheel-grid">
+      ${FATE_FIELDS.map((fd) => `
+        <div class="admin-field">
+          <label class="admin-flabel" for="admin-wf-${fd.key}">${fd.emoji} ${esc(fd.name)} — ${fd.penalty ? 'deduction' : 'award'}</label>
+          <input id="admin-wf-${fd.key}" class="admin-input admin-wheel-num" data-wheel="fate" data-key="${fd.key}" data-abs="${fd.penalty ? '1' : ''}"
+            type="number" min="0" max="9999" value="${esc(String(Math.abs(w.fate[fd.key])))}" />
+          <div class="admin-step-hint">${esc(fd.hint)}</div>
+        </div>`).join('')}
+    </div>
+    <div class="admin-wheel-sub">⬛ Both black wedges — the challenge stakes</div>
+    <div class="admin-wheel-grid">
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wf-win">Completed — award</label>
+        <input id="admin-wf-win" class="admin-input admin-wheel-num" data-wheel="fate" data-key="challengeWin" type="number" min="0" max="9999" value="${esc(String(Math.abs(w.fate.challengeWin)))}" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wf-fail">Failed or declined — deduction</label>
+        <input id="admin-wf-fail" class="admin-input admin-wheel-num" data-wheel="fate" data-key="challengeFail" data-abs="1" type="number" min="0" max="9999" value="${esc(String(Math.abs(w.fate.challengeFail)))}" />
+      </div>
+    </div>
+
+    <div class="admin-wheel-sub">The task pool <span class="admin-faint">(${w.tasks.length} task${w.tasks.length === 1 ? '' : 's'})</span></div>
+    <div class="admin-mini">A challenge wedge draws one of these at random. Keep them things that genuinely help the room or the next quiz — that is the whole point of the black wedges. 📜 marks a do-it-properly task, ⏳ a race against the clock, 🎲 either.</div>
+    ${w.tasks.length ? `<div class="admin-wtask-list">${taskRows}</div>` : '<div class="admin-mini admin-faint" style="text-align:center;padding:1rem 0">No tasks yet — the wedge still pays, the teacher just sets the task aloud.</div>'}
+    ${f ? `
+      ${f.error ? `<div class="admin-warn-line">${esc(f.error)}</div>` : ''}
+      <div class="admin-field" style="margin-top:12px">
+        <label class="admin-flabel" for="admin-wtask-text">${f.id ? 'Edit the task' : 'New task'}</label>
+        <textarea id="admin-wtask-text" class="admin-input admin-textarea" style="min-height:70px">${esc(f.text)}</textarea>
+      </div>
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-wtask-kind">Which wedge can draw it?</label>
+        <select id="admin-wtask-kind" class="admin-input" style="max-width:260px">
+          ${Object.entries(TASK_KINDS).map(([k, lbl]) => `<option value="${k}"${f.kind === k ? ' selected' : ''}>${esc(lbl)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="admin-btn-row">
+        <button class="admin-btn admin-btn-primary" data-action="wtask-save">${f.id ? 'Save changes' : 'Add task'}</button>
+        <button class="admin-btn" data-action="wtask-cancel">Cancel</button>
+      </div>`
+      : '<div class="admin-btn-row"><button class="admin-btn admin-btn-primary" data-action="wtask-new">+ Add a task</button></div>'}`;
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎡 The Wheels</div>
+      <label class="admin-flabel">Which wheel does the dashboard tile open?</label>
+      <div class="admin-seg admin-wheel-active">
+        <button class="admin-wseg-btn${w.active === 'house' ? ' on' : ''}" data-action="wheel-active" data-which="house">
+          ${w.active === 'house' ? '✓ ' : ''}🏰 Wheel of Houses${w.active === 'house' ? '<span class="admin-wseg-tag">on the tile</span>' : ''}</button>
+        <button class="admin-wseg-btn${w.active === 'fate' ? ' on' : ''}" data-action="wheel-active" data-which="fate">
+          ${w.active === 'fate' ? '✓ ' : ''}🔮 Wheel of Fate${w.active === 'fate' ? '<span class="admin-wseg-tag">on the tile</span>' : ''}</button>
+      </div>
+      <hr class="admin-hr" />
+      <label class="admin-flabel">Settings for…</label>
+      <div class="admin-seg admin-wheel-tabs">
+        <button class="admin-wseg-btn${wheelTab === 'house' ? ' on' : ''}" data-action="wheel-tab" data-wtab="house">🏰 House wheel</button>
+        <button class="admin-wseg-btn${wheelTab === 'fate' ? ' on' : ''}" data-action="wheel-tab" data-wtab="fate">🔮 Fate wheel</button>
+      </div>
+      ${wheelTab === 'fate' ? fateBody : houseBody}
+    </div>`;
+}
+
 // ---- Die of Destiny prophecy table (dice roll outcomes) --------------------
 function renderDiceProphecyCard() {
   const store = ctxRef.store;
@@ -3053,6 +3172,7 @@ function renderTermWorld() {
 
       ${renderAwardPresetsCard()}
 
+      ${wheelsCardHTML()}
       ${renderDiceProphecyCard()}
     </div>`;
 }
@@ -5472,6 +5592,35 @@ function onClick(e) {
     // tabs
     case 'tab': setTab(btn.dataset.tab); break;
 
+    // The two wheels
+    case 'wheel-active': store.setActiveWheel(btn.dataset.which); renderBody({ force: true }); toast(btn.dataset.which === 'fate' ? 'The tile now opens the Wheel of Fate.' : 'The tile now opens the Wheel of Houses.'); break;
+    case 'wheel-tab': wheelTab = btn.dataset.wtab === 'fate' ? 'fate' : 'house'; wheelTaskForm = null; renderBody({ force: true }); break;
+    case 'wtask-new': wheelTaskForm = { id: null, kind: 'any', text: '', error: null }; renderBody({ force: true }); break;
+    case 'wtask-cancel': wheelTaskForm = null; renderBody({ force: true }); break;
+    case 'wtask-edit': {
+      const row = store.getWheelTasks().find((x) => x.id === btn.dataset.id);
+      if (row) { wheelTaskForm = { id: row.id, kind: row.kind, text: row.text, error: null }; renderBody({ force: true }); }
+      break;
+    }
+    case 'wtask-save': {
+      const text = el('admin-wtask-text') ? el('admin-wtask-text').value.trim() : '';
+      const kind = el('admin-wtask-kind') ? el('admin-wtask-kind').value : 'any';
+      if (!text) { wheelTaskForm.error = 'A task needs something for the class to actually do.'; renderBody({ force: true }); break; }
+      store.saveWheelTask({ id: wheelTaskForm.id, kind, text });
+      wheelTaskForm = null;
+      renderBody({ force: true });
+      toast('Task saved.');
+      break;
+    }
+    case 'wtask-up': store.moveWheelTask(btn.dataset.id, -1); renderBody({ force: true }); break;
+    case 'wtask-down': store.moveWheelTask(btn.dataset.id, 1); renderBody({ force: true }); break;
+    case 'wtask-del': {
+      const id = btn.dataset.id;
+      openConfirm('Delete this task?', 'It leaves the pool the challenge wedges draw from. Points already awarded are untouched.',
+        () => { store.deleteWheelTask(id); renderBody({ force: true }); toast('Task deleted.'); }, { yesLabel: 'Delete' });
+      break;
+    }
+
     // Trivia Tuesday pool
     case 'trivia-new': triviaForm = { id: null, q: '', a: '', points: 100, askOn: nextFreeTuesday(), error: null }; renderBody({ force: true }); break;
     case 'trivia-cancel': triviaForm = null; renderBody({ force: true }); break;
@@ -6142,6 +6291,27 @@ function injectStyles() {
   .admin-btn-row{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap;}
   /* Same measure as the other tabs' cards — the pool was running the full
      width of a 1920 board, which read as a different app. */
+  /* Their own class, deliberately: .admin-seg-btn is swept by syncTabs on
+     every render, which would strip any selected state these carry. */
+  .admin-wseg-btn{min-height:44px;padding:10px 16px;border:2px solid var(--color-line,#374151);
+    border-radius:.75rem;background:var(--color-card2,#1f2937);color:var(--color-text-soft,#9ca3af);
+    font-weight:700;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;
+    transition:background .18s ease,color .18s ease,border-color .18s ease;}
+  .admin-wseg-btn:hover:not(.on){border-color:#f59e0b;color:var(--color-text,#e5e7eb);}
+  .admin-wseg-btn.on{background:#f59e0b;border-color:#f59e0b;color:#0b0f19;
+    box-shadow:0 4px 16px rgba(245,158,11,.35);}
+  .admin-wseg-tag{font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    background:rgba(11,15,25,.22);border-radius:999px;padding:.1rem .45rem;}
+  .admin-wheel-active{margin:6px 0 4px;display:flex;gap:.6rem;flex-wrap:wrap;}
+  .admin-wheel-tabs{display:flex;gap:.6rem;flex-wrap:wrap;}
+  .admin-wheel-tabs{margin:0 0 14px;}
+  .admin-wheel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.9rem;margin-top:.7rem;}
+  .admin-wheel-sub{margin-top:18px;font-weight:800;font-size:.92rem;color:var(--color-text);}
+  .admin-wtask-list{display:flex;flex-direction:column;gap:.45rem;margin-top:.7rem;}
+  .admin-wtask-row{display:flex;align-items:center;gap:.7rem;padding:.55rem .7rem;
+    border:1px solid var(--color-line,#374151);border-radius:.7rem;background:var(--color-card2,#1f2937);}
+  .admin-wtask-kind{flex:0 0 auto;font-size:1.1rem;}
+  .admin-wtask-text{flex:1 1 auto;min-width:0;color:var(--color-text,#e5e7eb);font-size:.9rem;line-height:1.35;}
   .admin-trivia-wrap{max-width:1100px;margin:0 auto;}
   .admin-trivia-list{display:flex;flex-direction:column;gap:.55rem;margin-top:.8rem;}
   .admin-trivia-row{display:flex;align-items:center;gap:.9rem;padding:.65rem .8rem;
@@ -6831,6 +7001,21 @@ export default {
         if (label) label.textContent = `${pct}%`;
         debounceVolumeCommit('sfx-master', () => {
           ctxRef.store.updateSettings({ sfxVolume: Math.min(1, Math.max(0, pct / 100)) });
+        });
+      }
+      else if (e.target.classList && e.target.classList.contains('admin-wheel-num')) {
+        // Wheel numbers commit as they're typed, debounced — the fields are
+        // plain amounts and the sign belongs to the wedge, so a penalty field
+        // stores its value negative however the teacher typed it.
+        const t = e.target;
+        const which = t.dataset.wheel;
+        const key = t.dataset.key;
+        const raw = Math.abs(Number(t.value));
+        if (!Number.isFinite(raw)) return;
+        const negative = t.dataset.abs === '1'
+          || (which === 'house' && key === 'misfortune');
+        debounceVolumeCommit(`wheel-${which}-${key}`, () => {
+          ctxRef.store.updateWheelPoints(which, { [key]: negative ? -raw : raw });
         });
       }
       else if (e.target.classList && e.target.classList.contains('admin-music-screen-volume')) {

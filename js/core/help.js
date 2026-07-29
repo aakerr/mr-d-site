@@ -972,18 +972,22 @@ const TOPICS = [
     },
   },
   {
-    id: 'wheel-how', cat: 'dice', title: 'The Wheel of Fate',
-    keywords: 'wheel of fate spin fortune misfortune sun moon all houses award random picker',
+    id: 'wheel-how', cat: 'dice', title: 'The two wheels: Houses and Fate',
+    keywords: 'wheel of fate houses spin fortune misfortune sun moon all houses award random picker challenge task crown lamp laurel treasure',
     body: `
-      <p class="help-lede">The Wheel of Fate is the painted wheel on its own tile — spin it when you want fate, not you, to pick who is blessed today.</p>
-      <p>The wheel has <b>eight wedges</b>: one for each of the four houses, <b>two "all houses" wedges</b>, a <b>☀️ sun</b> and a <b>🌙 moon</b>. Tap <b>SPIN</b> and it lands on one of them:</p>
+      <p class="help-lede">There are <b>two wheels</b>, and the tile opens whichever one you choose in <b>🗝️ Admin → ⚙️ Term &amp; World → 🎡 The Wheels</b>. Every point value on both is yours to set there.</p>
+      <h4>🏰 The Wheel of Houses</h4>
+      <p>The original: spin it when you want fate, not you, to pick who is blessed today. <b>Eight wedges</b>: one for each of the four houses, <b>two "all houses" wedges</b>, a <b>☀️ sun</b> and a <b>🌙 moon</b>. Tap <b>SPIN</b> and it lands on one of them:</p>
       <ul class="help-list">
         <li><b>A house's wedge</b> — a <b>+50 to them</b> button appears.</li>
         <li><b>All houses</b> — one button pays <b>+50 to all four</b> at once (a frozen house is skipped, and the card says so).</li>
         <li><b>☀️ Fortune</b> — the sun smiles: you pick which house receives <b>+100</b>.</li>
         <li><b>🌙 Misfortune</b> — the moon frowns: you pick which house loses <b>50</b>.</li>
       </ul>
-      <p><b>Nothing is automatic.</b> The spin only decides the outcome — no points move until you tap the award button, and each spin can pay out exactly once, so a double-tap cannot pay twice. Every award lands in the points log as "Wheel of Fate".</p>
+      <h4>🔮 The Wheel of Fate</h4>
+      <p>The second wheel spins <b>outcomes</b> rather than houses, so you always pick who each one lands on from the four crest chips. Four blessings — 👑 <b>Royal Favor</b>, 🪔 <b>Wish Granted</b>, 🏅 <b>Victory Earned</b>, 🧰 <b>Hidden Treasure</b> — each pay <b>+100</b>. Two penalties — ⚔️ <b>Battle Lost</b> and 💰 <b>Fortune Lost</b> — each take <b>100</b>.</p>
+      <p>The two black wedges are the interesting ones. 📜 <b>Hero's Challenge</b> and ⏳ <b>Trial of Fate</b> each draw a <b>real task</b> from your task pool and put it on the card: pick the house that takes it on, then rule <b>✓ Done</b> for <b>+150</b> or <b>✗ Not done</b> for <b>−50</b>. The app ships with nine starter tasks — build a study guide, make a Kahoot for the unit, reset the room in five minutes — and you can add, edit, reorder or delete them in the same Admin card. Keep them things that genuinely help the room or the next quiz; that is the whole point of the black wedges.</p>
+      <p><b>Nothing is automatic.</b> The spin only decides the outcome — no points move until you tap, and each spin can pay out exactly once, so a double-tap cannot pay twice. Once you apply a decree the card bows out on its own. Every award lands in the points log naming the wedge, e.g. "Wheel of Fate — Hero's Challenge — completed".</p>
       <p class="help-fineprint">Unlike the d20, the wheel is a plain, uniform random draw — it is not wired into the fate-audited dice path, because it is not a gamble a house chose to take, just fate picking a name. If the Teacher PIN is on, awarding asks for it like any other points change.</p>
     `,
   },
