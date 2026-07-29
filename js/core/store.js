@@ -431,7 +431,15 @@ function defaultState() {
     // asked-record per core, so all four class periods get one crack at the
     // same question and each core walks the pool at its own pace.
     trivia: {
-      questions: [],  // { id, q, a, points, asked: { <coreId>: { won, ts } } }
+      // Two starters ship undated ("ask any time"), so the very first tap of
+      // the tile fires a real question with no setup — Mr. D can play one
+      // immediately, then load his own and delete these in Admin → ❓ Trivia.
+      questions: [
+        { id: 'tq-sample-nile', q: 'What river was the lifeblood of ancient Egyptian civilization?',
+          a: 'The Nile River', points: 100, askOn: '', asked: {} },
+        { id: 'tq-sample-cuneiform', q: 'Cuneiform, one of the world\'s first writing systems, was pressed into wet clay by which civilization?',
+          a: 'The Sumerians of Mesopotamia', points: 100, askOn: '', asked: {} },
+      ],  // { id, q, a, points, askOn, asked: { <coreId>: { won, ts } } }
     },
     quests: {
       // One quest active per core at a time; completion is teacher-confirmed.
@@ -1140,6 +1148,10 @@ function load() {
       merged.quests = { ...def.quests, ...(merged.quests || {}) };
       merged.trivia = { ...def.trivia, ...(merged.trivia || {}) };
       if (!Array.isArray(merged.trivia.questions)) merged.trivia.questions = [];
+      if (!merged.settings.triviaSeeded) {
+        merged.settings.triviaSeeded = true;
+        if (!merged.trivia.questions.length) merged.trivia.questions = def.trivia.questions;
+      }
       // The quest board ships in this file; the save holds the teacher's edits,
       // their own quests and the ids they deleted. Four per-field backfills used
       // to run here — repeatable, penalty, type and icon, each added to the
