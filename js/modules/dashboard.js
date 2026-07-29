@@ -91,7 +91,10 @@ html[data-mode="light"] .dash-hw-badge {
 /* 7.3 — bell-ringer countdown, in the Daily Itinerary panel header. Ephemeral
    module-scope state (see bellDeadline etc. below), not the store — nothing
    here is worth persisting or logging. */
-.dash-bell-root { position: relative; display: flex; align-items: center; flex-shrink: 0; }
+/* min-height = the idle chip's height, so the header row measures the same
+   whether the chip is in flow (idle) or the countdown pill has floated out
+   of it (running) — without it the row shrank 10px and the agenda hopped. */
+.dash-bell-root { position: relative; display: flex; align-items: center; flex-shrink: 0; min-height: 30px; }
 .dash-bell-chip {
   display: flex; align-items: center; gap: 0.3rem; min-height: 30px;
   padding: 0.25rem 0.6rem; border-radius: 999px; border: 1px solid var(--color-line, #374151);
@@ -102,7 +105,10 @@ html[data-mode="light"] .dash-hw-badge {
 .dash-bell-chip:hover { color: var(--accent, #f59e0b); border-color: var(--accent, #f59e0b); }
 .dash-bell-chip:active { transform: scale(0.94); }
 .dash-bell-picker {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 172px;
+  /* Wide enough that "10 min" never folds — all three presets share the row
+     equally (flex:1 below), so the row's width is what sets their size, and
+     the Custom/Start row stretches to the same edge. */
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 232px;
   display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem;
   background: var(--color-card, #111827); border: 1px solid var(--color-line, #374151);
   border-radius: 0.75rem; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
@@ -110,6 +116,7 @@ html[data-mode="light"] .dash-hw-badge {
 .dash-bell-picker-row { display: flex; gap: 0.4rem; }
 .dash-bell-preset-btn {
   flex: 1; min-height: 34px; padding: 0.3rem 0.4rem; border-radius: 0.5rem;
+  white-space: nowrap;
   border: 1px solid var(--color-line, #374151); background: var(--color-card2, #1f2937);
   color: var(--color-text, #f9fafb); font-size: 0.76rem; font-weight: 700; cursor: pointer;
   touch-action: manipulation;
@@ -122,12 +129,63 @@ html[data-mode="light"] .dash-hw-badge {
   border: 1px solid var(--color-line, #374151); background: var(--color-card2, #1f2937);
   color: var(--color-text, #f9fafb); font-size: 0.8rem;
 }
-.dash-bell-running { display: flex; align-items: center; gap: 0.5rem; }
+/* Running state floats as a small pop-up anchored where the chip sits, so
+   the bigger digits never push the itinerary down — the panel keeps its
+   idle-chip height and the pill rides over the content below. */
+.dash-bell-running {
+  position: absolute; top: -4px; right: 0; z-index: 25;
+  display: flex; align-items: center; gap: 0.5rem;
+  /* nowrap matters: an absolutely-positioned box shrink-wraps no wider than
+     its anchor (the chip-sized bell root), so "10:00" folded onto two lines
+     until the text was forbidden to wrap — nowrap lets the pill overflow
+     its anchor leftward instead. */
+  white-space: nowrap;
+  padding: 0.4rem 0.75rem; border-radius: 0.9rem;
+  background: var(--color-card, #111827); border: 1px solid var(--accent, #f59e0b);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55), 0 0 18px rgba(245,158,11,0.25);
+}
+/* ≤10 seconds: one pulse per second, on both the pill and the big clock. */
+.dash-bell-low { animation: dash-bell-lastten 1s ease-in-out infinite; color: #f87171 !important; }
+@keyframes dash-bell-lastten {
+  0%, 100% { transform: scale(1); }
+  18% { transform: scale(1.14); }
+  40% { transform: scale(1); }
+}
+.dash-tile-tuesday { border-color: #fbbf24 !important; animation: dash-tuesday-pulse 2.6s ease-in-out infinite; }
+@keyframes dash-tuesday-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(251,191,36,0); }
+  50% { box-shadow: 0 0 26px rgba(251,191,36,0.5); }
+}
 .dash-bell-time {
   font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: 0.02em;
-  font-size: clamp(1.3rem, 3.4vh, 2.3rem); color: var(--accent, #f59e0b); line-height: 1;
-  text-shadow: 0 0 14px rgba(245,158,11,0.35);
+  /* Owner calls (2026-07-29, via Mr. D): bigger than the original — but the
+     running state now floats as a pop-up pill (see .dash-bell-running), so
+     the size lives there without pushing the agenda down. Tap for the
+     full-screen version below. */
+  font-size: clamp(1.9rem, 4.6vh, 3.1rem); color: var(--accent, #f59e0b); line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 18px rgba(245,158,11,0.4);
+  background: none; border: none; padding: 0; cursor: pointer; touch-action: manipulation;
+  font-family: inherit;
 }
+/* Full-screen countdown: the whole board becomes the clock. Tap anywhere to
+   shrink it back; the TIME! beat plays out here too if it lands while open. */
+.dash-bell-overlay {
+  position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1rem; cursor: pointer;
+  background: rgba(5, 7, 12, 0.93);
+}
+.dash-bell-overlay-time {
+  /* Cinzel's digits are proportional — "1" is narrower than "0" — so the
+     giant clock re-centred a different-width string every second and swam
+     side to side. The app's default stack honours tabular-nums (same recipe
+     as the small pill, which never moved), so every digit slot holds still. */
+  font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1;
+  font-family: inherit; letter-spacing: 0.02em;
+  font-size: clamp(8rem, 30vh, 19rem); color: var(--accent, #f59e0b);
+  text-shadow: 0 0 80px rgba(245,158,11,0.45), 0 6px 24px rgba(0,0,0,0.9);
+}
+.dash-bell-overlay-hint { color: #6b7280; font-size: 1rem; letter-spacing: 0.06em; }
 .dash-bell-time.dash-bell-done { color: #fbbf24; }
 .dash-bell-cancel {
   width: 26px; height: 26px; min-width: 26px; border-radius: 999px;
@@ -174,6 +232,7 @@ const MODULE_ICON_MAP = {
   // the tile-emoji/screen-art mismatch was the exact class of thing the
   // owner asked to be hunted down (see the Battle Day mark).
   houses: 'images/icon-points.png',
+  trivia: 'images/icon-trivia.png',
   potw: 'images/icon-potw.png',
   quests: 'images/icon-quest.png',
   battle: 'images/icon-battle.png',
@@ -189,6 +248,7 @@ const MODULE_SUBTITLE_MAP = {
   shop: 'Spend your hoard',
   dice: 'Test your luck',
   wheel: 'Spin for a house',
+  trivia: 'Question of the week',
 };
 
 // ---- 7.3 bell-ringer countdown timer ---------------------------------------
@@ -206,6 +266,8 @@ let bellDoneUntil = null;    // ms epoch the "TIME!" beat clears itself, or null
 let bellPickerOpen = false;  // preset/custom picker popover open
 let bellTickId = null;       // the one 1s interval — only alive while a timer is actually running
 let bellDoneTimeoutId = null; // clears the "TIME!" beat back to idle
+let bellZoomed = false;      // full-screen countdown overlay open
+let bellOverlayEl = null;    // the body-level overlay node (see showBellOverlay)
 
 const BELL_DONE_MS = 3000;     // how long "TIME!" holds before auto-clearing
 const BELL_PRESETS = [2, 5, 10]; // minutes
@@ -230,9 +292,10 @@ function bellChipHtml() {
   }
   if (bellDeadline != null) {
     const remaining = bellDeadline - Date.now();
+    const low = remaining <= 10500 && !prefersReducedMotion();
     return `<div data-bell-root class="dash-bell-root">
       <div class="dash-bell-running">
-        <span class="dash-bell-time">${bellRemainingLabel(remaining)}</span>
+        <button type="button" data-bell-zoom class="dash-bell-time${low ? ' dash-bell-low' : ''}" title="Tap for the full-screen countdown">${bellRemainingLabel(remaining)}</button>
         <button type="button" data-bell-cancel class="dash-bell-cancel" aria-label="Cancel timer">✕</button>
       </div>
     </div>`;
@@ -275,6 +338,41 @@ function repaintBell(el) {
   root.outerHTML = bellChipHtml();
 }
 
+// The full-screen countdown lives on <body>, NOT inside the dashboard tree:
+// every dash card animates in with a transform, and position:fixed inside a
+// transformed ancestor pins to that ancestor rather than the viewport —
+// verified live as a giant clock stuck inside the itinerary panel.
+function showBellOverlay() {
+  if (bellOverlayEl) return;
+  bellZoomed = true;
+  bellOverlayEl = document.createElement('div');
+  bellOverlayEl.className = 'dash-bell-overlay';
+  bellOverlayEl.innerHTML = '<div class="dash-bell-overlay-time"></div><div class="dash-bell-overlay-hint">tap anywhere to shrink</div>';
+  bellOverlayEl.addEventListener('click', hideBellOverlay);
+  document.body.appendChild(bellOverlayEl);
+  updateBellOverlay();
+}
+
+function updateBellOverlay() {
+  if (!bellOverlayEl) return;
+  const t = bellOverlayEl.querySelector('.dash-bell-overlay-time');
+  if (!t) return;
+  if (bellDoneUntil != null) {
+    t.textContent = 'TIME!';
+    t.classList.remove('dash-bell-low');
+    if (!prefersReducedMotion()) t.classList.add('dash-bell-pulse');
+  } else if (bellDeadline != null) {
+    const remaining = bellDeadline - Date.now();
+    t.textContent = bellRemainingLabel(remaining);
+    t.classList.toggle('dash-bell-low', remaining <= 10500 && !prefersReducedMotion());
+  }
+}
+
+function hideBellOverlay() {
+  bellZoomed = false;
+  if (bellOverlayEl) { try { bellOverlayEl.remove(); } catch (e) { /* gone */ } bellOverlayEl = null; }
+}
+
 function stopBellInterval() {
   if (bellTickId) { clearInterval(bellTickId); bellTickId = null; }
 }
@@ -285,19 +383,21 @@ function startBellInterval(el, ctx) {
 }
 
 function tickBell(el, ctx) {
-  if (!el || !el.isConnected) { stopBellInterval(); return; }
+  if (!el || !el.isConnected) { stopBellInterval(); hideBellOverlay(); return; }
+  updateBellOverlay();
   if (bellDeadline != null && Date.now() >= bellDeadline) {
-    // Time's up: stop counting, ring the existing points-awarded chime (the
-    // "gentle chime" 7.3 asks for IS this one — SFX_SLOTS' 'coin' slot, the
-    // same cue every point award already plays), hold "TIME!" a beat, then
-    // clear itself back to idle. No store write anywhere in this path.
+    // Time's up: stop counting, ring the timer's OWN ending sound (its own
+    // slot since 2026-07-29 — borrowing the points chime made every timer
+    // sound like an award), hold "TIME!" a beat, then clear itself back to
+    // idle. No store write anywhere in this path.
     bellDeadline = null;
     stopBellInterval();
     bellDoneUntil = Date.now() + BELL_DONE_MS;
-    ctx.audio?.sfx?.('coin');
+    ctx.audio?.sfx?.('timerend');
     repaintBell(el);
     clearTimeout(bellDoneTimeoutId);
-    bellDoneTimeoutId = setTimeout(() => { bellDoneUntil = null; bellDoneTimeoutId = null; repaintBell(el); }, BELL_DONE_MS);
+    updateBellOverlay();   // the big clock shows the TIME! beat too
+    bellDoneTimeoutId = setTimeout(() => { bellDoneUntil = null; bellDoneTimeoutId = null; hideBellOverlay(); repaintBell(el); }, BELL_DONE_MS);
     return;
   }
   repaintBell(el);
@@ -316,6 +416,7 @@ function startBellTimer(minutes, el, ctx) {
 }
 
 function cancelBellTimer(el) {
+  hideBellOverlay();
   bellDeadline = null;
   bellDoneUntil = null;
   bellPickerOpen = false;
@@ -657,8 +758,11 @@ function renderModuleTiles(registry) {
           const iconHtml = iconSrc
             ? pngWithEmojiFallback(iconSrc, m.icon || '📘', 'w-12 h-12 xl:w-14 xl:h-14 object-contain', 'w-12 h-12 xl:w-14 xl:h-14 text-3xl')
             : `<div class="w-12 h-12 xl:w-14 xl:h-14 flex items-center justify-center text-3xl shrink-0">${m.icon || '📘'}</div>`;
+          // Trivia Tuesday announces itself on Tuesdays — a slow amber pulse
+          // on its tile, so the ritual reminds the room without a popup.
+          const tuesdayGlow = m.id === 'trivia' && new Date().getDay() === 2 ? ' dash-tile-tuesday' : '';
           return `
-          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''} w-full
+          <button data-nav="${m.id}" class="dash-tile ${m.tileClass || ''}${tuesdayGlow} w-full
             bg-card rounded-2xl border-2 dash-accent-line p-4 flex flex-col items-center gap-1.5">
             ${iconHtml}
             <span class="font-semibold text-gray-100 text-sm text-center">${escapeHtml(m.title)}</span>
@@ -746,6 +850,7 @@ export default {
         return;
       }
       if (e.target.closest('[data-bell-cancel]')) { cancelBellTimer(el); return; }
+      if (e.target.closest('[data-bell-zoom]')) { showBellOverlay(); return; }
 
       // 6.5 — All-Cores mode's itinerary/homework panels preview whichever
       // core's day starts next; tapping either one switches the board to it,
@@ -778,6 +883,7 @@ export default {
 
   unmount() {
     stopBellInterval();
+    hideBellOverlay();   // a body-level node would otherwise outlive the screen
     if (bellDoneTimeoutId) { clearTimeout(bellDoneTimeoutId); bellDoneTimeoutId = null; }
     if (this._unsub) { this._unsub(); this._unsub = null; }
     if (this._el && this._clickHandler) this._el.removeEventListener('click', this._clickHandler);
