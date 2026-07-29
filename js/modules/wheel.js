@@ -352,7 +352,13 @@ async function applyOutcome(el, idx, btn) {
       return;
     }
     audio?.sfx?.('thud');
-    resultEl.innerHTML = `<div class="wheel-award-refused">${esc(house.name)} loses ${Math.abs(tx.delta)} points to Misfortune.</div>`;
+    // tx.delta is what actually moved: the zero floor can take less than the
+    // moon demands. Say so, or the card's "-50" and a banner's "loses 5" read
+    // as a broken calculation (owner-reported).
+    const took = Math.abs(tx.delta);
+    resultEl.innerHTML = took < MISFORTUNE_LOSS
+      ? `<div class="wheel-award-refused">The moon asked for ${MISFORTUNE_LOSS}, but ${took} was all ${esc(house.name)} had.</div>`
+      : `<div class="wheel-award-refused">${esc(house.name)} loses ${MISFORTUNE_LOSS} points to Misfortune.</div>`;
     disableAll();
     return;
   }
