@@ -58,7 +58,11 @@ cd /path/to/mr-d-site
 python3 -m http.server 8000
 ```
 
-Open **http://localhost:8000**. The app loads immediately and works fully offline except for:
+Open **http://localhost:8000**. The **first visit on a machine shows a
+one-time loading screen** with a progress bar while every painting, sound
+effect, music track and intro film is pulled into the browser cache (~125MB;
+"Start without waiting" skips it) — after that, every screen opens instantly.
+The app works fully offline except for:
 - **Tailwind CSS** (styling) — bundled locally in `vendor/`, so the board still looks right with no internet
 - **Google Maps 3D** (Place of the Week 3D explorer)
 - **Place of the Week intro videos** ship as local files in `/videos` and play with no internet at all — the only way this needs a connection is if a teacher pastes their own **YouTube** link into an individual destination instead of using a bundled file
@@ -165,7 +169,7 @@ six effect kinds (each has a live plain-English preview as you edit):
 - **Add/Edit Destinations**:
   - **Paste a Google Maps link** (or manually enter lat/lng)
   - **Title & Subtitle** (e.g., "Ancient Mesopotamia • Modern Day Iraq")
-  - **Intro Video**: Pick "Intro 1" or "Intro 2" — local video files bundled
+  - **Intro Video**: Pick "Classic" or "Rock" — local video files bundled
     in `/videos` that play with no internet — or paste your own YouTube link
     for this destination instead
   - **Quick Facts**: 3–5 bullet points about the place
@@ -283,8 +287,10 @@ and what keeps it SAFE:
   ships **on**, with every screen pre-assigned a bundled track
   (`CONFIG.AMBIENT_TRACKS` in js/config.js) — Place of the Week's row covers
   its landing screen only; the voyage itself silences the loop and makes its
-  own noise. A master volume slider and the global mute (`M` key, or the
-  speaker icon in the top bar) sit alongside all of it
+  own noise. Every row also has its own **🔊/🔇 mute** that silences just
+  that screen while keeping the track and level assigned. A master volume
+  slider and the global mute (`M` key, or the speaker icon in the top bar)
+  sit alongside all of it
 - **Sound effects**: swap any of the app's built-in beeps (or the spoken
   Battle Day line) for your own recording — drop an `.mp3`/`.m4a` into the
   `sfx` folder and point a row at it; nothing here is included in a backup
@@ -315,10 +321,15 @@ The default home screen.
 - **House Leaderboard**: All four houses sorted by term points (color-coded)
 - **This Week's Standings**: Points earned this week only (separate from term total, useful for weekly resets)
 - **Today's Itinerary** (per core): Bell ringer (with an optional countdown
-  timer chip right in the panel header), lesson blocks, challenges
+  timer chip right in the panel header), lesson blocks, challenges. The
+  running countdown floats as a pop-up pill so it never reflows the panel;
+  **tap the digits and the whole board becomes the clock** (tap again to
+  shrink). Both sizes pulse red once per second inside the final ten, and
+  TIME! rings its own sound (the "Timer ends" slot in Look & Sound)
 - **Homework Due**: What's due today and this week
 - **Navigation Tiles**: Quick-launch to Records, Quests, Place of the Week,
-  Battle Day, Magic Shop, Die of Destiny, and Wheel of Fate (7 tiles)
+  Battle Day, Magic Shop, Die of Destiny, Wheel of Fate, and Trivia Tuesday
+  (8 tiles; the Trivia tile pulses gold on Tuesdays)
 
 ### Council of Four (⚖️)
 Select **"All Cores"** in the top-bar house switcher instead of a single house
@@ -619,6 +630,28 @@ Unlike the d20, the pick is a plain, uniform random draw — it isn't wired
 into the fate-audited dice path the Prophecy Table uses, because it isn't
 gambling for points, just fate picking a name.
 
+### Trivia Tuesday (❓)
+Mr. D's weekly ritual: one question per class period, +100 for a correct
+answer (per-question, editable), nothing for a miss. The stage is the owner's
+painted Egyptian temple (trivia-background.jpg + trivia-card.png) with a
+timed entrance — music alone, then fire embers conjure the card, the house
+line, then the question fading in over its own recording, and real Egyptian
+hieroglyphs sealing the answer scroll until **Reveal the Answer** burns them
+away. **✓ Correct / ✗ Incorrect** are transparent hotspots over the painted
+buttons; verdicts play their own recordings and Continue returns to the
+dashboard.
+
+Questions live in **Admin → ❓ Trivia**: question, answer, points, and an
+optional **"Ask on" date** — a dated question stays sealed on stage until its
+day (a missed week is asked late, not lost), new questions auto-suggest the
+next free Tuesday so a term loads itself a week apart, and scheduled
+questions appear on the Planner calendar as gold chips. Every core walks the
+same pool in the same order at its own pace; ✓/✗ badges show who has
+answered what, 🔁 Re-ask clears a question's answers, and two undated starter
+questions ship in the box so the first tap fires immediately. Five sound
+slots (card, question, answer, correct, wrong) and the screen's music
+(ancient-sands) are all swappable in Look & Sound.
+
 ### Teacher PIN (Lock) 🔒
 Off by default. Turn it on in Admin → 🛡️ Data & Safety and it puts a short PIN in
 front of two things only: **opening the Admin panel**, and **any action that
@@ -652,6 +685,9 @@ you switch screens, and there's one master volume plus a hard on/off:
 - Press **`M`** anywhere in the app to mute or unmute everything instantly
   (ignored while you're typing in a text field)
 - Or tap the 🔊/🔇 speaker icon in the top bar
+- Or mute a **single screen's** track from its row in Admin →
+  🎨 Look & Sound → Background music — the track stays assigned for the day
+  it comes back
 
 ---
 
@@ -689,7 +725,7 @@ images/icon-points.png (Records)
 ### Edit Term Dates & POTW Profiles
 - **Term Dates**: Admin → ⚙️ Term & World
 - **POTW Destinations**: Admin → 🌍 Place of the Week (full editor UI with Google Maps link picker)
-- **Intro Videos**: Pick "Intro 1" or "Intro 2" (local files bundled in `/videos`), or paste your own YouTube link for that destination
+- **Intro Videos**: Pick "Classic" or "Rock" (local files bundled in `/videos`), or paste your own YouTube link for that destination
 
 ### Add a New Module
 The app uses a simple plugin architecture.
@@ -716,7 +752,7 @@ The app uses a simple plugin architecture.
    ```js
    import yourmodule from './modules/yourmodule.js';
    // ...
-   [dashboard, houses, potw, dice, battle, shop, admin, quests, council, wheel, yourmodule].forEach((m) => registry.register(m));
+   [dashboard, houses, potw, dice, battle, shop, admin, quests, council, wheel, trivia, yourmodule].forEach((m) => registry.register(m));
    ```
 
 ---
@@ -979,6 +1015,8 @@ what's genuinely unresolved:
 - `js/modules/admin.js` — The Teacher's Admin panel (all eight tabs, plus the ❓ Help corner)
 - `js/modules/quests.js` / `js/modules/council.js` — Quest Board / Council of Four screens
 - `js/modules/wheel.js` — Wheel of Fate, a house-only random picker
+- `js/modules/trivia.js` — Trivia Tuesday (painted stage, question pool, scheduling)
+- `js/core/preload.js` — the first-visit loading gate (progress bar over every shipped asset)
 - `js/main.js` — Boot and module registration
 - `data/schema.json` — JSON Schema documenting the persisted state (lags current fields — see Schema Reference)
 - `js/integrations/classroom.js` — Google Classroom API scaffold (not currently wired in)

@@ -46,6 +46,10 @@ js/modules/quests.js      js/modules/council.js   js/modules/admin.js
 js/modules/wheel.js       — Wheel of Fate: the painted 8-wedge wheel (4 houses, 2 all-
                           houses, sun/moon) — plain Math.random(), NOT the fate-audited
                           dice path
+js/modules/trivia.js      — Trivia Tuesday: painted temple stage over state.trivia's
+                          question pool (per-core asked-records, optional askOn dates)
+js/core/preload.js        — first-visit loading gate: streams every shipped asset into
+                          the HTTP cache behind a progress bar, once per MANIFEST_VERSION
 js/integrations/classroom.js   — Google Classroom scaffold, UNWIRED (see below)
 tools/hero-tuner.js     — dev-only overlay: live sliders over the dashboard hero's
                           CSS variables (name/motto/"WELCOME" size, gaps). Nothing it
@@ -67,7 +71,7 @@ music/*.mp3, potw-songs/*.mp3, videos/*.mp4, sfx/*.mp3      — bundled audio/vi
 ```
 
 Modules actually registered, in boot order (`js/main.js`):
-`dashboard → houses → potw → dice → battle → shop → admin → quests → council → wheel`.
+`dashboard → houses → potw → dice → battle → shop → admin → quests → council → wheel → trivia`.
 
 ## Module contract (`js/modules/*.js`)
 Each module default-exports:
@@ -421,7 +425,9 @@ suggestion — it is never applied automatically.
   (`store.getSettings().ambient.tracks`, falling back to `CONFIG.AMBIENT_TRACKS`,
   which ships a full per-screen map — music is ON out of the box; the store's
   default is `tracks: null`, meaning "use config"). A screen whose track the
-  teacher clears is silent. POTW's row covers its landing screen only: the
+  teacher clears is silent; an entry with `muted: true` (the per-row 🔇 in
+  Look & Sound) is silent too but keeps its src/volume for unmuting — and
+  `getFlyoverTrack()` honours it rather than falling back to the default. POTW's row covers its landing screen only: the
   voyage overlay calls `stopAmbient()` when it opens and `ambientFor('potw')`
   when it closes, because the voyage makes its own noise.
 - That same `ambient.tracks` map also holds one PSEUDO-SCREEN key,

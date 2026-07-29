@@ -131,7 +131,8 @@ const TOPICS = [
       </ul>
       <p>There is no separate <b>❓</b> button in the top bar any more — this handbook now lives one tap inside Admin: <b>🗝️ Admin → ❓ Help</b>.</p>
       <h4>The Morning Dashboard (the home screen)</h4>
-      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop, the Die of Destiny and the Wheel of Fate.</p>
+      <p>Standings for all four houses, today's itinerary and homework for the class period you have selected, and a row of tiles that launch the rest of the app: Records, Quests, Place of the Week, Battle Day, the Magic Shop, the Die of Destiny, the Wheel of Fate and Trivia Tuesday.</p>
+      <p>The Daily Itinerary panel's <b>⏱ Timer</b> chip runs the bell-ringer countdown. While it runs it floats as a small pill (so nothing on the panel moves), and <b>tapping the digits turns the whole board into the clock</b> — tap anywhere to shrink it back. Both sizes pulse red through the final ten seconds, and TIME! rings its own sound.</p>
     `,
   },
   {
@@ -991,15 +992,17 @@ const TOPICS = [
     id: 'trivia-how', cat: 'points', title: 'Trivia Tuesday',
     keywords: 'trivia tuesday question answer weekly 100 points quiz pool ask reveal',
     body: `
-      <p class="help-lede">Every Tuesday you ask the class one question. Right answer: the house earns the question's points (100 unless you set otherwise). Wrong: nothing. This is that ritual, on the board.</p>
+      <p class="help-lede">Every Tuesday you ask the class one question. Right answer: the house earns the question's points (100 unless you set otherwise). Wrong: nothing. This is that ritual, on the board — staged on the painted temple, with the answer sealed behind hieroglyphs until you reveal it.</p>
       <ol class="help-steps">
-        <li><b>Load questions</b> in <b>🗝️ Admin → ❓ Trivia</b> — question, answer, and points each. The list's order is the term's running order.</li>
-        <li><b>On Tuesday</b>, the ❓ Trivia Tuesday tile on the dashboard glows. Tap it with the class period you want selected in the top bar.</li>
-        <li>The question appears in big type. Ask it, take answers out loud, then tap <b>Reveal the Answer</b>.</li>
-        <li>Tap <b>✓ They got it</b> to award the points, or <b>✗ Not this time</b> for nothing. Either way that core moves on to the next question next week.</li>
+        <li><b>Load questions</b> in <b>🗝️ Admin → ❓ Trivia</b> — question, answer, points, and (optionally) the date to ask it. Two starter questions ship in the box, so the tile fires on day one; delete them once your own are in.</li>
+        <li><b>On Tuesday</b>, the ❓ Trivia Tuesday tile on the dashboard glows. Tap it with the class period you want selected in the top bar, and let the entrance play — the card is conjured out of the fire, then the question fades in.</li>
+        <li>Ask it, take answers out loud, then tap <b>Reveal the Answer</b> — the hieroglyphs burn away and the answer appears.</li>
+        <li>Tap <b>✓ Correct</b> to award the points, or <b>✗ Incorrect</b> for nothing. Either way that core moves on to the next question, and <b>Continue</b> takes you back to the dashboard.</li>
       </ol>
+      <h4>Scheduling the term up front</h4>
+      <p>Give each question an <b>"Ask on"</b> date and the whole term runs itself: a dated question stays <b>sealed on the stage until its day arrives</b> (the screen says when), a missed week is asked late rather than lost, and a new question suggests the next free Tuesday automatically — so loading a term is paste, save, paste, save, one week apart. Scheduled questions also appear on the <b>📅 Planner</b> calendar as gold chips. A question with no date is simply "next in line" whenever the dated ones are done.</p>
       <p>Each class period answers the <b>same questions in the same order</b>, each at its own pace — the ✓/✗ marks in Admin show who has answered what. Awards land in the points log as "Trivia Tuesday". The tile works any day of the week; Tuesday just makes it glow.</p>
-      <p class="help-fineprint">A question already answered by every core sits finished in the pool. <b>🔁 Re-ask</b> in Admin clears its answers so it comes around again; points already awarded stay put. If the Teacher PIN is on, recording a verdict asks for it like any other points change.</p>
+      <p class="help-fineprint">A question already answered by every core sits finished in the pool. <b>🔁 Re-ask</b> in Admin clears its answers so it comes around again; points already awarded stay put. If the Teacher PIN is on, recording a verdict asks for it like any other points change. The five trivia sounds and the screen's music are all swappable in <b>🎨 Look &amp; Sound</b>.</p>
     `,
   },
 
@@ -1117,7 +1120,7 @@ const TOPICS = [
         <li><b>🎨 Screen colours</b> — lock the Home screen, Quests or Records to one fixed colour instead of following whichever house is active. <a href="#" data-help-go="screen-colours">More →</a></li>
         <li><b>🗂️ Screen layout</b> — show Quests and the Magic Shop as a scrolling grid or a one-card-at-a-time carousel. Purely visual. <a href="#" data-help-go="screen-layout">More →</a></li>
         <li><b>Display &amp; Theme</b> — dark or light, optional seasonal decoration, 🤫 quiet mode, and the <b>Maps API key</b> box. <a href="#" data-help-go="theme">More →</a> · <a href="#" data-help-go="maps-key">About the key →</a></li>
-        <li><b>🎵 Background music</b> — a quiet loop per screen, plus the Flyover track for Place of the Week.</li>
+        <li><b>🎵 Background music</b> — a quiet loop per screen (every screen ships with one assigned and playing), plus the Flyover track for Place of the Week. Each row has its own <b>🔊/🔇 mute</b> to silence just that screen without unassigning its track.</li>
         <li><b>🔊 Sound effects</b> — replace any built-in beep, or the spoken Battle Day line, with your own recording. <a href="#" data-help-go="admin-sfx">More →</a></li>
       </ul>
 
