@@ -12,7 +12,7 @@ export const CONFIG = {
   // Place of the Week — active profile key into state.potw.profiles
   POTW_ACTIVE: 'mesopotamia',
   // Last-resort fallback only (used when a profile names no video at all).
-  POTW_VIDEO: 'videos/potw-intro-01.mp4',
+  POTW_VIDEO: 'videos/classic.mp4',
   POTW_SONG: 'potw-songs/place-of-the-week-rock-01.mp3',
   POTW_SONG_DURATION_S: 37,
 
@@ -26,8 +26,11 @@ export const CONFIG = {
   // A teacher can still paste a YouTube link against an individual destination
   // in Admin — that is a per-destination choice, not the shipped default.
   POTW_INTRO_VIDEOS: [
-    { id: 'intro-01', label: 'Intro 1', url: 'videos/potw-intro-01.mp4' },
-    { id: 'intro-02', label: 'Intro 2', url: 'videos/potw-intro-02.mp4' },
+    // Named what they ARE (owner call): Mr. D picks "Classic" or "Rock", not
+    // "Intro 1". The ids stay intro-01/intro-02 — saved profiles point at ids,
+    // so renaming the files and labels costs nothing.
+    { id: 'intro-01', label: 'Classic', url: 'videos/classic.mp4' },
+    { id: 'intro-02', label: 'Rock', url: 'videos/rock.mp4' },
   ],
   POTW_DEFAULT_VIDEO_ID: 'intro-01',
 

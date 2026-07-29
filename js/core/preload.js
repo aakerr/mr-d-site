@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v1';
+const MANIFEST_VERSION = 'v2';   // v2: the intro films took their real names (classic/rock)
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
@@ -60,7 +60,7 @@ const MANIFEST = [
     'music/travel-zoom.mp3',
   ] },
   { label: 'the intro films (the big ones)', files: [
-    'videos/potw-intro-01.mp4', 'videos/potw-intro-02.mp4',
+    'videos/classic.mp4', 'videos/rock.mp4',
   ] },
 ];
 
