@@ -54,6 +54,7 @@ export const CONFIG = {
     dice:      { src: 'music/looming-roll.mp3',       volume: 0.5 },
     wheel:     { src: 'music/breath-of-fate.mp3',     volume: 0.5 },
     potw:      { src: 'music/bridging-the-path.mp3',  volume: 0.5 },
+    trivia:    { src: 'music/ancient-sands.mp3',      volume: 0.5 },
   },
 
   // ---- the economy's one scale ---------------------------------------------

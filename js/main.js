@@ -17,6 +17,7 @@ import admin from './modules/admin.js';
 import quests from './modules/quests.js';
 import council from './modules/council.js';
 import wheel from './modules/wheel.js';
+import trivia from './modules/trivia.js';
 
 // Load Google Maps 3D library (async; POTW awaits customElements.whenDefined).
 // The teacher can supply their own key in Admin -> Settings; it overrides the bundled one.
@@ -39,7 +40,7 @@ if (navigator.storage && typeof navigator.storage.persist === 'function') {
 const ctx = { store, registry, audio };
 registry.init(ctx);
 
-[dashboard, houses, potw, dice, battle, shop, admin, quests, council, wheel].forEach((m) => registry.register(m));
+[dashboard, houses, potw, dice, battle, shop, admin, quests, council, wheel, trivia].forEach((m) => registry.register(m));
 
 initShell(ctx);
 initAmbient();
@@ -62,15 +63,37 @@ const ART_PRELOAD = [
   'images/wheel-outside.png',
   'images/wheel-center.png',
   'images/council-chamber.jpg',   // Council of Four
+  'images/trivia-background.jpg', // Trivia Tuesday temple
+  'images/trivia-card.png',       // Trivia Tuesday card
   ...Object.values(store.HOUSES).map((h) => h.heroImage),  // dashboard heroes
 ];
+// Sound warms AFTER the art: every assigned sound effect and background
+// track, read from the live settings so teacher-swapped files warm too. A
+// cold sfx used to arrive a beat late the first time it fired (the trivia
+// card's conjuring sound especially); a warmed one plays on its cue.
+function audioPreloadList() {
+  const out = [];
+  try { Object.values(store.getSettings().sfx || {}).forEach((f) => { if (f) out.push(f); }); } catch (e) { /* none */ }
+  try {
+    const amb = store.getAmbient();
+    Object.values(amb.tracks || {}).forEach((t) => { const src = typeof t === 'string' ? t : t && t.src; if (src) out.push(src); });
+  } catch (e) { /* none */ }
+  if (CONFIG.POTW_FLYOVER_DEFAULT) out.push(CONFIG.POTW_FLYOVER_DEFAULT);
+  return [...new Set(out)];
+}
 function preloadArt(queue) {
-  if (!queue.length) return;
+  if (!queue.length) { preloadAudio(audioPreloadList()); return; }
   const img = new Image();
   const next = () => preloadArt(queue);
   img.onload = next;
   img.onerror = next;   // a missing file must not stall the rest of the queue
   img.src = queue.shift();
+}
+function preloadAudio(queue) {
+  if (!queue.length) return;
+  const next = () => preloadAudio(queue);
+  // fetch() warms the HTTP cache without spinning up an audio element per file.
+  fetch(queue.shift()).then((r) => r.blob()).then(next, next);
 }
 const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
 idle(() => preloadArt([...ART_PRELOAD]));

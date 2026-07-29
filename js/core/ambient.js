@@ -35,6 +35,7 @@ function entryFor(moduleId) {
   const raw = tracks[moduleId];
   if (!raw) return null;
   if (typeof raw === 'string') return { src: raw, gain: 1 };
+  if (raw.muted) return null;   // per-screen mute: assigned but silenced
   const gain = Number.isFinite(Number(raw.volume)) ? Math.min(1, Math.max(0, Number(raw.volume))) : 1;
   return raw.src ? { src: raw.src, gain } : null;
 }

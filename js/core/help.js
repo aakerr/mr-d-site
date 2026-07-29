@@ -987,6 +987,22 @@ const TOPICS = [
     `,
   },
 
+  {
+    id: 'trivia-how', cat: 'points', title: 'Trivia Tuesday',
+    keywords: 'trivia tuesday question answer weekly 100 points quiz pool ask reveal',
+    body: `
+      <p class="help-lede">Every Tuesday you ask the class one question. Right answer: the house earns the question's points (100 unless you set otherwise). Wrong: nothing. This is that ritual, on the board.</p>
+      <ol class="help-steps">
+        <li><b>Load questions</b> in <b>🗝️ Admin → ❓ Trivia</b> — question, answer, and points each. The list's order is the term's running order.</li>
+        <li><b>On Tuesday</b>, the ❓ Trivia Tuesday tile on the dashboard glows. Tap it with the class period you want selected in the top bar.</li>
+        <li>The question appears in big type. Ask it, take answers out loud, then tap <b>Reveal the Answer</b>.</li>
+        <li>Tap <b>✓ They got it</b> to award the points, or <b>✗ Not this time</b> for nothing. Either way that core moves on to the next question next week.</li>
+      </ol>
+      <p>Each class period answers the <b>same questions in the same order</b>, each at its own pace — the ✓/✗ marks in Admin show who has answered what. Awards land in the points log as "Trivia Tuesday". The tile works any day of the week; Tuesday just makes it glow.</p>
+      <p class="help-fineprint">A question already answered by every core sits finished in the pool. <b>🔁 Re-ask</b> in Admin clears its answers so it comes around again; points already awarded stay put. If the Teacher PIN is on, recording a verdict asks for it like any other points change.</p>
+    `,
+  },
+
   // ======================= ADMIN =======================
   {
     id: 'admin-tour', cat: 'admin', title: 'The Admin panel at a glance',

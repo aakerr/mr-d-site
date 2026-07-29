@@ -21,6 +21,9 @@ const MAIN_TABS = [
   { id: 'quests', label: "<img src='images/icon-quest.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Quests" },
   { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
   { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
+  // The painted icon, not the ❓ emoji — two question marks in one tab bar
+  // (this and the handbook corner) read as the same button twice.
+  { id: 'trivia', label: "<img src='images/icon-trivia.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Trivia" },
 ];
 // ⚔️ Battle Day sits right after the main tabs — every Battle-Day-only control
 // (prize rules, hit points, punching down, live shields/defenses) lives here.
@@ -118,10 +121,11 @@ const TYPES = {
   'homework':   { label: 'Homework',   color: '#3b82f6', outline: false },
   'itinerary':  { label: 'Itinerary',  color: '#22c55e', outline: false },
   'potw':       { label: 'Place of Week', color: '#06b6d4', outline: false },
+  'trivia':     { label: 'Trivia Tuesday', color: '#eab308', outline: false },
   'note':       { label: 'Note',       color: 'rgb(156, 163, 175)', outline: false },
 };
 // Order used for legend + chip sorting.
-const TYPE_ORDER = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'potw', 'note', 'term-start', 'term-end'];
+const TYPE_ORDER = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'potw', 'trivia', 'note', 'term-start', 'term-end'];
 // Types the teacher may pick in the day-editor form ('potw' is managed from the
 // Place-of-the-Week tab; auto term markers are still hand-selectable).
 const FORM_TYPES = ['itinerary', 'homework', 'test', 'quiz', 'vacation', 'note', 'term-start', 'term-end'];
@@ -289,6 +293,7 @@ function renderBody({ force = false } = {}) {
   if (force && ae && body.contains(ae) && typeof ae.blur === 'function') ae.blur();
   if (activeTab === 'planner') body.innerHTML = renderPlanner();
   else if (activeTab === 'quests') body.innerHTML = renderQuests();
+  else if (activeTab === 'trivia') body.innerHTML = renderTrivia();
   else if (activeTab === 'shop') { body.innerHTML = renderShop(); refreshShopThumbs(); }
   else if (activeTab === 'battle') body.innerHTML = renderBattleDay();
   else if (activeTab === 'help') body.innerHTML = renderHelp();
@@ -333,7 +338,8 @@ function renderPlanner() {
       const inMonth = day.getMonth() === cal.month;
       const isToday = ds === today;
       const weekend = i === 0 || i === 6;
-      const events = store.getEventsOn(ds).slice().sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
+      const events = [...store.getEventsOn(ds), ...triviaEventsOn(ds)]
+        .sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
       const shown = events.slice(0, 3);
       const overflow = events.length - shown.length;
       row += `
@@ -364,6 +370,25 @@ function renderPlanner() {
       <div class="admin-grid">${grid}</div>
       <div class="admin-hint">💡 Entries here feed the Morning Dashboard — today's itinerary &amp; homework read planned events first, falling back to defaults. Tap any day to plan it.</div>
     </div>`;
+}
+
+// Scheduled trivia questions appear on the calendar WITHOUT being planner
+// events: each chip is derived live from the question's askOn date, so
+// there is exactly one source of truth (the ❓ Trivia tab) and nothing to
+// fall out of sync when a question is rescheduled, deleted or re-asked.
+function triviaEventsOn(ds) {
+  try {
+    return ctxRef.store.getTriviaQuestions()
+      .filter((x) => x.askOn === ds)
+      .map((x) => ({
+        id: `trivia:${x.id}`,
+        type: 'trivia',
+        core: 'all',
+        date: ds,
+        title: `Trivia: ${x.q.length > 34 ? `${x.q.slice(0, 31)}…` : x.q}`,
+        derived: true,
+      }));
+  } catch (e) { return []; }
 }
 
 function calChip(evt) {
@@ -433,7 +458,8 @@ function dayEditorHTML() {
   const store = ctxRef.store;
   const d = parseYMD(panelDate);
   const long = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const events = store.getEventsOn(panelDate).slice().sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
+  const events = [...store.getEventsOn(panelDate), ...triviaEventsOn(panelDate)]
+    .sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
   return `
     <div class="admin-panel-head">
       <div>
@@ -455,9 +481,11 @@ function eventRowHTML(evt) {
   const range = evt.endDate && evt.endDate !== evt.date ? ` → ${esc(evt.endDate)}` : '';
   const stepCount = evt.type === 'itinerary' ? `${(evt.items || []).length} steps` : '';
   const meta = [coreLabel(evt.core), t.label, stepCount].filter(Boolean).join(' · ');
-  // POTW markers are owned by the Place-of-the-Week tab; offer a jump, not edit/delete.
+  // POTW and Trivia markers are owned by their own tabs; offer a jump, not edit/delete.
   const actions = evt.type === 'potw'
     ? `<button class="admin-btn admin-btn-sm" data-action="potw-jump" data-key="${esc(evt.payload?.profileKey || '')}">Open in POTW →</button>`
+    : evt.type === 'trivia'
+    ? `<button class="admin-btn admin-btn-sm" data-action="tab" data-tab="trivia">Open in Trivia →</button>`
     : `<button class="admin-btn admin-btn-icon" data-action="evt-edit" data-id="${evt.id}" aria-label="Edit">✏️</button>
        <button class="admin-btn admin-btn-icon admin-btn-danger" data-action="evt-del" data-id="${evt.id}" aria-label="Delete">🗑️</button>`;
   return `
@@ -1440,6 +1468,122 @@ function shopRowHTML(it) {
 // Battle Day rule set is active (see store.getCombatMode()) — hit-points items
 // use effect.amount, Mr. D's duel items use dice + counters. Dispatch here
 // once, rather than sprinkling mode checks through every shop function below.
+// =============================================================================
+// TRIVIA TUESDAY — the teacher's question pool
+// =============================================================================
+// One ordered list. Every core walks it top to bottom, one question per
+// Tuesday, so the order here IS the term's running order. Editing keeps a
+// question's asked-record; Re-ask wipes it so the question comes around again.
+
+let triviaForm = null;   // null = collapsed | { id, q, a, points, askOn, error }
+
+// The next Tuesday (from tomorrow on) that no question is scheduled for yet —
+// the form's default, so loading a term is: paste, save, paste, save, and the
+// dates ladder themselves out one week apart.
+function nextFreeTuesday() {
+  const taken = new Set(ctxRef.store.getTriviaQuestions().map((x) => x.askOn).filter(Boolean));
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
+  for (let i = 0; i < 52; i += 1) {
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (!taken.has(ymd)) return ymd;
+    d.setDate(d.getDate() + 7);
+  }
+  return '';
+}
+
+function triviaDateBadge(askOn) {
+  if (!askOn) return '<span class="admin-trivia-date admin-trivia-date-any">any time</span>';
+  const d = new Date(`${askOn}T00:00:00`);
+  const label = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const tue = d.getDay() === 2 ? '' : ' admin-trivia-date-offday';
+  return `<span class="admin-trivia-date${tue}" title="${d.getDay() === 2 ? 'Scheduled' : 'Heads up — this is not a Tuesday'}">📅 ${esc(label)}</span>`;
+}
+
+function renderTrivia() {
+  const store = ctxRef.store;
+  const list = store.getTriviaQuestions();
+  const f = triviaForm;
+  const houses = Object.values(store.HOUSES);
+
+  const rows = list.map((row, i) => {
+    const badges = houses.map((h) => {
+      const rec = (row.asked || {})[h.id];
+      if (!rec) return `<span class="admin-trivia-badge" title="${esc(h.name)} has not answered yet">${esc(h.name[0])}</span>`;
+      return `<span class="admin-trivia-badge ${rec.won ? 'won' : 'lost'}"
+        title="${esc(h.name)} ${rec.won ? `won +${row.points}` : 'missed it'}">${rec.won ? '✓' : '✗'}</span>`;
+    }).join('');
+    const askedCount = Object.keys(row.asked || {}).length;
+    return `
+      <div class="admin-trivia-row">
+        <div class="admin-trivia-num">${i + 1}</div>
+        <div class="admin-trivia-main">
+          <div class="admin-trivia-q">${esc(row.q)}</div>
+          <div class="admin-trivia-a">→ ${esc(row.a)}</div>
+        </div>
+        ${triviaDateBadge(row.askOn)}
+        <div class="admin-trivia-badges">${badges}</div>
+        <div class="admin-trivia-pts">${row.points}<span>pts</span></div>
+        <div class="admin-trivia-actions">
+          <button class="admin-icon-btn" data-action="trivia-up" data-id="${esc(row.id)}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="admin-icon-btn" data-action="trivia-down" data-id="${esc(row.id)}" title="Move down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="admin-icon-btn" data-action="trivia-edit" data-id="${esc(row.id)}" title="Edit">✏️</button>
+          ${askedCount ? `<button class="admin-icon-btn" data-action="trivia-reask" data-id="${esc(row.id)}" title="Clear every core's answer so it can be asked again">🔁</button>` : ''}
+          <button class="admin-icon-btn admin-icon-danger" data-action="trivia-del" data-id="${esc(row.id)}" title="Delete">🗑</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">❓ Trivia Tuesday <span class="admin-faint">(${list.length} question${list.length === 1 ? '' : 's'})</span></div>
+      <div class="admin-mini">Every Tuesday, one question per class period: a correct answer earns the house the
+        question's points (100 unless you change it), a miss earns nothing. Each core walks this list top to bottom
+        at its own pace — the ✓/✗ marks show who has answered what. The class plays it from the
+        <b>❓ Trivia Tuesday</b> tile on the dashboard.</div>
+      ${list.length ? `<div class="admin-trivia-list">${rows}</div>`
+        : `<div class="admin-mini admin-faint" style="text-align:center;padding:1rem 0">No questions yet — add this term's below.</div>`}
+    </div>
+    <div class="admin-card">
+      <div class="admin-card-title">${f && f.id ? '✏️ Edit question' : '+ New question'}</div>
+      ${f ? `
+        ${f.error ? `<div class="admin-warn-line">${esc(f.error)}</div>` : ''}
+        <div class="admin-form-grid">
+          <div class="admin-field" style="grid-column:1/-1">
+            <label class="admin-flabel" for="admin-trivia-q">Question</label>
+            <textarea id="admin-trivia-q" class="admin-input admin-textarea">${esc(f.q)}</textarea>
+          </div>
+          <div class="admin-field" style="grid-column:1/-1">
+            <label class="admin-flabel" for="admin-trivia-a">Answer</label>
+            <textarea id="admin-trivia-a" class="admin-input admin-textarea" style="min-height:70px">${esc(f.a)}</textarea>
+          </div>
+          <div class="admin-field">
+            <label class="admin-flabel" for="admin-trivia-pts">Points for a correct answer</label>
+            <input id="admin-trivia-pts" class="admin-input" type="number" min="1" max="9999" step="1" value="${esc(String(f.points))}" style="max-width:140px" />
+          </div>
+          <div class="admin-field">
+            <label class="admin-flabel" for="admin-trivia-date">Ask on <span class="admin-faint">(clear it for "any time")</span></label>
+            <input id="admin-trivia-date" class="admin-input" type="date" value="${esc(f.askOn || '')}" style="max-width:190px" />
+            <div class="admin-step-hint">Sealed on the board until this day. New questions suggest the next free Tuesday, so a term loads one week apart on its own.</div>
+          </div>
+        </div>
+        <div class="admin-btn-row">
+          <button class="admin-btn admin-btn-primary" data-action="trivia-save">${f.id ? 'Save changes' : 'Add question'}</button>
+          <button class="admin-btn" data-action="trivia-cancel">Cancel</button>
+        </div>`
+        : `<button class="admin-btn admin-btn-primary" data-action="trivia-new">+ Add a question</button>`}
+    </div>`;
+}
+
+function readTriviaForm() {
+  const g = (id) => { const el = rootEl.querySelector(`#${id}`); return el ? el.value : ''; };
+  triviaForm.q = g('admin-trivia-q').trim();
+  triviaForm.a = g('admin-trivia-a').trim();
+  triviaForm.points = Number(g('admin-trivia-pts'));
+  triviaForm.askOn = g('admin-trivia-date');
+}
+
 function renderShop() {
   return ctxRef.store.getCombatMode() === 'duel' ? renderDuelShop() : renderHpShop();
 }
@@ -3126,10 +3270,10 @@ const SUGGESTED_MUSIC_SETUP = [
 // (0–1) of the master volume. Read defensively so either shape renders fine.
 function screenTrackEntry(tracks, id) {
   const raw = (tracks || {})[id];
-  if (!raw) return { src: '', volume: 1 };
-  if (typeof raw === 'string') return { src: raw, volume: 1 };
+  if (!raw) return { src: '', volume: 1, muted: false };
+  if (typeof raw === 'string') return { src: raw, volume: 1, muted: false };
   const volume = Number.isFinite(Number(raw.volume)) ? Math.min(1, Math.max(0, Number(raw.volume))) : 1;
-  return { src: raw.src || '', volume };
+  return { src: raw.src || '', volume, muted: !!raw.muted };
 }
 
 // Assign (or clear) a screen's track. A newly-assigned track defaults to
@@ -3140,7 +3284,7 @@ function setScreenTrack(screen, src) {
   const tracks = { ...ambient.tracks };
   if (!src) { delete tracks[screen]; store.updateAmbient({ tracks }); return; }
   const prev = screenTrackEntry(tracks, screen);
-  tracks[screen] = { src, volume: prev.src ? prev.volume : 1 };
+  tracks[screen] = { src, volume: prev.src ? prev.volume : 1, ...(prev.muted ? { muted: true } : {}) };
   store.updateAmbient({ tracks });
 }
 
@@ -3151,7 +3295,7 @@ function setScreenVolume(screen, pct) {
   const ambient = store.getAmbient();
   const entry = screenTrackEntry(ambient.tracks, screen);
   if (!entry.src) return;
-  const tracks = { ...ambient.tracks, [screen]: { src: entry.src, volume: Math.min(1, Math.max(0, Number(pct) / 100)) } };
+  const tracks = { ...ambient.tracks, [screen]: { src: entry.src, volume: Math.min(1, Math.max(0, Number(pct) / 100)), ...(entry.muted ? { muted: true } : {}) } };
   store.updateAmbient({ tracks });
 }
 
@@ -3167,6 +3311,21 @@ function debounceVolumeCommit(key, fn, ms = 200) {
   const prev = volumeCommitTimers.get(key);
   if (prev) clearTimeout(prev);
   volumeCommitTimers.set(key, later(() => { volumeCommitTimers.delete(key); fn(); }, ms));
+}
+
+// Mute ONE screen's loop without unassigning it — the track and its level
+// stay put for the day it comes back. Applies live: ambient.js re-reads
+// settings on every store change, so a muted screen falls silent mid-loop.
+function toggleScreenMute(screen) {
+  const store = ctxRef.store;
+  const ambient = store.getAmbient();
+  const entry = screenTrackEntry(ambient.tracks, screen);
+  if (!entry.src) return;
+  const next = { src: entry.src, volume: entry.volume };
+  if (!entry.muted) next.muted = true;
+  const tracks = { ...ambient.tracks, [screen]: next };
+  store.updateAmbient({ tracks });
+  renderBody({ force: true });
 }
 
 function applySuggestedMusicSetup() {
@@ -3317,6 +3476,9 @@ function renderMusicCard() {
           <select class="admin-input admin-music-pick" data-screen="${sc.id}" aria-label="Pick a known file for ${esc(sc.label)}">${options}</select>
           <input class="admin-input admin-music-path" data-screen="${sc.id}" type="text" value="${esc(cur)}" placeholder="music/filename.mp3" aria-label="Track path for ${esc(sc.label)}" spellcheck="false" autocomplete="off" />
           <button class="admin-btn admin-btn-sm" data-action="music-preview" data-screen="${sc.id}">▶ Preview</button>
+          <button class="admin-btn admin-btn-sm${entry.muted ? ' admin-music-muted' : ''}" data-action="music-mute" data-screen="${sc.id}"
+            title="${entry.muted ? 'Muted — tap to let it play again' : 'Mute just this screen (the track stays assigned)'}"
+            aria-pressed="${entry.muted ? 'true' : 'false'}"${cur ? '' : ' disabled'}>${entry.muted ? '🔇 Muted' : '🔊 On'}</button>
           <button class="admin-btn admin-btn-sm admin-btn-danger" data-action="music-clear" data-screen="${sc.id}">Clear</button>
         </div>
         ${volRow}
@@ -5270,6 +5432,43 @@ function onClick(e) {
     // tabs
     case 'tab': setTab(btn.dataset.tab); break;
 
+    // Trivia Tuesday pool
+    case 'trivia-new': triviaForm = { id: null, q: '', a: '', points: 100, askOn: nextFreeTuesday(), error: null }; renderBody({ force: true }); break;
+    case 'trivia-cancel': triviaForm = null; renderBody({ force: true }); break;
+    case 'trivia-edit': {
+      const row = store.getTriviaQuestions().find((x) => x.id === btn.dataset.id);
+      if (row) { triviaForm = { id: row.id, q: row.q, a: row.a, points: row.points, askOn: row.askOn || '', error: null }; renderBody({ force: true }); }
+      break;
+    }
+    case 'trivia-save': {
+      readTriviaForm();
+      if (!triviaForm.q || !triviaForm.a) { triviaForm.error = 'A question needs both its question and its answer.'; renderBody({ force: true }); break; }
+      if (!(triviaForm.points > 0)) triviaForm.points = 100;
+      store.saveTriviaQuestion(triviaForm);
+      triviaForm = null;
+      renderBody({ force: true });
+      toast('Question saved.');
+      break;
+    }
+    case 'trivia-up': store.moveTriviaQuestion(btn.dataset.id, -1); renderBody({ force: true }); break;
+    case 'trivia-down': store.moveTriviaQuestion(btn.dataset.id, 1); renderBody({ force: true }); break;
+    case 'trivia-reask': {
+      const id = btn.dataset.id;
+      openConfirm('Ask this question again?',
+        "Every core's answer to it is cleared, so it comes back around in each class period. Points already awarded for it are untouched.",
+        () => { store.resetTriviaQuestion(id); renderBody({ force: true }); toast('Question re-armed.'); },
+        { yesLabel: 'Re-ask it' });
+      break;
+    }
+    case 'trivia-del': {
+      const id = btn.dataset.id;
+      openConfirm('Delete this question?',
+        'It leaves the pool for every core. Points already awarded for it are untouched.',
+        () => { store.deleteTriviaQuestion(id); renderBody({ force: true }); toast('Question deleted.'); },
+        { yesLabel: 'Delete' });
+      break;
+    }
+
     // calendar nav
     case 'cal-prev': { const d = new Date(cal.year, cal.month - 1, 1); cal.year = d.getFullYear(); cal.month = d.getMonth(); renderBody(); break; }
     case 'cal-next': { const d = new Date(cal.year, cal.month + 1, 1); cal.year = d.getFullYear(); cal.month = d.getMonth(); renderBody(); break; }
@@ -5522,6 +5721,7 @@ function onClick(e) {
       break;
     }
     case 'music-preview': previewMusicTrack(btn.dataset.screen); break;
+    case 'music-mute': toggleScreenMute(btn.dataset.screen); break;
     case 'music-clear': {
       const screen = btn.dataset.screen;
       store.setAmbientTrack(screen, null);
@@ -5881,6 +6081,39 @@ function injectStyles() {
   .admin-input:focus{outline:none;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.18);}
   .admin-input[readonly]{opacity:.65;}
   .admin-textarea{min-height:110px;resize:vertical;line-height:1.5;}
+
+  /* ---- Trivia Tuesday tab ---- */
+  .admin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:.6rem;}
+  .admin-field{display:flex;flex-direction:column;gap:.35rem;min-width:0;}
+  .admin-btn-row{display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap;}
+  .admin-trivia-list{display:flex;flex-direction:column;gap:.55rem;margin-top:.8rem;}
+  .admin-trivia-row{display:flex;align-items:center;gap:.9rem;padding:.65rem .8rem;
+    border:1px solid var(--color-line,#374151);border-radius:.8rem;background:var(--color-card2,#1f2937);}
+  .admin-trivia-num{flex:0 0 auto;width:1.8rem;text-align:center;font-weight:800;color:#6b7280;}
+  .admin-trivia-main{flex:1 1 auto;min-width:0;}
+  .admin-trivia-q{font-weight:700;color:var(--color-text,#e5e7eb);line-height:1.3;}
+  .admin-trivia-a{color:#5eead4;font-size:.85rem;margin-top:2px;line-height:1.3;}
+  .admin-music-muted{border-color:#f87171!important;color:#fca5a5!important;}
+  .admin-trivia-date{flex:0 0 auto;font-size:.72rem;font-weight:700;color:#93c5fd;
+    border:1px solid rgba(147,197,253,.35);border-radius:999px;padding:.15rem .5rem;white-space:nowrap;}
+  .admin-trivia-date-any{color:#6b7280;border-color:var(--color-line,#374151);}
+  .admin-trivia-date-offday{color:#fbbf24;border-color:rgba(251,191,36,.4);}
+  .admin-trivia-badges{flex:0 0 auto;display:flex;gap:.3rem;}
+  .admin-trivia-badge{width:1.5rem;height:1.5rem;border-radius:999px;display:inline-flex;align-items:center;
+    justify-content:center;font-size:.7rem;font-weight:800;color:#6b7280;
+    border:1px dashed var(--color-line,#374151);}
+  .admin-trivia-badge.won{border:1px solid #34d399;color:#34d399;background:rgba(52,211,153,.12);}
+  .admin-trivia-badge.lost{border:1px solid #6b7280;color:#9ca3af;background:rgba(107,114,128,.15);}
+  .admin-trivia-pts{flex:0 0 auto;font-weight:800;font-size:1.15rem;color:#f59e0b;display:flex;
+    align-items:baseline;gap:.2rem;}
+  .admin-trivia-pts span{font-size:.65rem;font-weight:700;color:#9ca3af;}
+  .admin-trivia-actions{flex:0 0 auto;display:flex;gap:.3rem;}
+  .admin-icon-btn{min-width:34px;min-height:34px;border-radius:.5rem;border:1px solid var(--color-line,#374151);
+    background:var(--color-card,#111827);color:#d1d5db;cursor:pointer;font-size:.9rem;
+    touch-action:manipulation;}
+  .admin-icon-btn:hover:not(:disabled){border-color:#f59e0b;}
+  .admin-icon-btn:disabled{opacity:.35;cursor:default;}
+  .admin-icon-danger:hover:not(:disabled){border-color:#ef4444;color:#fca5a5;}
   .admin-flabel{display:block;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
     color:var(--color-text-soft);margin:14px 0 6px;}
   .admin-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;}

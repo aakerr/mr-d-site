@@ -101,14 +101,14 @@ export const audio = {
   // Deliberately NOT cached as a single element per sound: two strikes can land
   // close together, and one element replaying from the start would cut the first
   // off mid-clash. A fresh element per hit lets them overlap like real effects.
-  sfx(name) {
+  sfx(name, { volume = 1 } = {}) {
     // (Mute is applied by the wrapper at the bottom of this file — not here.)
     let src = '';
     try { src = (store.getSettings().sfx || {})[name] || ''; } catch (e) { src = ''; }
     if (src) {
       try {
         const el = new Audio(src);
-        el.volume = 1;
+        el.volume = Math.min(1, Math.max(0, Number(volume) || 1));
         playing.add(el);
         const done = () => { playing.delete(el); };
         el.addEventListener('ended', done);

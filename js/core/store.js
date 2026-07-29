@@ -121,6 +121,14 @@ const SFX_SLOTS = {
   // out of time with the tumble. One recording, two unrelated moments.
   diceland:  { label: 'Dice landing',        file: '',                          hint: 'The Die of Destiny settling after its roll. Uses the built-in tap — keep it short, it lands right after the rattle.' },
   reveal:    { label: 'Result revealed',     file: '',                          hint: 'The chime as the dice total appears beneath the crystal ball. Uses the built-in bell.' },
+  // Trivia Tuesday's five beats, in stage order. All ship with the owner's
+  // recordings; the teacher can swap any of them like every other slot.
+  triviacard:     { label: 'Trivia — card arrives',   file: 'sfx/trivia-card-reveal.mp3',     hint: 'The Trivia Tuesday card sweeping onto the temple stage.' },
+  triviaquestion: { label: 'Trivia — question shows', file: 'sfx/trivia-question-reveal.mp3', hint: 'The question appearing on the parchment.' },
+  triviaanswer:   { label: 'Trivia — answer reveal',  file: 'sfx/trivia-answer-reveal.mp3',   hint: 'The hieroglyphs giving up the answer.' },
+  triviawin:      { label: 'Trivia — correct',        file: 'sfx/trivia-correct-answer.mp3',  hint: 'The class got it — the points chime follows.' },
+  trivialose:     { label: 'Trivia — incorrect',      file: 'sfx/trivia-wrong-answer.mp3',    hint: 'Not this week. No points move.' },
+  timerend:       { label: 'Timer ends',              file: 'sfx/timer-end.mp3',              hint: "The bell-ringer countdown hitting TIME! It used to borrow the points chime, which made every timer sound like an award." },
 };
 
 // Offensive items are STOCKPILED: buying one puts it in the house's armoury
@@ -417,6 +425,14 @@ function defaultState() {
     // and its untouched current HP read 120/130 — it appeared wounded for
     // getting richer. Damage taken is invariant to the maximum moving.
     hp: {},
+    // Trivia Tuesday — the teacher's own question pool, asked one per week.
+    // Wholly teacher-owned content (nothing ships in it), so it persists
+    // as-is with no override diffing. Each question carries its own
+    // asked-record per core, so all four class periods get one crack at the
+    // same question and each core walks the pool at its own pace.
+    trivia: {
+      questions: [],  // { id, q, a, points, asked: { <coreId>: { won, ts } } }
+    },
     quests: {
       // One quest active per core at a time; completion is teacher-confirmed.
       catalog: defaultQuestCatalog(),
@@ -1102,9 +1118,13 @@ function load() {
       // it — the saved map wins over CONFIG wholesale. Fill only the keys the
       // save has never seen, once; a track the teacher later clears stays
       // cleared because this never runs again.
-      if (!merged.settings.ambientSeeded && merged.settings.ambient
+      // Versioned: bump the number whenever CONFIG.AMBIENT_TRACKS gains a
+      // screen, and every existing map picks the newcomer up once (v2: the
+      // Trivia Tuesday screen). A track the teacher cleared between versions
+      // does come back that once — acceptable while the app is pre-delivery.
+      if ((Number(merged.settings.ambientSeeded) || 0) < 2 && merged.settings.ambient
           && merged.settings.ambient.tracks && typeof merged.settings.ambient.tracks === 'object') {
-        merged.settings.ambientSeeded = true;
+        merged.settings.ambientSeeded = 2;
         for (const [id, entry] of Object.entries(CONFIG.AMBIENT_TRACKS || {})) {
           if (!(id in merged.settings.ambient.tracks)) {
             merged.settings.ambient.tracks[id] = typeof entry === 'string' ? entry : { ...entry };
@@ -1118,6 +1138,8 @@ function load() {
       // existed (or restored from an old backup) would otherwise be missing
       // keys the modules dereference unguarded — e.g. quests.completed.push().
       merged.quests = { ...def.quests, ...(merged.quests || {}) };
+      merged.trivia = { ...def.trivia, ...(merged.trivia || {}) };
+      if (!Array.isArray(merged.trivia.questions)) merged.trivia.questions = [];
       // The quest board ships in this file; the save holds the teacher's edits,
       // their own quests and the ids they deleted. Four per-field backfills used
       // to run here — repeatable, penalty, type and icon, each added to the
@@ -2560,6 +2582,100 @@ export const store = {
     return item;
   },
 
+  // ----- Trivia Tuesday -----
+
+  getTriviaQuestions() { return state.trivia.questions.slice(); },
+
+  // Create or update. Editing keeps the asked-record — rewording a question
+  // must not let a core that already answered it answer again. `askOn` is the
+  // optional scheduled date (a Tuesday, usually): the question stays sealed on
+  // the stage until that day arrives, so the whole term can be loaded up
+  // front and forgotten about.
+  saveTriviaQuestion(input) {
+    const q = String(input?.q || '').trim();
+    const a = String(input?.a || '').trim();
+    if (!q || !a) return null;
+    const points = Number(input?.points) > 0 ? Math.round(Number(input.points)) : 100;
+    const askOn = /^\d{4}-\d{2}-\d{2}$/.test(String(input?.askOn || '')) ? String(input.askOn) : '';
+    const list = state.trivia.questions;
+    const i = input.id ? list.findIndex((x) => x.id === input.id) : -1;
+    const row = { id: input.id || `tq-${Date.now()}`, q, a, points, askOn, asked: i >= 0 ? (list[i].asked || {}) : {} };
+    if (i >= 0) list[i] = row; else list.push(row);
+    emit();
+    return row;
+  },
+
+  deleteTriviaQuestion(id) {
+    const before = state.trivia.questions.length;
+    state.trivia.questions = state.trivia.questions.filter((x) => x.id !== id);
+    if (state.trivia.questions.length !== before) emit();
+  },
+
+  moveTriviaQuestion(id, dir) {
+    const list = state.trivia.questions;
+    const i = list.findIndex((x) => x.id === id);
+    const j = i + (dir < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    emit();
+  },
+
+  // Clears every core's answer so the question can be asked again.
+  resetTriviaQuestion(id) {
+    const row = state.trivia.questions.find((x) => x.id === id);
+    if (!row || !Object.keys(row.asked || {}).length) return;
+    row.asked = {};
+    emit();
+  },
+
+  // "This week's question" for a core: the earliest SCHEDULED question whose
+  // day has arrived and this core hasn't answered (so a missed week is asked
+  // late, not lost) — then, if none, the first UNDATED question in list
+  // order. A question dated in the future stays sealed for everyone.
+  nextTriviaFor(coreId) {
+    const today = todayStr();
+    const due = state.trivia.questions
+      .filter((x) => x.askOn && x.askOn <= today && !(x.asked || {})[coreId])
+      .sort((a, b) => (a.askOn < b.askOn ? -1 : a.askOn > b.askOn ? 1 : 0));
+    if (due.length) return due[0];
+    return state.trivia.questions.find((x) => !x.askOn && !(x.asked || {})[coreId]) || null;
+  },
+
+  // The next sealed-for-now question (earliest future date this core hasn't
+  // answered), so the stage can say WHEN it opens instead of "pool empty".
+  triviaUpcoming(coreId) {
+    const today = todayStr();
+    return state.trivia.questions
+      .filter((x) => x.askOn && x.askOn > today && !(x.asked || {})[coreId])
+      .sort((a, b) => (a.askOn < b.askOn ? -1 : a.askOn > b.askOn ? 1 : 0))[0] || null;
+  },
+
+  triviaProgress(coreId) {
+    const total = state.trivia.questions.length;
+    const answered = state.trivia.questions.filter((x) => (x.asked || {})[coreId]).length;
+    return { answered, total };
+  },
+
+  // One verdict per core per question: right pays the question's points
+  // (respecting freezes/shields exactly like every teacher award — this IS
+  // one), wrong pays nothing, and either way the record makes the pool
+  // advance. Returns { ok, tx } or a refusal reason.
+  recordTrivia(coreId, questionId, won) {
+    const house = HOUSES[coreId];
+    const row = state.trivia.questions.find((x) => x.id === questionId);
+    if (!house || !row) return { ok: false, reason: 'Unknown house or question.' };
+    if ((row.asked || {})[coreId]) return { ok: false, reason: 'This core already answered that question.' };
+    row.asked = row.asked || {};
+    row.asked[coreId] = { won: !!won, ts: Date.now() };
+    let tx = null;
+    if (won) {
+      const snippet = row.q.length > 60 ? `${row.q.slice(0, 57)}…` : row.q;
+      tx = store.addPoints(coreId, row.points, { reason: `Trivia Tuesday — ${snippet}`, tag: 'manual' });
+    }
+    emit();
+    return { ok: true, tx };
+  },
+
   // ----- ambient music (quiet per-screen loops) -----
 
   getAmbient() {
@@ -2600,6 +2716,9 @@ export const store = {
   // flight plays its music at full volume, so only the src is read.
   getFlyoverTrack() {
     const raw = (store.getAmbient().tracks || {})[FLYOVER_TRACK_KEY];
+    // Muted is a choice, not an absence — it must NOT fall through to the
+    // bundled default track, or muting the flyover would do nothing.
+    if (raw && typeof raw === 'object' && raw.muted) return '';
     const src = raw && typeof raw === 'object' ? raw.src : raw;
     return typeof src === 'string' && src.trim()
       ? src.trim()
