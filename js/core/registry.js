@@ -24,6 +24,10 @@ export const registry = {
   navigate(id) {
     const next = mods.get(id);
     if (!next) { console.error(`registry: no module '${id}'`); return; }
+    // Same screen: nothing to do. Without this, a stray re-navigation
+    // unmounts and remounts the module — which, on Place of the Week,
+    // silently tears down a live voyage.
+    if (current && current.id === id) return;
     const root = document.getElementById('module-root');
     try { current?.unmount?.(); } catch (e) { console.error(e); }
     root.innerHTML = '';

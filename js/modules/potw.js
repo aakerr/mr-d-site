@@ -850,7 +850,15 @@ function watchMapsAuthFailure() {
 // retired and simply not read; store.getFlyoverTrack() hands back the global
 // choice, or CONFIG.POTW_FLYOVER_DEFAULT when the teacher has picked nothing.
 function startFlyoverMusic() {
-  if (previewMode || flyMusicEl || !overlayEl) return;
+  if (previewMode || !overlayEl) return;
+  // A leftover element that is not actually making sound (killed by a
+  // stopAll, ended, or errored) must not block the real start — the owner
+  // hit exactly this: the Fly tap played nothing because a dead element
+  // still held the slot.
+  if (flyMusicEl) {
+    if (!flyMusicEl.paused && !flyMusicEl.ended) return;   // genuinely playing
+    stopFlyoverMusic();
+  }
   const src = ctxRef.store?.getFlyoverTrack?.() || CONFIG.POTW_FLYOVER_DEFAULT || '';
   if (!src) return;   // nothing set — silence, no error
   try {
