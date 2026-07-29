@@ -6,6 +6,7 @@ import { audio } from './core/audio.js';
 import { initShell } from './core/shell.js';
 import './core/backup.js'; // self-initializing auto-backup (File System Access)
 import { initAmbient } from './core/ambient.js';
+import { ensureAssetsWarm } from './core/preload.js';
 
 import dashboard from './modules/dashboard.js';
 import houses from './modules/houses.js';
@@ -45,6 +46,11 @@ registry.init(ctx);
 initShell(ctx);
 initAmbient();
 registry.home();
+
+// First visit on this machine: a loading gate with a progress bar pulls every
+// asset — art, sfx, music, the intro films — into the cache before the class
+// sees a single late-loading background (js/core/preload.js). Runs once.
+const firstLoadGate = ensureAssetsWarm();
 
 // Warm the big painted backgrounds while the dashboard idles. On GitHub Pages
 // a screen's art otherwise starts downloading the moment the screen opens —
@@ -95,5 +101,8 @@ function preloadAudio(queue) {
   // fetch() warms the HTTP cache without spinning up an audio element per file.
   fetch(queue.shift()).then((r) => r.blob()).then(next, next);
 }
+// The idle warm-up waits for the gate (racing it would fetch the same files
+// twice in parallel), then sweeps as the safety net for later visits, where
+// the gate skips and this quietly re-warms anything the cache evicted.
 const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
-idle(() => preloadArt([...ART_PRELOAD]));
+idle(() => firstLoadGate.then(() => preloadArt([...ART_PRELOAD])));
