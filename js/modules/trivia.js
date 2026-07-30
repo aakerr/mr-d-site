@@ -28,6 +28,8 @@ let lastVerdict = null;      // { won, points, houseName, qId } — the splash j
 // question appears on the parchment a beat after that. Replayed whenever a
 // different core takes the stage — each class period gets the show.
 let entrancePhase = 'bg';    // 'bg' -> 'conjure' -> 'card' -> 'text' (house line) -> 'question' -> 'ready'
+let filmEl = null;           // the owner's procession film, played once per visit
+let filmDone = false;        // the film has finished (or was skipped/failed)
 let enteredKey = null;       // which core the current entrance played for
 let entranceTimers = [];     // pending phase timers, cleared on unmount/re-key
 
@@ -52,6 +54,25 @@ const STYLE = `
      screens; every zone below is a % of this box, so they ride any size. */
   .trivia-cardwrap{position:relative;height:min(97%,64vw);aspect-ratio:3/2;}
   .trivia-entering{animation:trivia-card-in .8s cubic-bezier(.2,.9,.3,1.04) both;}
+
+  /* ---- the procession film, once per visit ---------------------------------
+     The owner's 21s march into the temple. It fades UP over the same painted
+     hall the stage uses, so the film feels like the room dimming rather than
+     a video appearing; when it ends it fades away and the conjuring begins. */
+  .trivia-film{position:absolute;inset:0;z-index:40;background:#000;
+    opacity:0;transition:opacity 1.1s ease;}
+  /* Once the film is done it is re-parented to <body> to fade: render()
+     rebuilds the whole stage subtree, which would otherwise delete the layer
+     mid-fade and cut to the temple instead of dissolving into it. */
+  .trivia-film.detached{position:fixed;z-index:1500;}
+  .trivia-film.in{opacity:1;}
+  .trivia-film.out{opacity:0;}
+  .trivia-film video{width:100%;height:100%;object-fit:cover;display:block;}
+  .trivia-film-skip{position:absolute;right:1.4rem;bottom:1.2rem;z-index:2;
+    background:rgba(8,6,3,.55);border:1px solid rgba(245,222,179,.45);color:#f5d78e;
+    border-radius:.7rem;padding:.5rem 1.1rem;font-size:.9rem;font-weight:700;
+    cursor:pointer;touch-action:manipulation;opacity:.75;transition:opacity .2s ease;}
+  .trivia-film-skip:hover{opacity:1;}
 
   /* ---- the conjuring (0.8s-2s): embers build where the card will stand ---- */
   .trivia-conjure{position:relative;width:min(60%,700px);height:60%;pointer-events:none;}
@@ -206,9 +227,11 @@ function render() {
   if (!rootEl) return;
   const house = store.getActiveHouse();
 
-  // A new audience (fresh mount, or the core switched) restarts the show.
+  // A new audience (fresh mount, or the core switched) restarts the show —
+  // but never while the film is still running: the conjuring is the film's
+  // punchline, not something to play underneath it.
   const key = house ? house.id : 'none';
-  if (!lastVerdict && key !== enteredKey) {
+  if (!lastVerdict && filmDone && key !== enteredKey) {
     enteredKey = key;
     clearEntranceTimers();
     clearTimeout(unsealTimer); unsealing = false;
@@ -274,6 +297,65 @@ function patchPhase(phase) {
       if (!b.classList.contains('trivia-hot-veiled') && b.hasAttribute('data-reveal')) b.disabled = false;
     });
   }
+}
+
+// The owner's procession film: plays once when the screen opens, fades up
+// from the painted hall, and hands over to the conjuring when it ends. Skip
+// is always there — a class that has seen it four times this term should not
+// have to sit through it a fifth. Reduced motion skips it outright.
+function startFilm() {
+  if (!rootEl || filmDone) return;
+  if (prefersReducedMotion()) { finishFilm(); return; }
+
+  const layer = document.createElement('div');
+  layer.className = 'trivia-film';
+  layer.innerHTML = `<video playsinline preload="auto" src="videos/trivia-tuesday-short.mp4"></video>
+    <button type="button" class="trivia-film-skip">Skip ↦</button>`;
+  const root = rootEl.querySelector('.trivia-root');
+  if (!root) { finishFilm(); return; }
+  root.appendChild(layer);
+  filmEl = layer;
+
+  const vid = layer.querySelector('video');
+  layer.querySelector('.trivia-film-skip').addEventListener('click', finishFilm);
+  vid.addEventListener('ended', finishFilm);
+  // A missing or undecodable file must never strand the class on a black
+  // rectangle — the stage simply begins.
+  vid.addEventListener('error', finishFilm);
+
+  // The screen's own loop would fight the film's audio; it comes back when
+  // the film does — same courtesy the Place of the Week voyage extends.
+  stopAmbientIfAny();
+  requestAnimationFrame(() => layer.classList.add('in'));
+  const p = vid.play();
+  if (p && typeof p.catch === 'function') p.catch(finishFilm);
+}
+
+function finishFilm() {
+  if (filmDone) return;
+  filmDone = true;
+  const layer = filmEl;
+  filmEl = null;
+  if (layer) {
+    try { const v = layer.querySelector('video'); if (v) { v.pause(); v.removeAttribute('src'); v.load(); } } catch (e) { /* already gone */ }
+    const skip = layer.querySelector('.trivia-film-skip');
+    if (skip) skip.remove();               // nothing left to skip mid-dissolve
+    try { document.body.appendChild(layer); } catch (e) { /* detached already */ }
+    layer.classList.add('detached');
+    requestAnimationFrame(() => layer.classList.add('out'));
+    setTimeout(() => { try { layer.remove(); } catch (e) { /* gone */ } }, 1300);
+  }
+  // Hand the room back to the trivia screen: its music, then the conjuring.
+  resumeAmbient();
+  render();
+}
+
+function stopAmbientIfAny() {
+  import('../core/ambient.js').then((m) => m.stopAmbient && m.stopAmbient()).catch(() => {});
+}
+
+function resumeAmbient() {
+  import('../core/ambient.js').then((m) => m.ambientFor && m.ambientFor('trivia')).catch(() => {});
 }
 
 // The conjuring: embers kindle mid-stage and build — sparse at first, then a
@@ -452,7 +534,10 @@ export default {
     lastVerdict = null;
     verdictInFlight = false;
     injectStyles();
+    filmDone = false;
+    filmEl = null;
     render();
+    startFilm();
     unsub = store.subscribe(() => {
       // A store change mid-splash must not wipe the splash — the class is
       // reading it. Everything else re-renders live (core switch, edits).
@@ -462,6 +547,15 @@ export default {
 
   unmount() {
     if (unsub) { unsub(); unsub = null; }
+    if (filmEl) {
+      try { const v = filmEl.querySelector('video'); if (v) { v.pause(); v.removeAttribute('src'); v.load(); } } catch (e) { /* gone */ }
+      try { filmEl.remove(); } catch (e) { /* gone */ }
+      filmEl = null;
+    }
+    // A film mid-dissolve lives on <body>, outside this module's element —
+    // leaving the screen must take it along.
+    document.querySelectorAll('.trivia-film.detached').forEach((n) => { try { n.remove(); } catch (e) { /* gone */ } });
+    filmDone = false;
     clearEntranceTimers();
     clearTimeout(unsealTimer); unsealTimer = null; unsealing = false;
     enteredKey = null;

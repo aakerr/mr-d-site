@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v4';   // v4: the fate wheel's disc joins the warm-up
+const MANIFEST_VERSION = 'v5';   // v5: the Trivia Tuesday procession film joins the warm-up
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
@@ -61,7 +61,7 @@ const MANIFEST = [
     'music/travel-zoom.mp3',
   ] },
   { label: 'the intro films (the big ones)', files: [
-    'videos/classic.mp4', 'videos/rock.mp4',
+    'videos/classic.mp4', 'videos/rock.mp4', 'videos/trivia-tuesday-short.mp4',
   ] },
 ];
 
