@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v5';   // v5: the Trivia Tuesday procession film joins the warm-up
+const MANIFEST_VERSION = 'v6';   // v6: the owner recut the procession film (1080p) — re-pull it
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
