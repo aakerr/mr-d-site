@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v6';   // v6: the owner recut the procession film (1080p) — re-pull it
+const MANIFEST_VERSION = 'v7';   // v7: the procession film recut again — re-pull it
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
