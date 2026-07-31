@@ -129,17 +129,24 @@ async function writeFileInFolder(name, text) {
 //
 // Deliberately written only when they CHANGE (a content hash of key+size+ts),
 // because copying a term's worth of PDFs on every points award would grind.
-let lastMediaSig = null;
+// Per destination, so a change written locally still gets written off-site.
+const lastMediaSig = { local: null, cloud: null };
 
-async function writeMediaFolder() {
-  if (!dirHandle) return;
+// Copy every uploaded file into <target>/media, skipping anything already
+// there at the same size. Returns { files, bytes, copied } — `copied` being
+// what this run actually had to write, which is what makes the second and
+// later runs cheap.
+async function writeMediaInto(targetHandle, which) {
+  if (!targetHandle) return { files: 0, bytes: 0, copied: 0 };
   let items = [];
-  try { items = await media.list(''); } catch (e) { return; }
+  try { items = await media.list(''); } catch (e) { return { files: 0, bytes: 0, copied: 0 }; }
+  const bytes = items.reduce((a, i) => a + (i.size || 0), 0);
   const sig = items.map((i) => `${i.key}:${i.size}:${i.ts}`).sort().join('|');
-  if (sig === lastMediaSig) return;      // nothing new since the last write
+  if (sig && sig === lastMediaSig[which]) return { files: items.length, bytes, copied: 0 };
 
-  const mediaDir = await dirHandle.getDirectoryHandle('media', { create: true });
+  const mediaDir = await targetHandle.getDirectoryHandle('media', { create: true });
   const manifest = [];
+  let copied = 0;
   for (const it of items) {
     // A key is an arbitrary string ("potw:egypt:slide:003"); a filename is not.
     const safe = it.key.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -153,10 +160,15 @@ async function writeMediaFolder() {
       const w = await fh.createWritable();
       await w.write(blob);
       await w.close();
+      copied += 1;
     } catch (e) { console.warn('backup: media write failed', it.key, e); }
   }
-  await writeFileInFolder('mrd-media-manifest.json', JSON.stringify(manifest, null, 2));
-  lastMediaSig = sig;
+  const mh = await targetHandle.getFileHandle('mrd-media-manifest.json', { create: true });
+  const mw = await mh.createWritable();
+  await mw.write(JSON.stringify(manifest, null, 2));
+  await mw.close();
+  lastMediaSig[which] = sig;
+  return { files: items.length, bytes, copied };
 }
 
 async function doWrite() {
@@ -169,7 +181,7 @@ async function doWrite() {
     }
     const text = stateText();
     await writeFileInFolder(LIVE_FILE, text);
-    await writeMediaFolder();
+    await writeMediaInto(dirHandle, 'local');
     // rolling daily snapshot — write-once per calendar day
     const today = dateStr();
     if (lastDailyDate !== today) {
@@ -478,10 +490,12 @@ export const backup = {
     await idbDel(CLOUD_KEY);
   },
 
-  // Write the state + a dated snapshot into the synced folder. Media is NOT
-  // copied here on purpose: a term of lesson PDFs through a sync client is a
-  // lot of upload, and the local folder already holds them. This copy exists
-  // so the RECORDS survive the machine itself.
+  // Write the state, a dated snapshot AND every uploaded file into the synced
+  // folder. Copying media off-site is the owner's call (2026-07-31): a lesson
+  // PDF is as hard to replace as the points beside it, so both travel. Only
+  // changed files are written, so the first run is the expensive one and the
+  // rest are nearly free — and the app now shows the size so nobody is
+  // surprised by what their sync client is about to carry.
   async writeCloudNow() {
     if (!cloudHandle) { cloudError = 'No off-site folder chosen.'; return false; }
     try {
@@ -497,6 +511,7 @@ export const backup = {
         await w.write(text);
         await w.close();
       }
+      await writeMediaInto(cloudHandle, 'cloud');
       cloudConnected = true;
       cloudLastSave = Date.now();
       cloudError = null;
@@ -505,6 +520,18 @@ export const backup = {
       cloudError = (e && e.message) || String(e);
       return false;
     }
+  },
+
+  // What a backup actually weighs, so the teacher can see it before his sync
+  // client does. Records are trivial; the uploaded files are the number that
+  // matters on school wifi.
+  async sizes() {
+    let stateBytes = 0;
+    try { stateBytes = new Blob([stateText()]).size; } catch (e) { stateBytes = 0; }
+    let items = [];
+    try { items = await media.list(''); } catch (e) { items = []; }
+    const mediaBytes = items.reduce((a, i) => a + (i.size || 0), 0);
+    return { stateBytes, mediaBytes, mediaFiles: items.length, totalBytes: stateBytes + mediaBytes };
   },
 
   cloudStatus() {

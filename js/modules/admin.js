@@ -307,7 +307,7 @@ function renderBody({ force = false } = {}) {
   else if (activeTab === 'help') body.innerHTML = renderHelp();
   else if (activeTab === 'world') body.innerHTML = renderTermWorld();
   else if (activeTab === 'look') body.innerHTML = renderLookSound();
-  else if (activeTab === 'data') body.innerHTML = renderDataSafety();
+  else if (activeTab === 'data') { body.innerHTML = renderDataSafety(); refreshBackupSize(); }
   else { body.innerHTML = renderPotw(); refreshPotwMedia(); }
   // Fresh content means scrollTop is back at 0 — the header must come back down.
   syncHeadCompact();
@@ -4089,6 +4089,7 @@ async function runBackupAndClose() {
         <div class="admin-modal-title">🔒 Backing up, then closing down</div>
       </div>
       <div class="admin-modal-body">
+        <div class="admin-cd-size" id="cd-size">Measuring your backup…</div>
         ${closedownRowHTML('local', 'This computer', 'Saving your term and your uploaded files…')}
         ${closedownRowHTML('cloud', 'Off-site copy', 'Checking…')}
         ${closedownRowHTML('download', 'Downloads folder', 'Saving a dated copy…')}
@@ -4100,6 +4101,16 @@ async function runBackupAndClose() {
     </div>`;
 
   let problems = 0;
+
+  // --- what this is going to weigh -------------------------------------------
+  let sz = { stateBytes: 0, mediaBytes: 0, mediaFiles: 0, totalBytes: 0 };
+  try { sz = await backup.sizes(); } catch (e) { /* the rows below still run */ }
+  const szEl = el('cd-size');
+  if (szEl) {
+    szEl.innerHTML = sz.mediaFiles
+      ? `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your term (${humanSize(sz.stateBytes)}) plus ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'} (${humanSize(sz.mediaBytes)}).`
+      : `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your whole term. No uploaded files yet.`;
+  }
 
   // --- 1. this computer ------------------------------------------------------
   const bs = backup.status();
@@ -4113,7 +4124,8 @@ async function runBackupAndClose() {
   } else {
     try {
       const ts = await backup.writeNow();
-      setClosedownRow('local', 'ok', ts ? `Saved to your backup folder at ${new Date(ts).toLocaleTimeString()}, uploaded files included.` : 'Saved to your backup folder.');
+      const what = sz.mediaFiles ? `${humanSize(sz.totalBytes)} including ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'}` : humanSize(sz.totalBytes);
+      setClosedownRow('local', 'ok', ts ? `Saved ${what} to your backup folder at ${new Date(ts).toLocaleTimeString()}.` : `Saved ${what} to your backup folder.`);
     } catch (e) {
       problems += 1;
       setClosedownRow('local', 'fail', `Could not write to the backup folder: ${(e && e.message) || e}`);
@@ -4129,9 +4141,12 @@ async function runBackupAndClose() {
     setClosedownRow('cloud', 'warn', 'No off-site copy is set up. Point this at the OneDrive or Google Drive folder on this computer and your term survives the machine itself.',
       ' <button class="admin-btn admin-btn-sm" data-action="cd-connect-cloud">Choose a folder</button>');
   } else {
+    setClosedownRow('cloud', 'busy', sz.mediaBytes > 20 * 1024 * 1024
+      ? `Copying ${humanSize(sz.totalBytes)} — the first run with files this size can take a minute.`
+      : `Copying ${humanSize(sz.totalBytes)}…`);
     const ok = await backup.writeCloudNow();
     if (ok) {
-      setClosedownRow('cloud', 'ok', `Copied to your synced folder at ${new Date(backup.cloudStatus().lastSave).toLocaleTimeString()}. Your sync app uploads it from here.`);
+      setClosedownRow('cloud', 'ok', `Copied ${humanSize(sz.totalBytes)} to your synced folder at ${new Date(backup.cloudStatus().lastSave).toLocaleTimeString()}. Your sync app uploads it from here.`);
     } else {
       problems += 1;
       setClosedownRow('cloud', 'fail', backup.cloudStatus().lastError || 'The off-site copy did not save.');
@@ -4141,7 +4156,7 @@ async function runBackupAndClose() {
   // --- 3. downloads ----------------------------------------------------------
   try {
     await backup.downloadNow();
-    setClosedownRow('download', 'ok', 'A dated copy is in your Downloads folder.');
+    setClosedownRow('download', 'ok', `A dated copy of your term (${humanSize(sz.stateBytes)}) is in your Downloads folder. Uploaded files are not in a single file — they live in the folders above.`);
   } catch (e) {
     problems += 1;
     setClosedownRow('download', 'fail', 'Could not save a copy to Downloads.');
@@ -4200,6 +4215,20 @@ function backupStatusLine(bs) {
   return `<span class="admin-auto-dot ok"></span> Auto-saving to folder — last saved ${esc(relTime(bs.lastSaveTs))}${err}`;
 }
 
+// The weight of a backup, live in the card. Async because the uploaded files
+// have to be tallied out of IndexedDB — the line paints "Measuring…" first
+// rather than holding the whole tab up for it.
+async function refreshBackupSize() {
+  const box = el('admin-backup-size');
+  if (!box) return;
+  try {
+    const sz = await backup.sizes();
+    box.innerHTML = sz.mediaFiles
+      ? `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your term (${humanSize(sz.stateBytes)}) plus ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'} (${humanSize(sz.mediaBytes)})`
+      : `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your whole term so far`;
+  } catch (e) { box.textContent = ''; }
+}
+
 function autoBackupHTML() {
   const bs = backup.status();
   if (!bs.supported) {
@@ -4208,6 +4237,7 @@ function autoBackupHTML() {
   if (bs.connected) {
     return `
       <div class="admin-auto-status" id="admin-backup-status">${backupStatusLine(bs)}</div>
+      <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
       <div class="admin-backup-row">
         <button class="admin-btn" data-action="backup-save-now">Save now</button>
         <button class="admin-btn" data-action="backup-restore-folder">Restore from folder…</button>
@@ -4228,6 +4258,7 @@ function autoBackupHTML() {
 function updateBackupStatusLine() {
   const box = el('admin-backup-status');
   if (box && ctxRef) box.innerHTML = backupStatusLine(backup.status());
+  refreshBackupSize();
 }
 
 // ----- daily safety-net download (js/core/backup.js `downloadNow`) ----------
@@ -6944,6 +6975,12 @@ function injectStyles() {
     white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease;}
   .admin-closedown:hover{background:#f59e0b;color:#0b0f19;}
   .admin-modal-cd{width:min(620px,94vw);}
+  .admin-backup-size{color:var(--color-text-soft,#9ca3af);}
+  .admin-backup-size b{color:var(--color-text,#e5e7eb);}
+  .admin-cd-size{padding:.7rem .9rem;margin-bottom:.8rem;border-radius:.7rem;
+    background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.35);
+    color:#bfdbfe;font-size:.9rem;line-height:1.45;}
+  .admin-cd-size b{color:#dbeafe;}
   .admin-cd-row{display:flex;gap:.8rem;align-items:flex-start;padding:.85rem .9rem;
     border:1px solid var(--color-line,#374151);border-radius:.75rem;margin-bottom:.6rem;
     background:var(--color-card2,#1f2937);}
