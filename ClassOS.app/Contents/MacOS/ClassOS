@@ -1,0 +1,53 @@
+#!/bin/bash
+# ClassOS — Mr. D's Classroom OS launcher (macOS)
+#
+# Double-clicking this app: snapshots the backup folder, starts a tiny local
+# web server in the app's own folder, and opens the classroom in the browser.
+# The server runs in its own Terminal window, which doubles as the off switch.
+# Nothing is installed and nothing leaves this computer.
+#
+# WHY A SERVER AT ALL: the app is built from ES modules, which every browser
+# refuses to load from a plain file:// path. A local server is the whole
+# difference between "it works" and a blank screen.
+#
+# The server itself lives in .classos-serve.command next to this bundle —
+# deliberately a separate file rather than an inline AppleScript string,
+# because nesting a shell command inside AppleScript inside a heredoc is a
+# quoting minefield (it silently failed to launch the first time).
+
+# The .app sits INSIDE the classroom folder, so that folder is three levels up
+# from this script (Contents/MacOS/ClassOS).
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$HERE" || exit 1
+
+PORT=8000
+
+# --- keep a rolling copy of the backup folder --------------------------------
+# Belt outside the browser: whatever the app has written to ./backups is copied
+# to a dated folder on every launch, and the oldest are pruned. No browser
+# setting, cleared cache or wiped profile can touch these.
+if [ -d "$HERE/backups" ]; then
+  SNAP="$HERE/backup-history/$(date +%Y-%m-%d_%H%M)"
+  mkdir -p "$SNAP" 2>/dev/null && cp -R "$HERE/backups/." "$SNAP/" 2>/dev/null
+  if [ -d "$HERE/backup-history" ]; then
+    ls -1t "$HERE/backup-history" 2>/dev/null | tail -n +31 | while read -r old; do
+      [ -n "$old" ] && rm -rf "$HERE/backup-history/$old"
+    done
+  fi
+fi
+
+# --- already running? just open it -------------------------------------------
+if curl -s -o /dev/null --max-time 1 "http://localhost:$PORT/index.html" 2>/dev/null; then
+  open "http://localhost:$PORT"
+  exit 0
+fi
+
+# --- start the server, then open the classroom -------------------------------
+chmod +x "$HERE/.classos-serve.command" 2>/dev/null
+open -a Terminal "$HERE/.classos-serve.command"
+
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  if curl -s -o /dev/null --max-time 1 "http://localhost:$PORT/index.html" 2>/dev/null; then break; fi
+  sleep 0.3
+done
+open "http://localhost:$PORT"

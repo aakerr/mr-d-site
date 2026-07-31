@@ -1,0 +1,87 @@
+========================================================================
+  MR. D'S CLASSROOM OS  —  START HERE
+========================================================================
+
+TO OPEN THE CLASSROOM
+---------------------
+  Mac:      double-click  ClassOS
+  Windows:  double-click  ClassOS.bat
+
+That's it. A small black window opens (leave it alone) and the classroom
+opens in your browser.
+
+To close down at the end of the day, close that little black window.
+
+TO PUT IT ON YOUR DESKTOP
+-------------------------
+  Mac:      drag ClassOS onto the Dock, or right-click it >
+            Make Alias, then drag the alias to your Desktop.
+
+  Windows:  right-click ClassOS.bat > Send to > Desktop (create
+            shortcut). Then right-click the new desktop shortcut >
+            Properties > Change Icon > Browse > choose ClassOS.ico
+            from this folder, so it wears the house shield.
+
+FIRST TIME ONLY
+---------------
+The first launch shows a loading screen while it gathers every picture,
+sound and film so nothing ever stalls in front of a class. It only
+happens once. After that it opens straight away.
+
+
+========================================================================
+  PROTECTING YOUR TERM  —  PLEASE READ THIS PART
+========================================================================
+
+Your points, planner, quests and settings live inside your browser.
+That is fast and private, but it means clearing your browsing data — or
+logging into a different Windows account — can empty the board.
+
+There are four layers protecting you. Set up the first one and you are
+genuinely safe.
+
+  1. THE BACKUP FOLDER  (do this once, today)
+     Open the app > the key icon (top right) > Data & Safety >
+     "Connect a backup folder" > choose the "backups" folder that sits
+     right next to this file.
+
+     From then on, every change saves itself to a real file on this
+     computer, automatically. Your uploaded lesson PDFs, slides and
+     songs are saved there too.
+
+  2. A DAILY FILE IN DOWNLOADS
+     Once each school day the app also drops a dated backup into your
+     Downloads folder. This happens whether or not you did step 1.
+
+  3. A COPY EVERY TIME YOU LAUNCH
+     Each time you open ClassOS, it copies your backup folder into
+     "backup-history" with the date and time. The last 30 launches are
+     kept. Nothing in the browser can touch these.
+
+  4. IT OFFERS ITSELF BACK
+     If the app ever opens to an empty board and a backup exists, it
+     says so and offers to put your term back with one button. You do
+     not have to remember any of this.
+
+IF SOMETHING GOES WRONG
+-----------------------
+Open the app > key icon > Data & Safety > "Restore from folder".
+That brings back everything: points, planner, quests, the shop,
+settings, destinations, and your uploaded files.
+
+A single .json backup file restores everything EXCEPT uploaded files
+(PDFs, slides, songs) — those are too big for one file and live in the
+backup FOLDER instead. So the folder is the one to rely on.
+
+
+========================================================================
+  IF IT WILL NOT START
+========================================================================
+
+"Python was not found" — the app needs Python, which is free:
+  Windows:  https://www.python.org/downloads/
+            IMPORTANT: tick "Add Python to PATH" on the first screen.
+  Mac:      open Terminal and run:  xcode-select --install
+
+Nothing else is installed, and nothing you do in the app leaves this
+computer.

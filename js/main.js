@@ -7,6 +7,7 @@ import { initShell } from './core/shell.js';
 import './core/backup.js'; // self-initializing auto-backup (File System Access)
 import { initAmbient } from './core/ambient.js';
 import { ensureAssetsWarm } from './core/preload.js';
+import { checkForLostTerm } from './core/rescue.js';
 
 import dashboard from './modules/dashboard.js';
 import houses from './modules/houses.js';
@@ -51,6 +52,10 @@ registry.home();
 // asset — art, sfx, music, the intro films — into the cache before the class
 // sees a single late-loading background (js/core/preload.js). Runs once.
 const firstLoadGate = ensureAssetsWarm();
+
+// An empty board with a backup sitting in the folder is the one failure that
+// would cost a term. Offer it back rather than waiting to be asked.
+checkForLostTerm();
 
 // Warm the big painted backgrounds while the dashboard idles. On GitHub Pages
 // a screen's art otherwise starts downloading the moment the screen opens —

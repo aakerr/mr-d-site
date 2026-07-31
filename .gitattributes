@@ -1,0 +1,5 @@
+# The .app bundle's launcher must stay executable after a clone/checkout.
+ClassOS.app/Contents/MacOS/ClassOS text eol=lf
+.classos-serve.command text eol=lf
+# Windows needs CRLF or the batch file misbehaves on some machines.
+ClassOS.bat text eol=crlf

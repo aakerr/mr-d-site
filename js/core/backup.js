@@ -12,6 +12,7 @@
 // runs at boot even when the Admin panel is never opened.
 import { CONFIG } from '../config.js';
 import { store } from './store.js';
+import { media } from './media.js';
 
 const HANDLE_DB = 'mrd-backup';
 const HANDLE_STORE = 'handles';
@@ -109,6 +110,45 @@ async function writeFileInFolder(name, text) {
   await writable.close();
 }
 
+// ---- the uploaded files ------------------------------------------------------
+// The JSON carries every SETTING and record; the teacher's uploaded FILES —
+// lesson PDFs, slide images, intro songs, destination artwork — live in
+// IndexedDB and never fitted in it. They are the one thing a restore could not
+// bring back, which made "restore everything" untrue. They now ride along in a
+// media/ subfolder beside the JSON, with a manifest naming each key.
+//
+// Deliberately written only when they CHANGE (a content hash of key+size+ts),
+// because copying a term's worth of PDFs on every points award would grind.
+let lastMediaSig = null;
+
+async function writeMediaFolder() {
+  if (!dirHandle) return;
+  let items = [];
+  try { items = await media.list(''); } catch (e) { return; }
+  const sig = items.map((i) => `${i.key}:${i.size}:${i.ts}`).sort().join('|');
+  if (sig === lastMediaSig) return;      // nothing new since the last write
+
+  const mediaDir = await dirHandle.getDirectoryHandle('media', { create: true });
+  const manifest = [];
+  for (const it of items) {
+    // A key is an arbitrary string ("potw:egypt:slide:003"); a filename is not.
+    const safe = it.key.replace(/[^a-zA-Z0-9._-]/g, '_');
+    manifest.push({ key: it.key, file: safe, name: it.name, type: it.type, size: it.size, ts: it.ts });
+    try {
+      const existing = await mediaDir.getFileHandle(safe).then((h) => h.getFile()).catch(() => null);
+      if (existing && existing.size === it.size) continue;   // already there, unchanged
+      const blob = await media.blob(it.key);
+      if (!blob) continue;
+      const fh = await mediaDir.getFileHandle(safe, { create: true });
+      const w = await fh.createWritable();
+      await w.write(blob);
+      await w.close();
+    } catch (e) { console.warn('backup: media write failed', it.key, e); }
+  }
+  await writeFileInFolder('mrd-media-manifest.json', JSON.stringify(manifest, null, 2));
+  lastMediaSig = sig;
+}
+
 async function doWrite() {
   if (!connected || !dirHandle) return;
   try {
@@ -119,6 +159,7 @@ async function doWrite() {
     }
     const text = stateText();
     await writeFileInFolder(LIVE_FILE, text);
+    await writeMediaFolder();
     // rolling daily snapshot — write-once per calendar day
     const today = dateStr();
     if (lastDailyDate !== today) {
@@ -346,6 +387,57 @@ export const backup = {
 
   // Read the latest live backup from the folder and return the parsed state.
   // The CALLER validates the user's intent, applies via localStorage + reload.
+  // Read the media/ folder back into IndexedDB. Runs after a JSON restore, so
+  // a rebuilt machine gets the teacher's PDFs, slides and songs back rather
+  // than a set of profiles pointing at files that no longer exist.
+  // Returns { restored, missing } for the confirmation line.
+  async restoreMedia() {
+    if (!dirHandle) return { restored: 0, missing: 0 };
+    let manifest = [];
+    try {
+      const fh = await dirHandle.getFileHandle('mrd-media-manifest.json', { create: false });
+      manifest = JSON.parse(await (await fh.getFile()).text());
+    } catch (e) { return { restored: 0, missing: 0 }; }
+    if (!Array.isArray(manifest) || !manifest.length) return { restored: 0, missing: 0 };
+
+    let mediaDir = null;
+    try { mediaDir = await dirHandle.getDirectoryHandle('media', { create: false }); }
+    catch (e) { return { restored: 0, missing: manifest.length }; }
+
+    let restored = 0; let missing = 0;
+    for (const it of manifest) {
+      if (!it || !it.key || !it.file) continue;
+      try {
+        const fh = await mediaDir.getFileHandle(it.file, { create: false });
+        const blob = await fh.getFile();
+        const ok = await media.putRecord(it.key, blob, { name: it.name, type: it.type, size: it.size, ts: it.ts });
+        if (ok) restored += 1; else missing += 1;
+      } catch (e) { missing += 1; }
+    }
+    return { restored, missing };
+  },
+
+  // Is there a backup sitting in the folder right now? Used by the empty-board
+  // rescue on boot, which must not restore anything without asking.
+  async peekLatest() {
+    if (!dirHandle) return null;
+    try {
+      if (!(await verifyPermission(dirHandle, false))) return null;
+      const candidates = [LIVE_FILE, ...(await datedSnapshotNames())];
+      for (const name of candidates) {
+        try {
+          const fh = await dirHandle.getFileHandle(name, { create: false });
+          const file = await fh.getFile();
+          const data = JSON.parse(await file.text());
+          if (data && typeof data === 'object' && 'transactions' in data) {
+            return { name, savedAt: data.savedAt || null, transactions: (data.transactions || []).length };
+          }
+        } catch (e) { /* try the next candidate */ }
+      }
+    } catch (e) { /* nothing readable */ }
+    return null;
+  },
+
   async restoreLatest() {
     if (!dirHandle) { lastError = 'No backup folder connected.'; return null; }
     try {

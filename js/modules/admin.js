@@ -4000,7 +4000,7 @@ function importBackup(file) {
     try { data = JSON.parse(reader.result); } catch (e) { toast('That file is not valid JSON.'); return; }
     const check = looksLikeBackup(data);
     if (!check.ok) { toast(check.reason); return; }
-    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. If it turns out to be the wrong file, “Undo last restore” in this panel puts everything back.', () => {
+    openConfirm('Restore backup?', 'This replaces ALL current data (points, planner, quests, shop, settings, destinations) with the backup. A single .json file cannot carry your uploaded files — lesson PDFs, slides and songs come back only from a backup FOLDER, which keeps them alongside. If it turns out to be the wrong file, “Undo last restore” in this panel puts everything back.', () => {
       if (replaceAllData(data)) location.reload();
     }, { yesLabel: 'Replace & reload' });
   };
@@ -4299,7 +4299,10 @@ async function restoreFromFolder() {
   // openConfirm renders its body as TEXT (it escapes) — plain quotes here,
   // not tags, and `used` goes in raw so the escaper only runs once.
   openConfirm('Restore from backup folder?',
-    `This replaces ALL current data with ${used ? `“${used}”` : "the folder's latest backup"}, then reloads. If it is not the one you wanted, “Undo last restore” in this panel puts everything back.`, () => {
+    `This replaces ALL current data with ${used ? `“${used}”` : "the folder's latest backup"} — points, planner, quests, shop, settings, destinations AND your uploaded files (lesson PDFs, slides, songs) — then reloads. If it is not the one you wanted, “Undo last restore” in this panel puts everything back.`, async () => {
+    // Files first: if the page reloads before IndexedDB finishes, a restored
+    // profile would point at slides that are not back yet.
+    try { await backup.restoreMedia(); } catch (e) { console.warn('restore: media', e); }
     if (replaceAllData(data)) location.reload();
   }, { yesLabel: 'Replace & reload' });
 }

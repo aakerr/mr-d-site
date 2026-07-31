@@ -74,6 +74,46 @@ export const media = {
     } catch (e) { return null; }
   },
 
+  // The raw Blob, for export. Everything else hands back an object URL or
+  // metadata; a backup needs the bytes themselves.
+  async blob(key) {
+    try {
+      const rec = await run('readonly', (s) => s.get(key));
+      return rec?.blob || null;
+    } catch (e) { return null; }
+  },
+
+  // Write a record back exactly as it was exported. Used by restore, which
+  // must preserve the original name/type rather than inventing them from a
+  // filename on disk.
+  async putRecord(key, blob, meta = {}) {
+    try {
+      const rec = { blob, name: meta.name || key, type: meta.type || blob.type || '', size: meta.size || blob.size || 0, ts: meta.ts || Date.now() };
+      await run('readwrite', (s) => s.put(rec, key));
+      if (urlCache.has(key)) { URL.revokeObjectURL(urlCache.get(key)); urlCache.delete(key); }
+      announceChange(key);
+      return true;
+    } catch (e) { console.warn('media.putRecord failed', key, e); return false; }
+  },
+
+  // Every key in the store, for a full export.
+  async keys() {
+    try {
+      const out = [];
+      await run('readonly', (s) => {
+        const req = s.openCursor();
+        req.onsuccess = () => {
+          const c = req.result;
+          if (!c) return;
+          if (typeof c.key === 'string') out.push(c.key);
+          c.continue();
+        };
+        return req;
+      });
+      return out;
+    } catch (e) { return []; }
+  },
+
   async delete(key) {
     try {
       await run('readwrite', (s) => s.delete(key));
