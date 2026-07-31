@@ -413,6 +413,10 @@ function defaultState() {
       // The two wheels: which one the tile opens, both wheels' point values,
       // and the challenge task pool. See defaultWheelSettings().
       wheels: defaultWheelSettings(),
+      // Include uploaded files (lesson PDFs, slides, songs) in folder backups.
+      // ON by default; see mediaEnabled() in js/core/backup.js for why a
+      // teacher might turn it off.
+      backupMedia: true,
       // Overall sound-effects level (recordings and built-in beeps alike),
       // 0-1. Applied with a perceptual curve in js/core/audio.js.
       sfxVolume: 0.65,

@@ -136,8 +136,16 @@ const lastMediaSig = { local: null, cloud: null };
 // there at the same size. Returns { files, bytes, copied } — `copied` being
 // what this run actually had to write, which is what makes the second and
 // later runs cheap.
+// The teacher's choice (Data & Safety). ON by default — a lesson PDF is as
+// hard to replace as the points beside it — but a term of slide decks can run
+// to hundreds of megabytes, and a school OneDrive quota is not always generous.
+// Turning it off keeps every RECORD backed up and leaves the files behind.
+function mediaEnabled() {
+  try { return store.getSettings().backupMedia !== false; } catch (e) { return true; }
+}
+
 async function writeMediaInto(targetHandle, which) {
-  if (!targetHandle) return { files: 0, bytes: 0, copied: 0 };
+  if (!targetHandle || !mediaEnabled()) return { files: 0, bytes: 0, copied: 0, skipped: !mediaEnabled() };
   let items = [];
   try { items = await media.list(''); } catch (e) { return { files: 0, bytes: 0, copied: 0 }; }
   const bytes = items.reduce((a, i) => a + (i.size || 0), 0);
@@ -533,6 +541,8 @@ export const backup = {
     const mediaBytes = items.reduce((a, i) => a + (i.size || 0), 0);
     return { stateBytes, mediaBytes, mediaFiles: items.length, totalBytes: stateBytes + mediaBytes };
   },
+
+  mediaIncluded() { return mediaEnabled(); },
 
   cloudStatus() {
     return { supported: supported(), connected: cloudConnected, lastSave: cloudLastSave, lastError: cloudError };

@@ -26,9 +26,13 @@ PORT=8000
 # Belt outside the browser: whatever the app has written to ./backups is copied
 # to a dated folder on every launch, and the oldest are pruned. No browser
 # setting, cleared cache or wiped profile can touch these.
+# NOTE: the media/ subfolder is deliberately excluded. Thirty launches x a
+# term of lesson PDFs would be gigabytes of identical files; the records are
+# what change daily, and the files still live (once) in backups/media.
 if [ -d "$HERE/backups" ]; then
   SNAP="$HERE/backup-history/$(date +%Y-%m-%d_%H%M)"
-  mkdir -p "$SNAP" 2>/dev/null && cp -R "$HERE/backups/." "$SNAP/" 2>/dev/null
+  mkdir -p "$SNAP" 2>/dev/null
+  find "$HERE/backups" -maxdepth 1 -type f -name '*.json' -exec cp {} "$SNAP/" \; 2>/dev/null
   if [ -d "$HERE/backup-history" ]; then
     ls -1t "$HERE/backup-history" 2>/dev/null | tail -n +31 | while read -r old; do
       [ -n "$old" ] && rm -rf "$HERE/backup-history/$old"

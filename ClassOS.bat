@@ -41,7 +41,10 @@ if exist "%~dp0backups" (
   set STAMP=%STAMP: =%
   if not exist "%~dp0backup-history" mkdir "%~dp0backup-history" >nul 2>&1
   if not exist "%~dp0backup-history\%STAMP%" mkdir "%~dp0backup-history\%STAMP%" >nul 2>&1
-  xcopy "%~dp0backups\*" "%~dp0backup-history\%STAMP%\" /E /Y /Q >nul 2>&1
+  rem Records only - NOT the media subfolder. Thirty launches x a term of
+  rem lesson PDFs would be gigabytes of identical files, and the files still
+  rem live (once) in backups\media.
+  copy "%~dp0backups\*.json" "%~dp0backup-history\%STAMP%\" >nul 2>&1
 )
 
 rem --- open the classroom, then run the server -------------------------------

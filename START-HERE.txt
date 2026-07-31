@@ -61,6 +61,12 @@ genuinely safe.
      sync app is carrying. Only files that CHANGED are copied, so the
      first run is the slow one and the rest are quick.
 
+     IF YOU EVER RUN SHORT OF SPACE: Data & Safety has a switch,
+     "Include uploaded files in backups". Leave it ON. If your cloud
+     storage fills up, turning it off keeps every point, plan and
+     setting backed up and leaves only the big files behind - the app
+     tells you plainly that a restore will not bring those back.
+
   2. A DAILY FILE IN DOWNLOADS
      Once each school day the app also drops a dated backup into your
      Downloads folder. This happens whether or not you did step 1.

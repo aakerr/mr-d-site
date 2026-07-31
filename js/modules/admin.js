@@ -3277,6 +3277,8 @@ function renderDataSafety() {
 
         <div class="admin-auto-head">🔄 Continuous folder backup <span class="admin-faint">(one-time setup, Chrome/Edge only)</span></div>
         ${autoBackupHTML()}
+        <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
+        ${mediaToggleHTML()}
 
         <hr class="admin-hr" />
 
@@ -4105,11 +4107,19 @@ async function runBackupAndClose() {
   // --- what this is going to weigh -------------------------------------------
   let sz = { stateBytes: 0, mediaBytes: 0, mediaFiles: 0, totalBytes: 0 };
   try { sz = await backup.sizes(); } catch (e) { /* the rows below still run */ }
+  const withMedia = backup.mediaIncluded();
+  const savedBytes = withMedia ? sz.totalBytes : sz.stateBytes;
   const szEl = el('cd-size');
   if (szEl) {
-    szEl.innerHTML = sz.mediaFiles
-      ? `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your term (${humanSize(sz.stateBytes)}) plus ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'} (${humanSize(sz.mediaBytes)}).`
-      : `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your whole term. No uploaded files yet.`;
+    if (!withMedia && sz.mediaFiles) {
+      szEl.innerHTML = `📦 Backup size: <b>${humanSize(sz.stateBytes)}</b> — your term only.
+        <b class="admin-media-off">${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? ' is' : 's are'} being left out (${humanSize(sz.mediaBytes)})</b>, because
+        “Include uploaded files” is switched off in Data &amp; Safety.`;
+    } else if (sz.mediaFiles) {
+      szEl.innerHTML = `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your term (${humanSize(sz.stateBytes)}) plus ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'} (${humanSize(sz.mediaBytes)}).`;
+    } else {
+      szEl.innerHTML = `📦 Backup size: <b>${humanSize(sz.totalBytes)}</b> — your whole term. No uploaded files yet.`;
+    }
   }
 
   // --- 1. this computer ------------------------------------------------------
@@ -4124,7 +4134,9 @@ async function runBackupAndClose() {
   } else {
     try {
       const ts = await backup.writeNow();
-      const what = sz.mediaFiles ? `${humanSize(sz.totalBytes)} including ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'}` : humanSize(sz.totalBytes);
+      const what = (withMedia && sz.mediaFiles)
+        ? `${humanSize(sz.totalBytes)} including ${sz.mediaFiles} uploaded file${sz.mediaFiles === 1 ? '' : 's'}`
+        : `${humanSize(savedBytes)}${sz.mediaFiles && !withMedia ? ' (records only)' : ''}`;
       setClosedownRow('local', 'ok', ts ? `Saved ${what} to your backup folder at ${new Date(ts).toLocaleTimeString()}.` : `Saved ${what} to your backup folder.`);
     } catch (e) {
       problems += 1;
@@ -4141,12 +4153,12 @@ async function runBackupAndClose() {
     setClosedownRow('cloud', 'warn', 'No off-site copy is set up. Point this at the OneDrive or Google Drive folder on this computer and your term survives the machine itself.',
       ' <button class="admin-btn admin-btn-sm" data-action="cd-connect-cloud">Choose a folder</button>');
   } else {
-    setClosedownRow('cloud', 'busy', sz.mediaBytes > 20 * 1024 * 1024
-      ? `Copying ${humanSize(sz.totalBytes)} — the first run with files this size can take a minute.`
-      : `Copying ${humanSize(sz.totalBytes)}…`);
+    setClosedownRow('cloud', 'busy', (withMedia && sz.mediaBytes > 20 * 1024 * 1024)
+      ? `Copying ${humanSize(savedBytes)} — the first run with files this size can take a minute.`
+      : `Copying ${humanSize(savedBytes)}…`);
     const ok = await backup.writeCloudNow();
     if (ok) {
-      setClosedownRow('cloud', 'ok', `Copied ${humanSize(sz.totalBytes)} to your synced folder at ${new Date(backup.cloudStatus().lastSave).toLocaleTimeString()}. Your sync app uploads it from here.`);
+      setClosedownRow('cloud', 'ok', `Copied ${humanSize(savedBytes)}${sz.mediaFiles && !withMedia ? ' (records only)' : ''} to your synced folder at ${new Date(backup.cloudStatus().lastSave).toLocaleTimeString()}. Your sync app uploads it from here.`);
     } else {
       problems += 1;
       setClosedownRow('cloud', 'fail', backup.cloudStatus().lastError || 'The off-site copy did not save.');
@@ -4215,6 +4227,24 @@ function backupStatusLine(bs) {
   return `<span class="admin-auto-dot ok"></span> Auto-saving to folder — last saved ${esc(relTime(bs.lastSaveTs))}${err}`;
 }
 
+// The size and the switch that governs it, deliberately side by side: the
+// moment a teacher wonders "why is this so big?" is the moment the answer and
+// the remedy should both be under his thumb.
+function mediaToggleHTML() {
+  const on = ctxRef.store.getSettings().backupMedia !== false;
+  return `
+    <div class="admin-toggle-row admin-media-toggle">
+      <button class="admin-toggle${on ? ' on' : ''}" data-action="backup-media-toggle"
+        role="switch" aria-checked="${on}"><span class="admin-toggle-knob"></span></button>
+      <span class="admin-mini" style="margin:0">
+        <b>Include uploaded files in backups</b> — your lesson PDFs, slide images and songs.
+        ${on
+          ? 'They are saved alongside your term, so a restore brings back everything.'
+          : '<b class="admin-media-off">Currently off:</b> your term is still fully backed up, but a restore will NOT bring your uploaded files back. Turn this on unless you are short of space.'}
+      </span>
+    </div>`;
+}
+
 // The weight of a backup, live in the card. Async because the uploaded files
 // have to be tallied out of IndexedDB — the line paints "Measuring…" first
 // rather than holding the whole tab up for it.
@@ -4237,7 +4267,7 @@ function autoBackupHTML() {
   if (bs.connected) {
     return `
       <div class="admin-auto-status" id="admin-backup-status">${backupStatusLine(bs)}</div>
-      <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
+
       <div class="admin-backup-row">
         <button class="admin-btn" data-action="backup-save-now">Save now</button>
         <button class="admin-btn" data-action="backup-restore-folder">Restore from folder…</button>
@@ -5971,6 +6001,13 @@ function onClick(e) {
     case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
+    case 'backup-media-toggle': {
+      const cur = store.getSettings().backupMedia !== false;
+      store.updateSettings({ backupMedia: !cur });
+      renderBody({ force: true });
+      toast(!cur ? 'Uploaded files will be included in backups.' : 'Uploaded files left out of backups — records only.');
+      break;
+    }
     case 'backup-download-now': saveDownloadNow(); break;
 
     // settings
@@ -6975,6 +7012,8 @@ function injectStyles() {
     white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease;}
   .admin-closedown:hover{background:#f59e0b;color:#0b0f19;}
   .admin-modal-cd{width:min(620px,94vw);}
+  .admin-media-toggle{margin-top:10px;align-items:flex-start;}
+  .admin-media-off{color:#fbbf24;}
   .admin-backup-size{color:var(--color-text-soft,#9ca3af);}
   .admin-backup-size b{color:var(--color-text,#e5e7eb);}
   .admin-cd-size{padding:.7rem .9rem;margin-bottom:.8rem;border-radius:.7rem;
