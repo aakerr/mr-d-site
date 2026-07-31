@@ -111,6 +111,31 @@ sub-folder".
 
 
 ========================================================================
+  SHOWING STANDINGS IN GOOGLE CLASSROOM  (optional)
+========================================================================
+
+Google Classroom cannot display a live scoreboard inside a post - it
+holds text, files and LINKS, and nothing else. So the app does the next
+best thing: it publishes a page, and you pin the link.
+
+Set it up in the app > key icon > Data & Safety > "Class standings
+page". You need a free GitHub access token (the panel walks you
+through it, about five minutes, once).
+
+After that:
+  - Copy each class's link from that panel and post it once in that
+    class's Classroom page. Pin it to the top.
+  - From then on it updates itself. Award points, and the page catches
+    up a minute later. It also publishes on Backup & Close.
+
+Each class sees their own house big at the top - crest, motto, total,
+and where they sit - with all four houses underneath.
+
+WHAT LEAVES YOUR COMPUTER: house names and their points. Nothing else.
+This app has never known a single student's name, so there is nothing
+personal to publish.
+
+========================================================================
   IF IT WILL NOT START
 ========================================================================
 

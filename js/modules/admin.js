@@ -9,6 +9,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
+import { publishStandings, publishIfDue, publishStatus, classLink, getToken, setToken } from '../core/publish.js';
 import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 import { buildSampleState } from '../core/sampledata.js';  // 🛡️ Data & Safety → "Load sample data"
@@ -3280,6 +3281,8 @@ function renderDataSafety() {
         <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
         ${mediaToggleHTML()}
 
+        ${publishCardHTML()}
+
         <div class="admin-auto-head" style="margin-top:18px">☁️ Off-site copy <span class="admin-faint">(a second folder, in OneDrive / Google Drive / iCloud)</span></div>
         ${offsiteBackupHTML()}
 
@@ -4098,6 +4101,7 @@ async function runBackupAndClose() {
         ${closedownRowHTML('local', 'This computer', 'Saving your term and your uploaded files…')}
         ${closedownRowHTML('cloud', 'Off-site copy', 'Checking…')}
         ${closedownRowHTML('download', 'Downloads folder', 'Saving a dated copy…')}
+        ${publishStatus().configured ? closedownRowHTML('publish', 'Class standings page', 'Publishing today\'s points…') : ''}
       </div>
       <div class="admin-modal-foot admin-cd-foot">
         <div class="admin-cd-summary" id="cd-summary">Working…</div>
@@ -4175,6 +4179,13 @@ async function runBackupAndClose() {
   } catch (e) {
     problems += 1;
     setClosedownRow('download', 'fail', 'Could not save a copy to Downloads.');
+  }
+
+  // --- 4. the class page -----------------------------------------------------
+  if (publishStatus().configured) {
+    const r = await publishIfDue();
+    if (r && r.ok) setClosedownRow('publish', 'ok', 'Today\'s points are live on the class standings page.');
+    else { problems += 1; setClosedownRow('publish', 'warn', (r && r.reason) || 'Could not publish — the page still shows the last figures.'); }
   }
 
   // --- verdict ---------------------------------------------------------------
@@ -4266,6 +4277,70 @@ async function refreshBackupSize() {
 // survives the browser, this survives the computer. Deliberately offered in
 // BOTH places a teacher meets backups (here and the first-run walkthrough) —
 // having it in only one was the gap the owner spotted.
+// ---- the class-facing standings page --------------------------------------
+// One link per class period, pinned in that class's Google Classroom page,
+// pointing at a public page that reads what this publishes. Classroom cannot
+// read a feed and cannot see localhost, but it holds a link perfectly well.
+function publishCardHTML() {
+  const st = publishStatus();
+  const store = ctxRef.store;
+  const houses = Object.values(store.HOUSES);
+
+  const links = st.configured ? `
+    <div class="admin-mini" style="margin-top:10px"><b>Pin one of these in each class's Google Classroom page.</b> Post it once — the page is current from then on.</div>
+    <div class="admin-link-list">
+      ${houses.map((h) => `
+        <div class="admin-link-row">
+          <span class="admin-link-house" style="color:${esc(h.accent)}">${esc(h.name)}</span>
+          <code class="admin-link-url">${esc(classLink(h.core))}</code>
+          <button class="admin-btn admin-btn-sm" data-action="publish-copy" data-core="${h.core}">Copy</button>
+        </div>`).join('')}
+    </div>` : '';
+
+  const statusLine = st.lastError
+    ? `<div class="admin-auto-status"><span class="admin-auto-dot warn"></span> ${esc(st.lastError)}</div>`
+    : st.lastPublish
+      ? `<div class="admin-auto-status"><span class="admin-auto-dot ok"></span> Published ${esc(relTime(st.lastPublish))}</div>`
+      : '';
+
+  return `
+    <div class="admin-auto-head" style="margin-top:18px">🌐 Class standings page <span class="admin-faint">(optional — a live link for Google Classroom)</span></div>
+    <div class="admin-mini">Publishes a small file holding <b>house names and their points, nothing else</b> — this app has no student roster, so nothing personal ever leaves this computer. Each class then gets a permanent link showing their standings, updating whenever you publish.</div>
+    ${statusLine}
+    <div class="admin-form-grid" style="margin-top:10px">
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-pub-owner">GitHub username</label>
+        <input id="admin-pub-owner" class="admin-input admin-pub-field" data-key="owner" type="text" value="${esc(st.owner)}" placeholder="aakerr" spellcheck="false" autocomplete="off" />
+      </div>
+      <div class="admin-field">
+        <label class="admin-flabel" for="admin-pub-repo">Repository</label>
+        <input id="admin-pub-repo" class="admin-input admin-pub-field" data-key="repo" type="text" value="${esc(st.repo)}" placeholder="mr-d-site" spellcheck="false" autocomplete="off" />
+      </div>
+      <div class="admin-field" style="grid-column:1/-1">
+        <label class="admin-flabel" for="admin-pub-token">Access token ${st.hasToken ? '<span class="admin-faint">(saved — type a new one to replace it)</span>' : ''}</label>
+        <input id="admin-pub-token" class="admin-input" type="password" value="" placeholder="${st.hasToken ? '••••••••••••  saved' : 'github_pat_…'}" spellcheck="false" autocomplete="off" />
+        <div class="admin-step-hint">Kept on this computer only, and deliberately <b>left out of every backup</b> — a token inside a synced backup file would travel further than it should. A restored computer needs it typed once more.</div>
+      </div>
+    </div>
+    <div class="admin-btn-row">
+      <button class="admin-btn admin-btn-primary" data-action="publish-save">Save settings</button>
+      <button class="admin-btn" data-action="publish-now"${st.configured ? '' : ' disabled title="Fill in the details above first"'}>🌐 Publish now</button>
+      ${st.hasToken ? '<button class="admin-btn admin-btn-danger" data-action="publish-forget">Forget the token</button>' : ''}
+    </div>
+    ${links}
+    <details class="admin-details" style="margin-top:10px">
+      <summary>❓ How do I get an access token?</summary>
+      <ol class="admin-steps">
+        <li>Sign in to GitHub, then open <b>Settings → Developer settings → Personal access tokens → Fine-grained tokens</b>.</li>
+        <li><b>Generate new token.</b> Give it a name like “Mr D standings”.</li>
+        <li>Under <b>Repository access</b>, choose <b>Only select repositories</b> and pick the one holding this app.</li>
+        <li>Under <b>Permissions → Repository permissions</b>, set <b>Contents</b> to <b>Read and write</b>. Nothing else is needed.</li>
+        <li>Generate it, copy the token, and paste it above. It is shown once — if you lose it, make another.</li>
+      </ol>
+      <p class="admin-mini">Choose the longest expiry you are comfortable with. When it expires, publishing stops with a plain message and the standings page simply keeps showing the last figures until you paste a new one.</p>
+    </details>`;
+}
+
 function offsiteBackupHTML() {
   const cs = backup.cloudStatus();
   if (!cs.supported) {
@@ -6027,6 +6102,37 @@ function onClick(e) {
     case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
+    case 'publish-save': {
+      const owner = (el('admin-pub-owner') || {}).value || '';
+      const repo = (el('admin-pub-repo') || {}).value || '';
+      const tokenField = el('admin-pub-token');
+      const typed = tokenField ? tokenField.value.trim() : '';
+      const cur = store.getSettings().publish || {};
+      store.updateSettings({ publish: { ...cur, owner: owner.trim(), repo: repo.trim() } });
+      if (typed) setToken(typed);          // blank means "keep the one already saved"
+      renderBody({ force: true });
+      toast('Standings page settings saved.');
+      break;
+    }
+    case 'publish-now': (async () => {
+      toast('Publishing…');
+      const r = await publishStandings();
+      renderBody({ force: true });
+      toast(r.ok ? 'Standings published.' : (r.reason || 'Could not publish.'));
+    })(); break;
+    case 'publish-forget': {
+      openConfirm('Forget the access token?', 'Publishing stops until you paste a new one. The standings page keeps showing the figures already published.',
+        () => { setToken(''); renderBody({ force: true }); toast('Token forgotten.'); }, { yesLabel: 'Forget it' });
+      break;
+    }
+    case 'publish-copy': {
+      const link = classLink(Number(btn.dataset.core));
+      navigator.clipboard.writeText(link).then(
+        () => toast('Link copied — paste it into that class.'),
+        () => toast(link),          // clipboard refused: show it so it can be copied by hand
+      );
+      break;
+    }
     case 'offsite-connect': (async () => { if (await backup.connectCloudFolder()) { renderBody({ force: true }); toast('Off-site copy connected.'); } else { renderBody({ force: true }); } })(); break;
     case 'offsite-save-now': (async () => { const ok = await backup.writeCloudNow(); renderBody({ force: true }); toast(ok ? 'Copied to your off-site folder.' : (backup.cloudStatus().lastError || 'Off-site copy failed.')); })(); break;
     case 'offsite-disconnect': (async () => { await backup.disconnectCloudFolder(); renderBody({ force: true }); toast('Off-site copy disconnected.'); })(); break;
@@ -7041,6 +7147,12 @@ function injectStyles() {
     white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease;}
   .admin-closedown:hover{background:#f59e0b;color:#0b0f19;}
   .admin-modal-cd{width:min(620px,94vw);}
+  .admin-link-list{display:flex;flex-direction:column;gap:.4rem;margin-top:.6rem;}
+  .admin-link-row{display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;
+    border:1px solid var(--color-line,#374151);border-radius:.6rem;background:var(--color-card2,#1f2937);}
+  .admin-link-house{flex:0 0 6.5rem;font-weight:800;font-size:.85rem;}
+  .admin-link-url{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;font-size:.78rem;color:var(--color-text-soft,#9ca3af);}
   .admin-media-toggle{margin-top:10px;align-items:flex-start;}
   .admin-media-off{color:#fbbf24;}
   .admin-backup-size{color:var(--color-text-soft,#9ca3af);}

@@ -8,6 +8,7 @@ import './core/backup.js'; // self-initializing auto-backup (File System Access)
 import { initAmbient } from './core/ambient.js';
 import { ensureAssetsWarm } from './core/preload.js';
 import { checkForLostTerm } from './core/rescue.js';
+import { initAutoPublish } from './core/publish.js';
 
 import dashboard from './modules/dashboard.js';
 import houses from './modules/houses.js';
@@ -56,6 +57,9 @@ const firstLoadGate = ensureAssetsWarm();
 // An empty board with a backup sitting in the folder is the one failure that
 // would cost a term. Offer it back rather than waiting to be asked.
 checkForLostTerm();
+
+// If the class standings page is set up, keep it current without being asked.
+initAutoPublish();
 
 // Warm the big painted backgrounds while the dashboard idles. On GitHub Pages
 // a screen's art otherwise starts downloading the moment the screen opens —

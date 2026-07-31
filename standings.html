@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>House Standings — Mr. D's Classroom</title>
+<!--
+  The class-facing standings page.
+
+  Deliberately standalone: no modules, no build, no dependencies. It reads
+  standings.json (published from the classroom app) and renders it. That means
+  it works on GitHub Pages, on a phone, on a school Chromebook, and it keeps
+  working even if the rest of the app changes.
+
+  One link per class period, pinned in that class's Google Classroom page:
+      standings.html?core=1   ->  Camelot
+      standings.html?core=2   ->  Atlantis   ... and so on.
+  With no ?core it shows the whole leaderboard.
+
+  Nothing personal is ever on this page — the app has no student roster. Just
+  house names and their points.
+-->
+<link rel="icon" href="images/class-shield.png" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: clamp(1rem, 4vw, 3rem);
+    font-family: Georgia, 'Times New Roman', serif;
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(245,158,11,.14), transparent 55%),
+      linear-gradient(180deg, #0b0f19, #0d1120 60%, #0b0f19);
+    color: #e5e7eb;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .wrap { width: 100%; max-width: 46rem; }
+  .masthead { text-align: center; margin-bottom: clamp(1rem, 3vh, 2rem); }
+  .masthead img { width: clamp(64px, 14vw, 104px); height: auto; }
+  .masthead h1 {
+    margin: .4rem 0 0; font-size: clamp(1.1rem, 3vw, 1.5rem); font-weight: 400;
+    letter-spacing: .16em; text-transform: uppercase; color: #9ca3af;
+  }
+
+  /* the one house this link belongs to */
+  .hero {
+    border: 2px solid var(--accent, #f59e0b); border-radius: 1.2rem;
+    background: rgba(17,24,39,.72); padding: clamp(1.2rem, 4vw, 2.2rem);
+    text-align: center; margin-bottom: clamp(1rem, 3vh, 1.8rem);
+    box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }
+  .hero-crest { width: clamp(72px, 18vw, 128px); height: auto; }
+  .hero-name {
+    font-size: clamp(2rem, 8vw, 3.4rem); font-weight: 700; line-height: 1.05;
+    color: var(--accent, #f59e0b); margin: .3rem 0 .1rem;
+  }
+  .hero-motto { font-style: italic; color: #9ca3af; font-size: clamp(.95rem, 2.4vw, 1.15rem); }
+  .hero-total {
+    font-size: clamp(3.2rem, 14vw, 6rem); font-weight: 700; line-height: 1;
+    margin: .6rem 0 .1rem; color: #f9fafb; font-variant-numeric: tabular-nums;
+  }
+  .hero-total span { font-size: .3em; color: #9ca3af; letter-spacing: .12em; }
+  .hero-rank { color: #fde68a; font-size: clamp(1rem, 2.6vw, 1.25rem); }
+
+  .board-title {
+    text-align: center; letter-spacing: .18em; text-transform: uppercase;
+    color: #6b7280; font-size: .82rem; margin: 0 0 .7rem;
+  }
+  .row {
+    display: flex; align-items: center; gap: .9rem;
+    padding: .7rem .9rem; border-radius: .8rem; margin-bottom: .5rem;
+    background: rgba(17,24,39,.6); border: 1px solid #1f2937;
+  }
+  .row.me { border-color: var(--rc, #f59e0b); background: rgba(31,41,55,.85); }
+  .row-rank { width: 1.8rem; text-align: center; color: #6b7280; font-weight: 700; }
+  .row-crest { width: 2rem; height: 2rem; object-fit: contain; flex: 0 0 auto; }
+  .row-name { flex: 1 1 auto; font-weight: 700; color: var(--rc, #e5e7eb); }
+  .row-total { font-weight: 700; font-variant-numeric: tabular-nums; color: #f3f4f6; }
+  .bar { height: 6px; border-radius: 999px; background: #1f2937; margin-top: .45rem; overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: 999px; background: var(--rc, #f59e0b); }
+
+  footer { margin-top: 1.4rem; text-align: center; color: #4b5563; font-size: .82rem; line-height: 1.6; }
+  .state { text-align: center; padding: 3rem 1rem; color: #9ca3af; font-style: italic; }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero, .row { animation: rise .5s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <img src="images/class-shield.png" alt="" onerror="this.style.display='none'" />
+    <h1>House Standings</h1>
+  </div>
+  <div id="out"><div class="state">Loading the standings…</div></div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(function () {
+  var out = document.getElementById('out');
+  var foot = document.getElementById('foot');
+  var core = Number(new URLSearchParams(location.search).get('core')) || null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function ordinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function render(data) {
+    var houses = (data.houses || []).slice();
+    if (!houses.length) { out.innerHTML = '<div class="state">No standings published yet.</div>'; return; }
+    var max = Math.max(1, Math.max.apply(null, houses.map(function (h) { return Math.max(0, h.total); })));
+    var mine = core ? houses.filter(function (h) { return h.core === core; })[0] : null;
+
+    var html = '';
+    if (mine) {
+      html += '<div class="hero" style="--accent:' + esc(mine.accent) + '">'
+        + (mine.crest ? '<img class="hero-crest" src="' + esc(mine.crest) + '" alt="" onerror="this.style.display=\'none\'" />' : '')
+        + '<div class="hero-name">' + esc(mine.name) + '</div>'
+        + (mine.motto ? '<div class="hero-motto">&ldquo;' + esc(mine.motto) + '&rdquo;</div>' : '')
+        + '<div class="hero-total">' + mine.total + '<span> PTS</span></div>'
+        + '<div class="hero-rank">' + ordinal(mine.rank) + ' of ' + houses.length + '</div>'
+        + '</div>';
+    }
+
+    html += '<div class="board-title">' + (mine ? 'All Houses' : 'Current Term Standings') + '</div>';
+    houses.forEach(function (h) {
+      var pct = Math.max(3, Math.round((Math.max(0, h.total) / max) * 100));
+      html += '<div class="row' + (mine && h.core === mine.core ? ' me' : '') + '" style="--rc:' + esc(h.accent) + '">'
+        + '<div class="row-rank">#' + h.rank + '</div>'
+        + (h.crest ? '<img class="row-crest" src="' + esc(h.crest) + '" alt="" onerror="this.style.display=\'none\'" />' : '')
+        + '<div style="flex:1 1 auto;min-width:0">'
+        + '<div style="display:flex;gap:.6rem;align-items:baseline">'
+        + '<div class="row-name">' + esc(h.name) + '</div>'
+        + '<div class="row-total">' + h.total + '</div></div>'
+        + '<div class="bar"><span style="width:' + pct + '%"></span></div>'
+        + '</div></div>';
+    });
+    out.innerHTML = html;
+
+    var when = data.updatedAt ? new Date(data.updatedAt) : null;
+    foot.innerHTML = (data.term ? esc(data.term) + '<br />' : '')
+      + 'Updated ' + (when ? esc(when.toLocaleString()) : 'recently')
+      + '<br />Mr. D&rsquo;s Classroom';
+  }
+
+  // Cache-bust: a pinned Classroom link gets opened over and over, and a
+  // stale cached copy would quietly show last week's points.
+  fetch('standings.json?t=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { if (!r.ok) throw new Error('no file'); return r.json(); })
+    .then(render)
+    .catch(function () {
+      out.innerHTML = '<div class="state">The standings have not been published yet.<br />'
+        + 'Ask Mr. D to publish them from the classroom app.</div>';
+    });
+})();
+</script>
+</body>
+</html>

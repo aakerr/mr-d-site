@@ -13,3 +13,8 @@ docs-in/
 
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
+
+# Published by the app at runtime (Data & Safety > Class standings page).
+# Committed by the GitHub API rather than by hand, so a local copy from
+# testing should never ride along in a commit.
+/standings.json

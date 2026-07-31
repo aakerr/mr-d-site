@@ -413,6 +413,10 @@ function defaultState() {
       // The two wheels: which one the tile opens, both wheels' point values,
       // and the challenge task pool. See defaultWheelSettings().
       wheels: defaultWheelSettings(),
+      // Where the class-facing standings page is published (js/core/publish.js).
+      // The access token is NOT stored here on purpose: settings get serialised
+      // into every backup, and those backups get synced to OneDrive/iCloud.
+      publish: { owner: '', repo: '', branch: 'main', enabled: true },
       // Include uploaded files (lesson PDFs, slides, songs) in folder backups.
       // ON by default; see mediaEnabled() in js/core/backup.js for why a
       // teacher might turn it off.
@@ -1114,6 +1118,7 @@ function load() {
       merged.settings.lock = { ...def.settings.lock, ...(merged.settings.lock || {}) };
       if (!merged.inventory || typeof merged.inventory !== 'object') merged.inventory = {};
       merged.settings.combat = { ...defaultCombat(), ...(merged.settings.combat || {}) };
+      merged.settings.publish = { ...def.settings.publish, ...(merged.settings.publish || {}) };
       {
         // Deep-merge each wheel's numbers so a value added later arrives on an
         // existing save; the task pool is wholly teacher-owned once seeded.
