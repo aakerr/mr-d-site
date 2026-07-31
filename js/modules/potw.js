@@ -2449,7 +2449,7 @@ export default {
   id: 'potw',
   title: 'Place of the Week',
   icon: '🌍',
-  order: 20,
+  order: 14,
   showTile: true,
   tileClass: '',
 

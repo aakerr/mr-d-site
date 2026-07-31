@@ -19,7 +19,7 @@
 import { CONFIG } from '../config.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
-const MANIFEST_VERSION = 'v7';   // v7: the procession film recut again — re-pull it
+const MANIFEST_VERSION = 'v8';   // v8: two intros recut, three more added (rap/country/daftpunk)
 
 // Grouped so the caption can say what is loading in classroom words.
 // Order: small and immediately-visible first, the two films last.
@@ -61,7 +61,8 @@ const MANIFEST = [
     'music/travel-zoom.mp3',
   ] },
   { label: 'the intro films (the big ones)', files: [
-    'videos/classic.mp4', 'videos/rock.mp4', 'videos/trivia-tuesday-short.mp4',
+    'videos/classic.mp4', 'videos/rock.mp4', 'videos/rap.mp4',
+    'videos/country.mp4', 'videos/daftpunk.mp4', 'videos/trivia-tuesday-short.mp4',
   ] },
 ];
 

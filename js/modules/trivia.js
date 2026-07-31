@@ -522,7 +522,7 @@ export default {
   id: 'trivia',
   title: 'Trivia Tuesday',
   icon: '❓',
-  order: 46,
+  order: 16,
   showTile: true,
 
   mount(el, ctx) {

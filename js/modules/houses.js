@@ -1131,7 +1131,7 @@ export default {
   id: 'houses',
   title: 'Records',
   icon: '📜',
-  order: 15,
+  order: 50,
   showTile: true,
 
   mount(el, ctx) {

@@ -31,6 +31,11 @@ export const CONFIG = {
     // so renaming the files and labels costs nothing.
     { id: 'intro-01', label: 'Classic', url: 'videos/classic.mp4' },
     { id: 'intro-02', label: 'Rock', url: 'videos/rock.mp4' },
+    // Added 2026-07-30. Semantic ids, unlike the two legacy intro-0N keys:
+    // saved profiles point at these strings, so they never change once shipped.
+    { id: 'rap', label: 'Rap', url: 'videos/rap.mp4' },
+    { id: 'country', label: 'Country', url: 'videos/country.mp4' },
+    { id: 'daftpunk', label: 'Daft Punk', url: 'videos/daftpunk.mp4' },
   ],
   POTW_DEFAULT_VIDEO_ID: 'intro-01',
 
