@@ -205,6 +205,46 @@ export function publishStatus() {
   };
 }
 
+// ---- the paste-it-yourself version -----------------------------------------
+// The published page depends on the school letting github.io through, and a
+// lot of districts block it wholesale — students use GitHub Pages to host
+// filter-bypass proxies, so the whole domain gets categorised as personal web
+// hosting. This is the version that cannot be blocked, because the text ends
+// up INSIDE the Classroom post: nothing external to fetch, nothing to filter.
+// The trade is that it is frozen at the moment he pastes it.
+//
+// `core` picks whose post this is (their house leads, and is marked in the
+// table); omit it for a plain leaderboard.
+export function standingsText(core) {
+  const totals = store.getTotals('term');
+  const term = store.getTermInfo ? store.getTermInfo() : null;
+  const mine = core ? totals.find((t) => t.house.core === core) : null;
+  const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+
+  const lines = [];
+  if (mine) {
+    const rank = totals.findIndex((t) => t.house.core === mine.house.core) + 1;
+    const ordinal = ['', '1st', '2nd', '3rd', '4th'][rank] || `${rank}th`;
+    lines.push(`🏆 ${mine.house.name.toUpperCase()} — ${mine.total} points`);
+    lines.push(`Currently ${ordinal} of ${totals.length}.`);
+    lines.push('');
+    lines.push('All houses:');
+  } else {
+    lines.push('🏆 HOUSE STANDINGS');
+    lines.push('');
+  }
+
+  totals.forEach((t, i) => {
+    const marker = mine && t.house.core === mine.house.core ? '  ← us' : '';
+    lines.push(`${medals[i] || `${i + 1}.`} ${t.house.name} — ${t.total}${marker}`);
+  });
+
+  lines.push('');
+  if (term && term.label) lines.push(term.label);
+  lines.push(`Updated ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}`);
+  return lines.join('\n');
+}
+
 // The link a teacher pins in each Classroom page.
 export function classLink(core) {
   const { owner, repo } = cfg();

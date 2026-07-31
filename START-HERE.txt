@@ -135,6 +135,23 @@ WHAT LEAVES YOUR COMPUTER: house names and their points. Nothing else.
 This app has never known a single student's name, so there is nothing
 personal to publish.
 
+IF YOUR SCHOOL BLOCKS THE LINK
+------------------------------
+Some districts block github.io outright (students use it to host
+filter-bypass sites), so the page may not open for STUDENTS even if it
+opens fine for you - teacher accounts are often exempt from filters.
+Test it on a student device, signed in as a student, before you rely
+on it.
+
+If it is blocked you have two options:
+  - Ask your tech person to allow just this one address. It is a
+    single curricular page, which is usually an easy yes.
+  - Use "Copy standings to paste" instead - the panel just above it in
+    Data & Safety. Pick a class, click its button, and paste into a
+    Classroom post. The scoreboard ends up INSIDE the post, so no
+    filter can touch it. It is a snapshot rather than a live page, so
+    repost it whenever you want it refreshed.
+
 ========================================================================
   IF IT WILL NOT START
 ========================================================================

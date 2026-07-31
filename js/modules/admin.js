@@ -9,7 +9,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
-import { publishStandings, publishIfDue, publishStatus, classLink, getToken, setToken } from '../core/publish.js';
+import { publishStandings, publishIfDue, publishStatus, classLink, standingsText, getToken, setToken } from '../core/publish.js';
 import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
 import { buildSampleState } from '../core/sampledata.js';  // 🛡️ Data & Safety → "Load sample data"
@@ -3281,6 +3281,7 @@ function renderDataSafety() {
         <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
         ${mediaToggleHTML()}
 
+        ${copyStandingsHTML()}
         ${publishCardHTML()}
 
         <div class="admin-auto-head" style="margin-top:18px">☁️ Off-site copy <span class="admin-faint">(a second folder, in OneDrive / Google Drive / iCloud)</span></div>
@@ -4277,6 +4278,25 @@ async function refreshBackupSize() {
 // survives the browser, this survives the computer. Deliberately offered in
 // BOTH places a teacher meets backups (here and the first-run walkthrough) —
 // having it in only one was the gap the owner spotted.
+// ---- paste-into-Classroom standings ---------------------------------------
+// No setup, no account, no network, and no filter can touch it — the text ends
+// up inside the Classroom post itself. This is the floor under the published
+// page: if the school blocks github.io (many districts do, because students
+// host proxies there), this still works on day one.
+function copyStandingsHTML() {
+  const houses = Object.values(ctxRef.store.HOUSES);
+  return `
+    <div class="admin-auto-head" style="margin-top:18px">📋 Copy standings to paste <span class="admin-faint">(no setup — works anywhere)</span></div>
+    <div class="admin-mini">Copies a tidy scoreboard you can paste straight into a Google Classroom post, an email or a slide. Nothing to connect and nothing that can be blocked, because the text lands inside the post itself. It is a snapshot — it shows the points as they are right now.</div>
+    <div class="admin-copy-row">
+      ${houses.map((h) => `
+        <button class="admin-btn admin-copy-chip" data-action="copy-standings" data-core="${h.core}"
+          style="--cc:${esc(h.accent)}">${esc(h.name)}</button>`).join('')}
+      <button class="admin-btn admin-copy-chip" data-action="copy-standings">All four</button>
+    </div>
+    <pre class="admin-copy-preview" id="admin-copy-preview">${esc(standingsText(1))}</pre>`;
+}
+
 // ---- the class-facing standings page --------------------------------------
 // One link per class period, pinned in that class's Google Classroom page,
 // pointing at a public page that reads what this publishes. Classroom cannot
@@ -6102,6 +6122,19 @@ function onClick(e) {
     case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
+    case 'copy-standings': {
+      const core = btn.dataset.core ? Number(btn.dataset.core) : null;
+      const text = standingsText(core);
+      const preview = el('admin-copy-preview');
+      if (preview) preview.textContent = text;      // show exactly what was copied
+      navigator.clipboard.writeText(text).then(
+        () => toast(core ? 'Copied — paste it into that class.' : 'Copied — paste it anywhere.'),
+        // Clipboard refused (it needs a secure context and a real gesture):
+        // the preview above already holds the text, so say where to find it.
+        () => toast('Could not reach the clipboard — select the text below and copy it by hand.'),
+      );
+      break;
+    }
     case 'publish-save': {
       const owner = (el('admin-pub-owner') || {}).value || '';
       const repo = (el('admin-pub-repo') || {}).value || '';
@@ -7147,6 +7180,14 @@ function injectStyles() {
     white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease;}
   .admin-closedown:hover{background:#f59e0b;color:#0b0f19;}
   .admin-modal-cd{width:min(620px,94vw);}
+  .admin-copy-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:12px;}
+  .admin-copy-chip{border-color:var(--cc,var(--color-line,#374151));color:var(--cc,var(--color-text,#e5e7eb));font-weight:700;}
+  .admin-copy-chip:hover{background:var(--cc,#f59e0b);color:#0b0f19;}
+  .admin-copy-preview{margin:12px 0 0;padding:.8rem 1rem;border-radius:.7rem;
+    background:var(--color-card2,#1f2937);border:1px solid var(--color-line,#374151);
+    color:var(--color-text,#e5e7eb);font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:.82rem;line-height:1.55;white-space:pre-wrap;overflow-x:auto;
+    user-select:text;max-height:16rem;}
   .admin-link-list{display:flex;flex-direction:column;gap:.4rem;margin-top:.6rem;}
   .admin-link-row{display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;
     border:1px solid var(--color-line,#374151);border-radius:.6rem;background:var(--color-card2,#1f2937);}
