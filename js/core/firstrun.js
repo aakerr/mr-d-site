@@ -115,6 +115,8 @@ function stepWelcome() {
 function stepBackup() {
   let s;
   try { s = backup.status(); } catch (e) { s = { supported: false, connected: false }; }
+  let cs;
+  try { cs = backup.cloudStatus(); } catch (e) { cs = { supported: false, connected: false }; }
   const btnLabel = s.needsPermission ? 'Reconnect the folder' : 'Choose a backup folder';
   return {
     eyebrow: 'Step 2 of 6 — the important one',
@@ -127,9 +129,17 @@ function stepBackup() {
         <p class="fr-actions">
           <button type="button" class="fr-btn fr-btn-primary" data-fr-action="connect"${busy ? ' disabled' : ''}>${busy ? 'Waiting for you to pick a folder…' : (s.connected ? 'Change the folder' : btnLabel)}</button>
         </p>
-        <p class="fr-tip">💡 Pick a folder inside <b>Google Drive</b> or <b>OneDrive</b> if you have one — then your backups sync off the computer as well.</p>
+        <p class="fr-tip">💡 <b>Make a new folder</b> for this — "Mr D Backups" inside Documents is perfect. The browser will not hand over the top level of Documents, Desktop or iCloud Drive, so picking one of those shows a "contains system files" message. A folder you made yourself always works.</p>
+        ${cs.supported ? `
+          <p class="fr-lede" style="margin-top:1.2rem">And a second copy, off this computer</p>
+          <p>The folder above protects you from the browser. A copy in your <b>OneDrive, Google Drive, iCloud or Dropbox folder</b> protects you from the computer itself — a dead laptop, a reimaged machine, a stolen bag. Your sync app does the uploading; there is no account to sign into here.</p>
+          <p class="fr-actions">
+            <button type="button" class="fr-btn${cs.connected ? '' : ' fr-btn-primary'}" data-fr-action="connect-cloud"${busy ? ' disabled' : ''}>${busy ? 'Waiting for you to pick a folder…' : (cs.connected ? 'Change the off-site folder' : 'Choose an off-site folder')}</button>
+          </p>
+          ${cs.connected ? '<p class="fr-tip">✅ Off-site copy set up.</p>' : ''}
+        ` : ''}
       ` : ''}
-      <p class="fr-fineprint">Backups hold your points, calendar, quests, shop and settings. They do <b>not</b> hold uploaded videos or PDFs — those are too big, and you would upload them again on a new computer.</p>
+      <p class="fr-fineprint">Backups hold your points, calendar, quests, shop, settings <b>and your uploaded files</b> — lesson PDFs, slides and songs. If you ever run short of space, a switch in Admin → Data &amp; Safety can leave the big files out and keep everything else.</p>
     `,
     next: s.connected ? 'Next' : 'Next (I understand the risk)',
     nextWarn: !s.connected && s.supported,
@@ -351,6 +361,16 @@ function onClick(e) {
     Promise.resolve()
       .then(() => backup.connectFolder())
       .catch((err) => { console.warn('firstrun: connect failed', err); })
+      .then(() => { busy = false; if (isOpen()) render(); });
+    return;
+  }
+
+  if (what === 'connect-cloud') {
+    busy = true;
+    render();
+    Promise.resolve()
+      .then(() => backup.connectCloudFolder())
+      .catch((err) => { console.warn('firstrun: cloud connect failed', err); })
       .then(() => { busy = false; if (isOpen()) render(); });
     return;
   }

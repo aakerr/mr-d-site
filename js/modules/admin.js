@@ -3280,6 +3280,9 @@ function renderDataSafety() {
         <div class="admin-auto-status admin-backup-size" id="admin-backup-size">📦 Measuring…</div>
         ${mediaToggleHTML()}
 
+        <div class="admin-auto-head" style="margin-top:18px">☁️ Off-site copy <span class="admin-faint">(a second folder, in OneDrive / Google Drive / iCloud)</span></div>
+        ${offsiteBackupHTML()}
+
         <hr class="admin-hr" />
 
         <div class="admin-auto-head">Manual export / import</div>
@@ -3294,7 +3297,7 @@ function renderDataSafety() {
           <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="backup-undo">↩ Undo last restore</button>
         </div>
         <div class="admin-mini" style="margin:8px 0 0">Puts back exactly what was on this computer before the last restore or sample-data load. Available until the next one.</div>` : ''}
-        <div class="admin-mini" style="margin:10px 0 0">Media files (videos/images) live in the browser separately and are not included in any of these backups.</div>
+        <div class="admin-mini" style="margin:10px 0 0">A single backup <b>file</b> cannot carry your uploaded lesson PDFs, slides or songs — they are far too big for one .json. The backup <b>folders</b> above do keep them, so a folder is the one to restore from if you have uploaded anything.</div>
 
         <hr class="admin-hr" />
 
@@ -4259,6 +4262,29 @@ async function refreshBackupSize() {
   } catch (e) { box.textContent = ''; }
 }
 
+// The same job as the folder above, one step further out: the folder above
+// survives the browser, this survives the computer. Deliberately offered in
+// BOTH places a teacher meets backups (here and the first-run walkthrough) —
+// having it in only one was the gap the owner spotted.
+function offsiteBackupHTML() {
+  const cs = backup.cloudStatus();
+  if (!cs.supported) {
+    return '<div class="admin-auto-note admin-auto-warn">⚠️ Needs Chrome or Edge.</div>';
+  }
+  if (cs.connected) {
+    return `
+      <div class="admin-auto-status"><span class="admin-auto-dot ok"></span> Copying to your synced folder — last copied ${esc(relTime(cs.lastSave))}${cs.lastError ? ` <span class="admin-faint">(last issue: ${esc(cs.lastError)})</span>` : ''}</div>
+      <div class="admin-backup-row">
+        <button class="admin-btn" data-action="offsite-save-now">Copy now</button>
+        <button class="admin-btn" data-action="offsite-connect">Change folder…</button>
+        <button class="admin-btn admin-btn-danger" data-action="offsite-disconnect">Disconnect</button>
+      </div>`;
+  }
+  return `
+    <div class="admin-mini">Pick the folder your OneDrive, Google Drive, iCloud or Dropbox app already syncs. Your term is copied there as well, and the sync app carries it off this machine. No account to sign into, nothing to expire.${cs.lastError ? ` <b class="admin-media-off">${esc(cs.lastError)}</b>` : ''}</div>
+    <div class="admin-backup-row"><button class="admin-btn admin-btn-lg admin-btn-primary" data-action="offsite-connect">☁️ Choose an off-site folder…</button></div>`;
+}
+
 function autoBackupHTML() {
   const bs = backup.status();
   if (!bs.supported) {
@@ -4273,7 +4299,7 @@ function autoBackupHTML() {
         <button class="admin-btn" data-action="backup-restore-folder">Restore from folder…</button>
         <button class="admin-btn admin-btn-danger" data-action="backup-disconnect">Disconnect</button>
       </div>
-      <div class="admin-mini" style="margin:8px 0 0">Folder: <code>${esc(bs.folderName || 'chosen folder')}</code>. Media files (videos/images) are too large for JSON and aren't included.</div>`;
+      <div class="admin-mini" style="margin:8px 0 0">Folder: <code>${esc(bs.folderName || 'chosen folder')}</code>. Your uploaded files are saved here too, in a <code>media</code> sub-folder.</div>`;
   }
   if (bs.needsPermission) {
     return `
@@ -4281,8 +4307,8 @@ function autoBackupHTML() {
       <div class="admin-backup-row"><button class="admin-btn admin-btn-primary" data-action="backup-connect">Reconnect backup folder…</button></div>`;
   }
   return `
-    <div class="admin-mini">Pick a folder on this computer — every change is saved there automatically. Use a folder inside Documents, or a synced Google Drive / OneDrive folder for off-machine safety.</div>
-    <div class="admin-backup-row"><button class="admin-btn admin-btn-primary" data-action="backup-connect">🔄 Connect backup folder…</button></div>`;
+    <div class="admin-mini">Pick a folder on this computer — every change is saved there automatically, uploaded files included. <b>Make a new folder for it</b> (say "Mr D Backups" inside Documents): the browser will not hand over the top level of Documents, Desktop or iCloud Drive, and says only "contains system files" when you try.</div>
+    <div class="admin-backup-row"><button class="admin-btn admin-btn-lg admin-btn-primary" data-action="backup-connect">🔄 Connect backup folder…</button></div>`;
 }
 
 function updateBackupStatusLine() {
@@ -6001,6 +6027,9 @@ function onClick(e) {
     case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
+    case 'offsite-connect': (async () => { if (await backup.connectCloudFolder()) { renderBody({ force: true }); toast('Off-site copy connected.'); } else { renderBody({ force: true }); } })(); break;
+    case 'offsite-save-now': (async () => { const ok = await backup.writeCloudNow(); renderBody({ force: true }); toast(ok ? 'Copied to your off-site folder.' : (backup.cloudStatus().lastError || 'Off-site copy failed.')); })(); break;
+    case 'offsite-disconnect': (async () => { await backup.disconnectCloudFolder(); renderBody({ force: true }); toast('Off-site copy disconnected.'); })(); break;
     case 'backup-media-toggle': {
       const cur = store.getSettings().backupMedia !== false;
       store.updateSettings({ backupMedia: !cur });

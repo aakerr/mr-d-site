@@ -43,6 +43,18 @@ let initialized = false;
 let subscribed = false;
 
 // ---- helpers ---------------------------------------------------------------
+// The browser refuses to hand over the TOP LEVEL of Documents, Desktop,
+// Downloads or an iCloud Drive root — it says only "contains system files",
+// which reads like the app is broken rather than like an instruction. The
+// answer is always the same: pick a sub-folder. Say that.
+function pickerError(e) {
+  const msg = (e && e.message) || String(e || '');
+  if (/system files|not allowed|blocked/i.test(msg)) {
+    return 'That folder is protected by the browser. Make a new folder inside it — for example "Mr D Backups" inside Documents — and choose that instead.';
+  }
+  return msg || 'Could not open that folder.';
+}
+
 function supported() {
   return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 }
@@ -345,7 +357,7 @@ export const backup = {
           return true;
         }
       }
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'mrd-backup' });
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'mrd-backup', startIn: 'documents' });
       if (!(await verifyPermission(handle, true))) { lastError = 'Permission to write the folder was denied.'; return false; }
       dirHandle = handle;
       connected = true;
@@ -355,7 +367,7 @@ export const backup = {
       return true;
     } catch (e) {
       if (e && e.name === 'AbortError') return false;   // user cancelled the picker
-      lastError = (e && e.message) || String(e);
+      lastError = pickerError(e);
       console.warn('backup: connect failed', e);
       return false;
     }
@@ -478,7 +490,7 @@ export const backup = {
   async connectCloudFolder() {
     if (!supported()) { cloudError = 'unsupported'; return false; }
     try {
-      const handle = await window.showDirectoryPicker({ id: 'mrd-cloud', mode: 'readwrite' });
+      const handle = await window.showDirectoryPicker({ id: 'mrd-cloud', mode: 'readwrite', startIn: 'documents' });
       if (!(await verifyPermission(handle, true))) { cloudError = 'Permission denied.'; return false; }
       cloudHandle = handle;
       cloudConnected = true;
@@ -488,7 +500,7 @@ export const backup = {
       return true;
     } catch (e) {
       if (e && e.name === 'AbortError') return false;   // the teacher closed the picker
-      cloudError = (e && e.message) || String(e);
+      cloudError = pickerError(e);
       return false;
     }
   },

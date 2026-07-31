@@ -103,6 +103,12 @@ A single .json backup file restores everything EXCEPT uploaded files
 (PDFs, slides, songs) — those are too big for one file and live in the
 backup FOLDER instead. So the folder is the one to rely on.
 
+WHEN CHOOSING EITHER FOLDER: make a NEW folder for it, for example
+"Mr D Backups" inside Documents. The browser will not hand over the top
+level of Documents, Desktop or iCloud Drive — it says only "this folder
+contains system files", which looks like a fault but just means "pick a
+sub-folder".
+
 
 ========================================================================
   IF IT WILL NOT START
