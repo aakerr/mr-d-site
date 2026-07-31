@@ -17,12 +17,22 @@ import { media } from './media.js';
 const HANDLE_DB = 'mrd-backup';
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'folder';
+// The SECOND destination. There is no cloud service in this app and no account
+// to sign into — instead the teacher points this at the local folder his
+// OneDrive / Google Drive / Dropbox desktop app already syncs, and that client
+// does the uploading. Real off-this-machine protection, no OAuth, nothing to
+// expire, and it keeps working if the school changes providers.
+const CLOUD_KEY = 'cloudFolder';
 const DAILY_KEY = 'lastDaily';
 const LIVE_FILE = 'mrd-live-backup.json';
 const DEBOUNCE_MS = 2000;
 
 let dirHandle = null;     // FileSystemDirectoryHandle | null
 let connected = false;    // handle present AND read-write permission granted
+let cloudHandle = null;   // the synced-folder handle, or null
+let cloudConnected = false;
+let cloudLastSave = null;
+let cloudError = null;
 let lastSaveTs = 0;
 let lastDownloadTs = 0;   // last daily safety-net download (see maybeDailyDownload)
 let lastError = null;
@@ -292,6 +302,12 @@ async function boot() {
       connected = await verifyPermission(handle, false);
       if (!connected) lastError = 'Reconnect the backup folder to resume auto-saving.';
     }
+    const ch = await idbGet(CLOUD_KEY);
+    if (ch) {
+      cloudHandle = ch;
+      cloudConnected = await verifyPermission(ch, false);
+      if (!cloudConnected) cloudError = 'Reconnect the off-site folder to resume copying.';
+    }
   } catch (e) { console.warn('backup: boot failed', e); }
 }
 boot();
@@ -436,6 +452,63 @@ export const backup = {
       }
     } catch (e) { /* nothing readable */ }
     return null;
+  },
+
+  // ---- the second (off-site) copy ------------------------------------------
+  async connectCloudFolder() {
+    if (!supported()) { cloudError = 'unsupported'; return false; }
+    try {
+      const handle = await window.showDirectoryPicker({ id: 'mrd-cloud', mode: 'readwrite' });
+      if (!(await verifyPermission(handle, true))) { cloudError = 'Permission denied.'; return false; }
+      cloudHandle = handle;
+      cloudConnected = true;
+      cloudError = null;
+      await idbPut(CLOUD_KEY, handle);
+      await backup.writeCloudNow();
+      return true;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return false;   // the teacher closed the picker
+      cloudError = (e && e.message) || String(e);
+      return false;
+    }
+  },
+
+  async disconnectCloudFolder() {
+    cloudHandle = null; cloudConnected = false; cloudLastSave = null; cloudError = null;
+    await idbDel(CLOUD_KEY);
+  },
+
+  // Write the state + a dated snapshot into the synced folder. Media is NOT
+  // copied here on purpose: a term of lesson PDFs through a sync client is a
+  // lot of upload, and the local folder already holds them. This copy exists
+  // so the RECORDS survive the machine itself.
+  async writeCloudNow() {
+    if (!cloudHandle) { cloudError = 'No off-site folder chosen.'; return false; }
+    try {
+      if (!(await verifyPermission(cloudHandle, true))) {
+        cloudConnected = false;
+        cloudError = 'Permission to the off-site folder was refused.';
+        return false;
+      }
+      const text = stateText();
+      for (const name of [LIVE_FILE, `mrd-backup-${dateStr()}.json`]) {
+        const fh = await cloudHandle.getFileHandle(name, { create: true });
+        const w = await fh.createWritable();
+        await w.write(text);
+        await w.close();
+      }
+      cloudConnected = true;
+      cloudLastSave = Date.now();
+      cloudError = null;
+      return true;
+    } catch (e) {
+      cloudError = (e && e.message) || String(e);
+      return false;
+    }
+  },
+
+  cloudStatus() {
+    return { supported: supported(), connected: cloudConnected, lastSave: cloudLastSave, lastError: cloudError };
   },
 
   async restoreLatest() {

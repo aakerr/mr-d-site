@@ -17,12 +17,7 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
-echo ""
-echo "  =============================================="
-echo "    Mr. D's Classroom OS is running."
-echo ""
-echo "    Leave this window open while you teach."
-echo "    Closing it shuts the classroom down."
-echo "  =============================================="
-echo ""
-exec "$PY" -m http.server 8000
+# classos-server.py serves exactly like http.server but also answers a
+# shutdown request, which is what lets "Backup & Close" in the app actually
+# close the classroom. It prints its own banner.
+exec "$PY" classos-server.py 8000

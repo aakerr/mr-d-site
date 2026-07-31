@@ -49,6 +49,13 @@ genuinely safe.
      computer, automatically. Your uploaded lesson PDFs, slides and
      songs are saved there too.
 
+  1b. AN OFF-SITE COPY (worth two minutes)
+     Same place > "Choose a folder" next to Off-site copy > pick the
+     OneDrive or Google Drive folder that already syncs on this
+     computer. Your term is then copied there too, and your sync app
+     carries it off this machine. There is no account to sign into and
+     nothing to expire.
+
   2. A DAILY FILE IN DOWNLOADS
      Once each school day the app also drops a dated backup into your
      Downloads folder. This happens whether or not you did step 1.
@@ -62,6 +69,18 @@ genuinely safe.
      If the app ever opens to an empty board and a backup exists, it
      says so and offers to put your term back with one button. You do
      not have to remember any of this.
+
+AT THE END OF THE DAY
+---------------------
+Open the app > key icon > "Backup & Close" (top left of the tab row).
+
+It saves everything, then SHOWS you whether each copy actually saved —
+green ticks for what worked, plain warnings for anything not set up or
+not working, with the fix right there. Then "Close the classroom" shuts
+the whole thing down, server and all.
+
+You never have to use it: everything saves itself as you teach. It is
+there so you can finish the day certain, rather than hopeful.
 
 IF SOMETHING GOES WRONG
 -----------------------

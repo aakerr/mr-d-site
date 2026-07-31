@@ -52,4 +52,7 @@ echo   Leave this window open while you teach.
 echo   Closing it (or pressing Control-C) shuts the classroom down.
 echo.
 start "" "http://localhost:%PORT%"
-%PY% -m http.server %PORT%
+rem classos-server.py serves exactly like http.server but also answers a
+rem shutdown request, which is what lets "Backup and Close" in the app
+rem actually close the classroom.
+%PY% classos-server.py %PORT%

@@ -16,14 +16,20 @@ import { escapeHtml as esc } from '../core/escape.js';
 import { ymd, todayStr, makeTimerSet } from '../core/util.js';
 
 // Tab order — future tabs insert into MAIN_TABS; the settings tabs are pinned last.
+// Owner's order (2026-07-31, via Mr. D): the calendar first, then the week's
+// two set pieces, then the games, with the config tabs last as always.
 const MAIN_TABS = [
   { id: 'planner', label: '<span class="admin-seg-ico">📅</span>Planner' },
-  { id: 'quests', label: "<img src='images/icon-quest.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Quests" },
-  { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
   { id: 'potw', label: "<img src='images/icon-potw.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Place of the Week" },
   // The painted icon, not the ❓ emoji — two question marks in one tab bar
   // (this and the handbook corner) read as the same button twice.
   { id: 'trivia', label: "<img src='images/icon-trivia.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Trivia" },
+];
+// Battle Day, then the shop and the quest board, sit between the set pieces
+// and the config tabs — see TABS below for the assembled order.
+const MID_TABS = [
+  { id: 'shop', label: "<img src='images/icon-market.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Shop" },
+  { id: 'quests', label: "<img src='images/icon-quest.png' alt='' style='display:inline-block;height:1.25em;width:auto;vertical-align:-0.25em;margin-right:.3em'/>Quests" },
 ];
 // ⚔️ Battle Day sits right after the main tabs — every Battle-Day-only control
 // (prize rules, hit points, punching down, live shields/defenses) lives here.
@@ -44,7 +50,7 @@ const SETTINGS_TABS = [
   { id: 'look',  label: '<span class="admin-seg-ico">🎨</span>Look &amp; Sound' },
   { id: 'data',  label: '<span class="admin-seg-ico">🛡️</span>Data &amp; Safety' },
 ];
-const TABS = [...MAIN_TABS, BATTLE_TAB, ...SETTINGS_TABS];
+const TABS = [...MAIN_TABS, BATTLE_TAB, ...MID_TABS, ...SETTINGS_TABS];
 
 // Article ids in js/core/help.js. Kept in one place so a rename over there is a
 // one-line fix here. (These are TOPIC ids, not category ids — openHelp() takes
@@ -185,6 +191,8 @@ function renderShell() {
           <div class="admin-seg" role="tablist">
             ${TABS.map((t) => `<button class="admin-seg-btn" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('')}
           </div>
+          <button class="admin-closedown" data-action="backup-close"
+            title="Save everything, check that it saved, and shut the classroom down">🔒 Backup &amp; Close</button>
           <button class="admin-help-corner" data-action="tab" data-tab="help"
             title="Teacher's handbook" aria-label="Teacher's handbook">❓</button>
         </div>
@@ -4037,6 +4045,144 @@ function loadSampleData() {
   );
 }
 
+// ===========================================================================
+// BACKUP & CLOSE — the end-of-day ritual
+// ===========================================================================
+// One button that saves everything, SHOWS whether it actually saved, and then
+// shuts the classroom down. The showing matters as much as the saving: a
+// backup that silently failed is worse than no backup, because it buys a
+// confidence the teacher will act on. So every step reports, and anything
+// unset or broken is flagged in plain words with the fix next to it.
+//
+// The steps, in order:
+//   1. This computer      — the backup folder + every uploaded file
+//   2. Off-site copy      — the synced OneDrive/Drive folder, if chosen
+//   3. Downloads          — a dated file, the belt that always works
+//   4. Close              — stop the local server, then the window
+
+function closedownRowHTML(id, label, detail) {
+  return `
+    <div class="admin-cd-row" id="cd-${id}">
+      <span class="admin-cd-icon">⏳</span>
+      <div class="admin-cd-main">
+        <div class="admin-cd-label">${esc(label)}</div>
+        <div class="admin-cd-detail">${esc(detail)}</div>
+      </div>
+    </div>`;
+}
+
+function setClosedownRow(id, state, detail, actionHTML = '') {
+  const row = el(`cd-${id}`);
+  if (!row) return;
+  const icons = { ok: '✅', warn: '⚠️', fail: '❌', busy: '⏳' };
+  row.className = `admin-cd-row admin-cd-${state}`;
+  row.querySelector('.admin-cd-icon').textContent = icons[state] || '⏳';
+  row.querySelector('.admin-cd-detail').innerHTML = esc(detail) + actionHTML;
+}
+
+async function runBackupAndClose() {
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg"></div>
+    <div class="admin-modal admin-modal-cd" role="dialog" aria-modal="true">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">🔒 Backing up, then closing down</div>
+      </div>
+      <div class="admin-modal-body">
+        ${closedownRowHTML('local', 'This computer', 'Saving your term and your uploaded files…')}
+        ${closedownRowHTML('cloud', 'Off-site copy', 'Checking…')}
+        ${closedownRowHTML('download', 'Downloads folder', 'Saving a dated copy…')}
+      </div>
+      <div class="admin-modal-foot admin-cd-foot">
+        <div class="admin-cd-summary" id="cd-summary">Working…</div>
+        <div class="admin-cd-btns" id="cd-btns"></div>
+      </div>
+    </div>`;
+
+  let problems = 0;
+
+  // --- 1. this computer ------------------------------------------------------
+  const bs = backup.status();
+  if (!bs.supported) {
+    problems += 1;
+    setClosedownRow('local', 'warn', 'This browser cannot save to a folder. Chrome or Edge can — the Downloads copy below still protects you.');
+  } else if (!bs.connected) {
+    problems += 1;
+    setClosedownRow('local', 'warn', 'No backup folder is connected, so nothing is auto-saving on this computer.',
+      ' <button class="admin-btn admin-btn-sm" data-action="cd-connect-local">Connect one now</button>');
+  } else {
+    try {
+      const ts = await backup.writeNow();
+      setClosedownRow('local', 'ok', ts ? `Saved to your backup folder at ${new Date(ts).toLocaleTimeString()}, uploaded files included.` : 'Saved to your backup folder.');
+    } catch (e) {
+      problems += 1;
+      setClosedownRow('local', 'fail', `Could not write to the backup folder: ${(e && e.message) || e}`);
+    }
+  }
+
+  // --- 2. off-site -----------------------------------------------------------
+  const cs = backup.cloudStatus();
+  if (!cs.supported) {
+    setClosedownRow('cloud', 'warn', 'Not available in this browser.');
+  } else if (!cs.connected) {
+    problems += 1;
+    setClosedownRow('cloud', 'warn', 'No off-site copy is set up. Point this at the OneDrive or Google Drive folder on this computer and your term survives the machine itself.',
+      ' <button class="admin-btn admin-btn-sm" data-action="cd-connect-cloud">Choose a folder</button>');
+  } else {
+    const ok = await backup.writeCloudNow();
+    if (ok) {
+      setClosedownRow('cloud', 'ok', `Copied to your synced folder at ${new Date(backup.cloudStatus().lastSave).toLocaleTimeString()}. Your sync app uploads it from here.`);
+    } else {
+      problems += 1;
+      setClosedownRow('cloud', 'fail', backup.cloudStatus().lastError || 'The off-site copy did not save.');
+    }
+  }
+
+  // --- 3. downloads ----------------------------------------------------------
+  try {
+    await backup.downloadNow();
+    setClosedownRow('download', 'ok', 'A dated copy is in your Downloads folder.');
+  } catch (e) {
+    problems += 1;
+    setClosedownRow('download', 'fail', 'Could not save a copy to Downloads.');
+  }
+
+  // --- verdict ---------------------------------------------------------------
+  const summary = el('cd-summary');
+  const btns = el('cd-btns');
+  if (problems) {
+    summary.innerHTML = `<b>${problems} thing${problems === 1 ? '' : 's'} to look at above.</b> Your term is still saved wherever a ✅ appears.`;
+    summary.className = 'admin-cd-summary admin-cd-summary-warn';
+  } else {
+    summary.textContent = 'Everything saved. Your term is safe in three places.';
+    summary.className = 'admin-cd-summary admin-cd-summary-ok';
+  }
+  btns.innerHTML = `
+    <button class="admin-btn" data-action="cd-cancel">Stay open</button>
+    <button class="admin-btn admin-btn-primary admin-btn-lg" data-action="cd-close-now">Close the classroom</button>`;
+}
+
+// Stop the local server, then the window. The server only answers this on
+// localhost, and only classos-server.py implements it — on a plain
+// http.server the request simply fails and we still close the window.
+async function closeClassroom() {
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg"></div>
+    <div class="admin-modal admin-modal-cd" role="dialog" aria-modal="true">
+      <div class="admin-modal-body admin-cd-bye">
+        <div class="admin-cd-bye-title">🔒 The classroom is closed</div>
+        <div class="admin-cd-bye-note">Everything is saved. You can close this window.</div>
+      </div>
+    </div>`;
+  try {
+    await fetch('/classos/shutdown', { method: 'POST' });
+  } catch (e) { /* not the ClassOS server, or already stopped — the window still closes */ }
+  // A tab the teacher opened himself cannot be closed by script in Chrome, so
+  // the goodbye card above is the real answer and this is the bonus.
+  setTimeout(() => { try { window.close(); } catch (e) { /* blocked, as expected */ } }, 400);
+}
+
 // ----- automatic file-based backup (js/core/backup.js) -----
 function relTime(ts) {
   if (!ts) return 'not yet';
@@ -5786,6 +5932,11 @@ function onClick(e) {
     case 'backup-connect': connectBackupFolder(); break;
     case 'backup-save-now': saveBackupNow(); break;
     case 'backup-restore-folder': restoreFromFolder(); break;
+    case 'backup-close': runBackupAndClose(); break;
+    case 'cd-cancel': el('admin-modal-root').innerHTML = ''; break;
+    case 'cd-close-now': closeClassroom(); break;
+    case 'cd-connect-local': (async () => { if (await backup.connectFolder()) runBackupAndClose(); })(); break;
+    case 'cd-connect-cloud': (async () => { if (await backup.connectCloudFolder()) runBackupAndClose(); })(); break;
     case 'backup-undo': undoLastRestore(); break;
     case 'backup-disconnect': disconnectBackupFolder(); break;
     case 'backup-download-toggle': toggleDownloadBackup(); break;
@@ -6211,7 +6362,7 @@ function injectStyles() {
      44px button plus 8px of air — keeps that centring honest and stops the bar
      ever sliding under the button on a narrow screen. */
   .admin-tabrow{position:relative;display:flex;align-items:center;justify-content:center;}
-  .admin-tabrow>.admin-seg{max-width:calc(100% - 104px);}
+  .admin-tabrow>.admin-seg{max-width:calc(100% - 340px);}
   .admin-help-corner{position:absolute;right:0;top:50%;transform:translateY(-50%);
     width:44px;height:44px;display:flex;align-items:center;justify-content:center;
     border-radius:.9rem;border:1px solid var(--color-line);background:var(--color-card);
@@ -6784,6 +6935,34 @@ function injectStyles() {
   /* Always its own band — this row of buttons follows a status line whose
      class varies with backup state, so a sibling-selector rule can't reach
      every case. */
+  /* ---- Backup & Close ---- */
+  /* Mirrors the help corner on the opposite side of the tab row, so it is
+     always reachable — the headline above it folds away on scroll. */
+  .admin-closedown{position:absolute;left:0;top:50%;transform:translateY(-50%);
+    min-height:44px;padding:0 .85rem;border-radius:.75rem;border:1px solid #f59e0b;
+    background:var(--color-card,#111827);color:#fbbf24;font-weight:800;font-size:.85rem;
+    white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease;}
+  .admin-closedown:hover{background:#f59e0b;color:#0b0f19;}
+  .admin-modal-cd{width:min(620px,94vw);}
+  .admin-cd-row{display:flex;gap:.8rem;align-items:flex-start;padding:.85rem .9rem;
+    border:1px solid var(--color-line,#374151);border-radius:.75rem;margin-bottom:.6rem;
+    background:var(--color-card2,#1f2937);}
+  .admin-cd-ok{border-color:rgba(52,211,153,.5);}
+  .admin-cd-warn{border-color:rgba(251,191,36,.55);}
+  .admin-cd-fail{border-color:rgba(248,113,113,.55);}
+  .admin-cd-icon{flex:0 0 auto;font-size:1.15rem;line-height:1.4;}
+  .admin-cd-main{flex:1 1 auto;min-width:0;}
+  .admin-cd-label{font-weight:800;color:var(--color-text,#e5e7eb);}
+  .admin-cd-detail{color:var(--color-text-soft,#9ca3af);font-size:.9rem;line-height:1.4;margin-top:2px;}
+  .admin-cd-detail .admin-btn{margin-top:.5rem;}
+  .admin-cd-foot{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+  .admin-cd-summary{flex:1 1 14rem;font-size:.92rem;color:var(--color-text-soft,#9ca3af);}
+  .admin-cd-summary-ok{color:#6ee7b7;font-weight:700;}
+  .admin-cd-summary-warn{color:#fde68a;}
+  .admin-cd-btns{display:flex;gap:.6rem;flex-wrap:wrap;}
+  .admin-cd-bye{text-align:center;padding:2.5rem 1rem;}
+  .admin-cd-bye-title{font-family:'Cinzel',Georgia,serif;font-weight:800;font-size:1.8rem;color:#fbbf24;}
+  .admin-cd-bye-note{margin-top:.6rem;color:var(--color-text-soft,#9ca3af);}
   .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
   .admin-auto-head{font-weight:700;font-size:.9rem;color:var(--color-text);margin:4px 0 8px;}
   .admin-hr{border:none;border-top:1px solid var(--color-line);margin:18px 0;}
