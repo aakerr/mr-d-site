@@ -3392,6 +3392,62 @@ export const store = {
     return true;
   },
 
+  // Roll the app over to a new school year. This is the surgical counterpart to
+  // resetAll's blunt wipe. The caller archives the finishing year first; this
+  // then clears ONLY what a class produced — points, the transaction ledger,
+  // who bought/froze/attacked whom, quests in flight and finished, trivia
+  // answer records, paid POTW bounties — while KEEPING everything the teacher
+  // authored: the four houses, the shop, the quest catalog, trivia questions,
+  // POTW destinations, the lesson plans, the schedule, and every preference.
+  //
+  // If shiftSchedule is true the dated planner events travel with him — by a
+  // WHOLE number of weeks, so the calendar he built last year lands on the
+  // right weekdays this year ("Week 3 Monday" stays a Monday). Rounding to a
+  // multiple of 7 is the whole trick: a raw day-count shift would slide a
+  // Monday lesson onto a Tuesday and every week would drift a little further.
+  startNewYear({ termStart = '', termWeeks = null, shiftSchedule = false } = {}) {
+    const oldStart = state.settings.termStart;
+    let shiftDays = 0;
+    if (shiftSchedule && termStart && oldStart) {
+      const rawDays = Math.round(
+        (new Date(termStart + 'T00:00:00') - new Date(oldStart + 'T00:00:00')) / 86400000);
+      shiftDays = Math.round(rawDays / 7) * 7;   // snap to whole weeks
+    }
+
+    // --- clear the class's activity; keep the teacher's setup ---
+    state.transactions = [];   // points reset with the ledger they derive from
+    state.inventory = {};      // bought-and-unused items
+    state.frozen = {};         // Ice Axe freezes
+    state.shrouded = {};       // Shroud of Secrecy
+    state.revealed = {};       // Stone of Seeing uses
+    state.hp = {};             // Battle Day damage taken
+    state.shields = {};        // block timers
+    state.defenses = {};       // damage-reduction timers
+    state.potwBounties = {};   // paid POTW quiz bounties
+    state.quests.active = {};       // quests in flight
+    state.quests.completed = [];    // the Hall of Deeds — last year's achievements
+    // Trivia questions stay; only forget who answered which last year.
+    for (const q of state.trivia.questions) q.asked = {};
+    state.activeCore = 1;
+
+    // --- the schedule: carry it forward shifted, or leave it dated as-is ---
+    if (shiftDays !== 0) {
+      for (const ev of state.planner.events) {
+        if (ev.date) ev.date = addDays(ev.date, shiftDays);
+        if (ev.endDate) ev.endDate = addDays(ev.endDate, shiftDays);
+      }
+    }
+
+    // --- the new term's dates ---
+    if (termStart) state.settings.termStart = termStart;
+    const weeks = Number(termWeeks);
+    if (Number.isFinite(weeks) && weeks > 0) state.settings.termWeeks = Math.round(weeks);
+
+    bumpLedger();
+    emit();
+    return { shiftDays };
+  },
+
   resetAll() {
     // Three things have to happen here, and only the first one used to.
     //

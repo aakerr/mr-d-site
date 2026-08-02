@@ -434,6 +434,37 @@ export const backup = {
 
   async writeNow() { return writeNow(); },
 
+  // ---- year-end archive ----------------------------------------------------
+  // A permanent, labelled copy of a finishing school year, taken BEFORE the
+  // new-year reset clears the class's activity. Unlike the rolling backups this
+  // one is never overwritten: it lives in Archives/<label>/ with the full state
+  // JSON and — if media backup is on — every uploaded file, so a year can be
+  // reopened whole. Returns an honest result the confirmation line can read,
+  // including whether the files came along or a folder was even connected.
+  async archiveYear(label) {
+    const safe = (String(label || 'school-year')
+      .replace(/[^a-zA-Z0-9._ -]/g, '_').trim()) || 'school-year';
+    if (!connected || !dirHandle) return { ok: false, reason: 'no-folder' };
+    try {
+      if (!(await verifyPermission(dirHandle, true))) return { ok: false, reason: 'permission' };
+      const archivesDir = await dirHandle.getDirectoryHandle('Archives', { create: true });
+      const yearDir = await archivesDir.getDirectoryHandle(safe, { create: true });
+      const fh = await yearDir.getFileHandle('classroom-data.json', { create: true });
+      const w = await fh.createWritable();
+      await w.write(stateText());
+      await w.close();
+      // Copy media UNDER ITS OWN destination key so the per-destination change
+      // cache can't mistake this archive for the last live write and skip it —
+      // an archive must be complete on its own, every time.
+      let mediaResult = { files: 0, copied: 0, bytes: 0, skipped: !mediaEnabled() };
+      if (mediaEnabled()) mediaResult = await writeMediaInto(yearDir, `archive:${safe}`);
+      return { ok: true, where: 'folder', folderName: dirHandle.name, path: `Archives/${safe}`, media: mediaResult };
+    } catch (e) {
+      console.warn('backup: archiveYear failed', e);
+      return { ok: false, reason: 'error', message: (e && e.message) || String(e) };
+    }
+  },
+
   // Read the latest live backup from the folder and return the parsed state.
   // The CALLER validates the user's intent, applies via localStorage + reload.
   // Read the media/ folder back into IndexedDB. Runs after a JSON restore, so

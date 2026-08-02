@@ -3311,6 +3311,8 @@ function renderDataSafety() {
         <p class="admin-mini" style="margin-bottom:0">Moving to a different computer some day? The file to bring with you is the newest one named <code>mrd-backup-YYYY-MM-DD.json</code> — either the one already sitting in this computer's <b>Downloads</b> folder, or the newest dated file in your connected backup folder. Copy it across any way that's easy (a memory stick, emailing it to yourself, a Google Drive folder), then use <b>Import backup</b> on the new computer.</p>
       </div>
 
+      ${renderNewYearCard()}
+
       ${renderSampleDataCard()}
 
       ${renderLockCard()}
@@ -3322,7 +3324,8 @@ function renderDataSafety() {
         </button>
         ${dangerOpen ? `
           <div class="admin-danger-body">
-            <p class="admin-danger-text">Reset <b>all points, transactions, planner events, settings and Place-of-the-Week profiles</b> to factory defaults. This cannot be undone.</p>
+            <p class="admin-danger-text">Reset <b>everything</b> — points, planner, your houses, the shop, quests, Trivia, destinations and every setting — back to factory defaults. This wipes what you built, not just the scores, and cannot be undone.</p>
+            <p class="admin-danger-text" style="opacity:.85">Rolling over to a new class? Use <b>🎓 Start a New School Year</b> above instead — it keeps everything you built and clears only the scoreboard.</p>
             <button class="admin-btn admin-btn-lg admin-btn-nuke" data-action="reset-open">Reset all points &amp; data…</button>
           </div>` : ''}
       </div>
@@ -4031,6 +4034,183 @@ function importBackup(file) {
 // — including Mr. D himself — what a busy term actually looks like. This
 // builds four invented weeks of activity and writes it the same way a backup
 // restore does: straight to localStorage, then a reload. See js/core/sampledata.js.
+// ===========================================================================
+// START A NEW SCHOOL YEAR — the June ritual
+// ===========================================================================
+// The deliberate, safe counterpart to the Danger Zone's blunt reset. It does
+// two things in order: ARCHIVES the finishing year as a permanent, labelled
+// snapshot (so nothing is ever destroyed to make room for the new one), then
+// clears ONLY what a class produced — points, the transaction ledger, who
+// bought/attacked whom, quests in flight and finished, trivia answer records,
+// paid bounties — while keeping everything the teacher built: the houses, the
+// shop, the quest catalog, trivia questions, POTW destinations, and the
+// lesson plans. His schedule can travel with him, shifted to the new year's
+// dates, or stay put as a reference. The clearing runs THROUGH the archive:
+// the year is safely captured before a single point is zeroed.
+
+function nyTermStartYear() {
+  try { return parseYMD(ctxRef.store.getSettings().termStart).getFullYear(); }
+  catch (e) { return new Date().getFullYear(); }
+}
+// The finishing year, e.g. "2025-2026 School Year", from the current term start.
+function defaultYearLabel() { const y = nyTermStartYear(); return `${y}-${y + 1} School Year`; }
+// A sensible default for the NEW term: one year on, same weekday (52 whole
+// weeks = 364 days), which is also exactly the shift the schedule would take.
+function defaultNextStart() {
+  try { return ymd(addDays(parseYMD(ctxRef.store.getSettings().termStart), 364)); }
+  catch (e) { return todayStr(); }
+}
+
+function renderNewYearCard() {
+  return `
+    <div class="admin-card">
+      <div class="admin-card-title">🎓 Start a New School Year</div>
+      <div class="admin-mini">When a year ends and a new class arrives, this is the one button to press. It <b>archives the finishing year</b> as a permanent, labelled copy — every point, record and uploaded file — and then <b>clears the scoreboard</b> so the new class starts at zero.</div>
+      <div class="admin-mini"><b>Everything you built stays.</b> Your houses, the Magic Shop, quests, Trivia questions, Places of the Week and your lesson plans all carry over — you can even bring your whole schedule forward, shifted to the new year's dates. Only the class's own activity — points, purchases, and who did what — is cleared, and the archive keeps a full copy of that too.</div>
+      <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="newyear-open">🎓 Start a new school year…</button>
+    </div>`;
+}
+
+function openNewYearModal() {
+  const store = ctxRef.store;
+  const s = store.getSettings();
+  const connected = (() => { try { return !!backup.status().connected; } catch (e) { return false; } })();
+  const archiveWhere = connected
+    ? `Saved into your backup folder under <b>Archives ▸</b> the name above, uploaded files included.`
+    : `Saved as a download to this computer. <b>Connect a backup folder</b> (above) first if you want your uploaded lesson files archived too — a single download file can't carry them.`;
+  const m = el('admin-modal-root');
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal admin-modal-lg">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">🎓 Start a New School Year</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <p class="admin-modal-lead">First this saves a complete, labelled copy of the year that's ending. Then it clears the class's points and records so a fresh class starts at zero — keeping everything you built.</p>
+
+        <div class="admin-ny-grid">
+          <div>
+            <div class="admin-ny-col-head admin-ny-keep">✓ Carried over (kept)</div>
+            <ul class="admin-ny-list">
+              <li>Houses — names, mottos, colours, crests</li>
+              <li>Magic Shop items &amp; prices</li>
+              <li>Quest catalog</li>
+              <li>Trivia questions &amp; answers</li>
+              <li>Places of the Week &amp; presentations</li>
+              <li>Lesson plans &amp; your schedule</li>
+              <li>Every setting, sound &amp; layout</li>
+            </ul>
+          </div>
+          <div>
+            <div class="admin-ny-col-head admin-ny-clear">↻ Cleared to zero</div>
+            <ul class="admin-ny-list">
+              <li>All house points</li>
+              <li>The transaction history</li>
+              <li>Bought items, freezes &amp; shrouds</li>
+              <li>Battle Day damage &amp; shields</li>
+              <li>Quests in progress &amp; completed</li>
+              <li>Who answered which Trivia question</li>
+              <li>Paid Place-of-the-Week bounties</li>
+            </ul>
+          </div>
+        </div>
+
+        <label class="admin-flabel" for="admin-ny-label">Name this year's archive</label>
+        <input id="admin-ny-label" class="admin-input" type="text" autocomplete="off" value="${esc(defaultYearLabel())}" />
+        <p class="admin-mini" style="margin:4px 0 14px">${archiveWhere}</p>
+
+        <div class="admin-ny-row">
+          <div>
+            <label class="admin-flabel" for="admin-ny-start">New term starts</label>
+            <input id="admin-ny-start" class="admin-input" type="date" value="${esc(defaultNextStart())}" />
+          </div>
+          <div>
+            <label class="admin-flabel" for="admin-ny-weeks">Weeks</label>
+            <input id="admin-ny-weeks" class="admin-input" type="number" min="1" max="52" value="${esc(s.termWeeks)}" />
+          </div>
+        </div>
+
+        <label class="admin-check" style="margin-top:12px">
+          <input id="admin-ny-shift" type="checkbox" checked />
+          <span>Bring my schedule forward to the new dates <span class="admin-faint">— every planned lesson, test and event moves by whole weeks, so a Monday lesson stays on a Monday.</span></span>
+        </label>
+
+        <label class="admin-check admin-ny-ack" style="margin-top:14px">
+          <input id="admin-ny-ack" type="checkbox" />
+          <span>I understand this clears the class's points and records. The archive keeps a full copy.</span>
+        </label>
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg" data-action="modal-close">Cancel</button>
+        <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="newyear-go" disabled>Archive &amp; start the new year</button>
+      </div>
+    </div>`;
+  const ack = el('admin-ny-ack');
+  const go = m.querySelector('[data-action="newyear-go"]');
+  if (ack && go) ack.addEventListener('change', () => { go.disabled = !ack.checked; });
+}
+
+// Archive-then-reset. The archive ALWAYS runs first and to completion; only
+// then does the scoreboard clear. If a folder is connected the archive is a
+// permanent copy in it; otherwise it falls back to a labelled download and
+// says, honestly, that uploaded files can't ride in a single file.
+async function runNewYear(btn) {
+  const store = ctxRef.store;
+  const label = ((el('admin-ny-label') || {}).value || '').trim() || defaultYearLabel();
+  const termStart = (el('admin-ny-start') || {}).value || defaultNextStart();
+  let termWeeks = Number((el('admin-ny-weeks') || {}).value);
+  if (!Number.isFinite(termWeeks) || termWeeks < 1) termWeeks = store.getSettings().termWeeks || 9;
+  termWeeks = Math.min(52, Math.round(termWeeks));
+  const shiftSchedule = !!(el('admin-ny-shift') && el('admin-ny-shift').checked);
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Archiving…'; }
+
+  // 1) ARCHIVE FIRST — nothing is cleared until the year is safely captured.
+  let res = null;
+  try { res = await backup.archiveYear(label); } catch (e) { res = { ok: false, reason: 'error' }; }
+  if (!res || !res.ok || res.where !== 'folder') {
+    // No folder, or it failed: a labelled download is the belt that always works.
+    try { downloadLabeledBackup(label); } catch (e) { /* download blocked — the reset below still archives nothing extra */ }
+  }
+
+  // 2) THE RESET — clear the class's activity, keep the teacher's setup.
+  const { shiftDays } = store.startNewYear({ termStart, termWeeks, shiftSchedule });
+  syncTermMarkers(termStart, termWeeks);   // move the auto term markers to the new dates
+
+  closeModal();
+  activeTab = 'data';
+  dangerOpen = false;
+  cal.year = parseYMD(termStart).getFullYear();
+  cal.month = parseYMD(termStart).getMonth();
+  renderBody({ force: true });
+
+  const weeks = Math.round((shiftDays || 0) / 7);
+  const shiftMsg = shiftSchedule && weeks ? ` Your schedule moved forward ${weeks} week${weeks === 1 ? '' : 's'}.` : '';
+  const archiveMsg = res && res.ok && res.where === 'folder'
+    ? `“${label}” archived to your backup folder.`
+    : `“${label}” archived to Downloads.`;
+  toast(`New school year started. ${archiveMsg}${shiftMsg}`);
+}
+
+// A full-state export named for the archive rather than the day, used when no
+// backup folder is connected to hold the year-end snapshot.
+function downloadLabeledBackup(label) {
+  const raw = storage.get(CONFIG.STORAGE_KEY) || JSON.stringify(ctxRef.store.getState());
+  let pretty = raw;
+  try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch (e) {}
+  const safe = (String(label).replace(/[^a-zA-Z0-9._ -]/g, '_').trim()) || 'school-year';
+  const blob = new Blob([pretty], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mrd-archive-${safe}-${todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  later(() => URL.revokeObjectURL(url), 2000);
+}
+
 function renderSampleDataCard() {
   return `
     <div class="admin-card">
@@ -6343,6 +6523,8 @@ function onClick(e) {
     case 'danger-toggle': dangerOpen = !dangerOpen; renderBody(); break;
     case 'reset-open': openResetModal(); break;
     case 'reset-confirm': if (!btn.disabled) doReset(); break;
+    case 'newyear-open': openNewYearModal(); break;
+    case 'newyear-go': if (!btn.disabled) runNewYear(btn); break;
 
     // houses
     case 'house-edit': openHouseForm(Number(btn.dataset.id)); break;
@@ -7025,6 +7207,21 @@ function injectStyles() {
   .admin-check{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;min-height:44px;background:var(--color-card2);
     border:1px solid var(--color-line);border-radius:.6rem;cursor:pointer;font-size:.85rem;color:var(--color-text);}
   .admin-check input{width:18px;height:18px;accent-color:#f59e0b;}
+  /* Start-a-New-Year modal: the kept/cleared columns and its full-width,
+     wrap-friendly checkboxes (the plain .admin-check is a centred inline pill,
+     wrong for a two-line label). */
+  .admin-ny-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:6px 0 18px;}
+  @media (max-width:560px){.admin-ny-grid{grid-template-columns:1fr;}}
+  .admin-ny-col-head{font-weight:800;font-size:.82rem;letter-spacing:.02em;margin-bottom:6px;}
+  .admin-ny-keep{color:#34d399;}
+  .admin-ny-clear{color:#fbbf24;}
+  .admin-ny-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;}
+  .admin-ny-list li{position:relative;padding-left:16px;font-size:.82rem;line-height:1.35;color:var(--color-text-soft);}
+  .admin-ny-list li::before{content:"·";position:absolute;left:5px;top:-1px;color:var(--color-text-faint);}
+  .admin-ny-row{display:grid;grid-template-columns:1fr 120px;gap:12px;align-items:end;}
+  .admin-check.admin-ny-ack,.admin-modal .admin-check:has(#admin-ny-shift){display:flex;align-items:flex-start;
+    width:100%;line-height:1.4;}
+  .admin-check.admin-ny-ack input,.admin-modal .admin-check:has(#admin-ny-shift) input{margin-top:1px;flex:0 0 auto;}
   .admin-rows-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;}
   .admin-srows,.admin-qrows{display:flex;flex-direction:column;gap:8px;}
   .admin-srow{display:grid;grid-template-columns:64px 1fr 1.6fr 44px;gap:6px;align-items:center;}
