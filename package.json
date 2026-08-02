@@ -1,0 +1,51 @@
+{
+  "name": "classos",
+  "productName": "ClassOS",
+  "version": "1.0.0",
+  "description": "Mr. D's Classroom OS — desktop build",
+  "private": true,
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.mrd.classos",
+    "productName": "ClassOS",
+    "directories": { "output": "dist" },
+    "files": [
+      "desktop/**/*",
+      "index.html",
+      "js/**/*",
+      "vendor/**/*",
+      "images/**/*",
+      "music/**/*",
+      "sfx/**/*",
+      "videos/**/*",
+      "standings.html",
+      "!**/*.psd",
+      "!ClassOS Data*/**"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "ClassOS.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "ClassOS"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "ClassOS.app/Contents/Resources/ClassOS.icns",
+      "category": "public.app-category.education"
+    }
+  }
+}

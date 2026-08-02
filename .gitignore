@@ -18,3 +18,9 @@ docs-in/
 # Committed by the GitHub API rather than by hand, so a local copy from
 # testing should never ride along in a commit.
 /standings.json
+
+# Electron desktop build
+/node_modules/
+/dist/
+/ClassOS Data/
+/ClassOS Data (dev)/
