@@ -12,6 +12,7 @@
 // runs at boot even when the Admin panel is never opened.
 import { CONFIG } from '../config.js';
 import { store } from './store.js';
+import { storage } from './storage.js';
 import { media } from './media.js';
 
 const HANDLE_DB = 'mrd-backup';
@@ -64,7 +65,7 @@ function dateStr(d = new Date()) { return `${d.getFullYear()}-${pad(d.getMonth()
 function stateText() {
   let obj;
   try {
-    const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+    const raw = storage.get(CONFIG.STORAGE_KEY);
     obj = raw ? JSON.parse(raw) : store.getState();
   } catch (e) { obj = store.getState(); }
   return JSON.stringify({ ...obj, savedAt: new Date().toISOString() }, null, 2);
@@ -241,7 +242,7 @@ function scheduleWrite() {
 // browsers block, and it would also fire on days he only glances at the board.
 const DL_KEY = 'mrd-last-download';
 let lastDownloadDate = null;
-try { lastDownloadDate = localStorage.getItem(DL_KEY); } catch (e) { lastDownloadDate = null; }
+lastDownloadDate = storage.get(DL_KEY);
 
 function downloadEnabled() {
   try { return store.getSettings().backupDownload !== false; } catch (e) { return true; }
@@ -277,7 +278,7 @@ function maybeDailyDownload() {
   // Claim the day BEFORE writing. If the download throws, we still don't retry
   // on every subsequent keystroke — one attempt per day, win or lose.
   lastDownloadDate = today;
-  try { localStorage.setItem(DL_KEY, today); } catch (e) { /* storage full — the banner covers it */ }
+  storage.set(DL_KEY, today);   // storage full — the banner covers it
   const filename = `mrd-backup-${today}.json`;
   try {
     const blob = new Blob([stateText()], { type: 'application/json' });
@@ -426,7 +427,7 @@ export const backup = {
   // demand — before a holiday, or to hand a copy to someone.
   downloadNow() {
     lastDownloadDate = null;
-    try { localStorage.removeItem(DL_KEY); } catch (e) {}
+    storage.remove(DL_KEY);
     maybeDailyDownload();
     return lastDownloadTs;
   },

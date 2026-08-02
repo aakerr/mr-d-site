@@ -10,6 +10,7 @@
 //
 // Owns no DOM. Returns plain data; help.js renders it.
 import { store } from './store.js';
+import { storage } from './storage.js';
 import { backup } from './backup.js';
 import { media } from './media.js';
 
@@ -73,13 +74,13 @@ let watchTimer = null;
 let watching = false;
 
 function readMirrored() {
-  try { return Number(localStorage.getItem(LAST_BACKUP_KEY)) || 0; } catch (e) { return 0; }
+  return Number(storage.get(LAST_BACKUP_KEY)) || 0;
 }
 
 function noteBackupTs() {
   try {
     const ts = Number(backup.status().lastSaveTs) || 0;
-    if (ts > readMirrored()) localStorage.setItem(LAST_BACKUP_KEY, String(ts));
+    if (ts > readMirrored()) storage.set(LAST_BACKUP_KEY, String(ts));
   } catch (e) { /* diagnostics must never break anything */ }
 }
 
@@ -318,9 +319,8 @@ function checkTerm() {
 function checkStorage() {
   let bytes = 0;
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      const v = localStorage.getItem(k) || '';
+    for (const k of storage.keys()) {
+      const v = storage.get(k) || '';
       bytes += (k.length + v.length) * 2;    // UTF-16 in every browser we target
     }
   } catch (e) {

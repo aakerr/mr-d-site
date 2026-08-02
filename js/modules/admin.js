@@ -9,6 +9,7 @@
 import { media } from '../core/media.js';
 import { CONFIG } from '../config.js';
 import { backup } from '../core/backup.js';
+import { storage } from '../core/storage.js';
 import { publishStandings, publishIfDue, publishStatus, classLink, standingsText, getToken, setToken } from '../core/publish.js';
 import { lock } from '../core/lock.js';
 import { testFlight } from './potw.js';   // 🧭 Test flight preview (read-only)
@@ -3920,7 +3921,7 @@ function doReset() {
 
 // ----- backup & restore (full localStorage state as JSON) -----
 function exportBackup() {
-  const raw = localStorage.getItem(CONFIG.STORAGE_KEY) || JSON.stringify(ctxRef.store.getState());
+  const raw = storage.get(CONFIG.STORAGE_KEY) || JSON.stringify(ctxRef.store.getState());
   let pretty = raw;
   try { pretty = JSON.stringify(JSON.parse(raw), null, 2); } catch (e) {}
   const blob = new Blob([pretty], { type: 'application/json' });
@@ -3975,18 +3976,18 @@ function looksLikeBackup(data) {
 }
 
 function hasUndoSnapshot() {
-  try { return !!localStorage.getItem(PREV_KEY); } catch (e) { return false; }
+  return !!storage.get(PREV_KEY);
 }
 
 // Returns false (having toasted) if it could not write; the caller must not
 // reload in that case, or the failure scrolls past unread.
 function replaceAllData(data) {
   try {
-    const current = localStorage.getItem(CONFIG.STORAGE_KEY);
+    const current = storage.get(CONFIG.STORAGE_KEY);
     // Snapshot FIRST. If this throws (storage full), nothing has been destroyed
     // yet and the teacher still has what they had.
-    if (current) localStorage.setItem(PREV_KEY, current);
-    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
+    if (current) storage.set(PREV_KEY, current);
+    storage.set(CONFIG.STORAGE_KEY, JSON.stringify(data));
     return true;
   } catch (e) {
     toast('Restore failed: ' + e.message);
@@ -3995,16 +3996,16 @@ function replaceAllData(data) {
 }
 
 function undoLastRestore() {
-  const prev = (() => { try { return localStorage.getItem(PREV_KEY); } catch (e) { return null; } })();
+  const prev = storage.get(PREV_KEY);
   if (!prev) { toast('There is nothing to undo.'); return; }
   openConfirm('Undo the last restore?',
     'This puts back exactly what was on this computer before the last restore or sample-data load, and reloads. Whatever the restore brought in is discarded.',
     () => {
       try {
         // Swap, don't delete: undoing an undo is a thing teachers do.
-        const current = localStorage.getItem(CONFIG.STORAGE_KEY);
-        localStorage.setItem(CONFIG.STORAGE_KEY, prev);
-        if (current) localStorage.setItem(PREV_KEY, current);
+        const current = storage.get(CONFIG.STORAGE_KEY);
+        storage.set(CONFIG.STORAGE_KEY, prev);
+        if (current) storage.set(PREV_KEY, current);
         location.reload();
       } catch (e) { toast('Could not undo: ' + e.message); }
     }, { yesLabel: 'Put it back' });

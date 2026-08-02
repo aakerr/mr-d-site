@@ -21,6 +21,7 @@
 // means backups never contain it. The cost is that a restored machine must be
 // given the token again, which is the correct trade.
 import { store } from './store.js';
+import { storage } from './storage.js';
 
 const TOKEN_KEY = 'mrd-publish-token';    // deliberately NOT in the store — see above
 const FILE_PATH = 'standings.json';
@@ -34,13 +35,13 @@ function cfg() {
 }
 
 export function getToken() {
-  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  return storage.get(TOKEN_KEY) || '';
 }
 
 export function setToken(t) {
   try {
-    if (t) localStorage.setItem(TOKEN_KEY, t.trim());
-    else localStorage.removeItem(TOKEN_KEY);
+    if (t) storage.set(TOKEN_KEY, t.trim());
+    else storage.remove(TOKEN_KEY);
     lastError = null;
     return true;
   } catch (e) { return false; }

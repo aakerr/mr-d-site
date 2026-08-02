@@ -17,6 +17,7 @@
 // "Start without waiting" skips the gate for a teacher in a hurry — the idle
 // warm-up picks up whatever was left.
 import { CONFIG } from '../config.js';
+import { storage } from './storage.js';
 
 const FLAG_KEY = 'mrd-assets-warmed';
 const MANIFEST_VERSION = 'v8';   // v8: two intros recut, three more added (rap/country/daftpunk)
@@ -67,11 +68,11 @@ const MANIFEST = [
 ];
 
 function alreadyWarmed() {
-  try { return localStorage.getItem(FLAG_KEY) === MANIFEST_VERSION; } catch (e) { return true; }
+  return storage.get(FLAG_KEY) === MANIFEST_VERSION;
 }
 
 function stampWarmed() {
-  try { localStorage.setItem(FLAG_KEY, MANIFEST_VERSION); } catch (e) { /* private mode — gate just runs again */ }
+  storage.set(FLAG_KEY, MANIFEST_VERSION);   // a refusal just re-runs the gate next time
 }
 
 const OVERLAY_CSS = `

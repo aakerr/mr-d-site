@@ -4,6 +4,7 @@
 // Owns ONLY this file. Renders its launch screen into #module-root and a full-screen
 // cinematic overlay into #overlay-root, tearing everything down cleanly on unmount.
 import { CONFIG } from '../config.js';
+import { storage } from '../core/storage.js';
 import { media } from '../core/media.js';
 import { lock } from '../core/lock.js';
 import { escapeHtml as esc } from '../core/escape.js';
@@ -1580,10 +1581,10 @@ function disarmVoyageEscape() {
 // "Your presenter remote works" hint — shown until the teacher dismisses it once.
 const REMOTE_HINT_KEY = 'mrd:potw:remote-hint';
 function remoteHintDismissed() {
-  try { return localStorage.getItem(REMOTE_HINT_KEY) === '1'; } catch (e) { return false; }
+  return storage.get(REMOTE_HINT_KEY) === '1';
 }
 function dismissRemoteHint() {
-  try { localStorage.setItem(REMOTE_HINT_KEY, '1'); } catch (e) {}
+  storage.set(REMOTE_HINT_KEY, '1');
 }
 
 function presUpdateCounter() {

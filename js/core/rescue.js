@@ -14,6 +14,7 @@
 // again for that install.
 import { store } from './store.js';
 import { backup } from './backup.js';
+import { storage } from './storage.js';
 
 const DISMISS_KEY = 'mrd-rescue-dismissed';
 
@@ -31,7 +32,7 @@ function boardIsEmpty() {
 }
 
 function dismissed() {
-  try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch (e) { return false; }
+  try { return storage.get(DISMISS_KEY) === '1'; } catch (e) { return false; }
 }
 
 const CSS = `
@@ -89,7 +90,7 @@ export function showLostTermDialog(found) {
   document.body.appendChild(el);
 
   el.querySelector('[data-rescue="fresh"]').addEventListener('click', () => {
-    try { localStorage.setItem(DISMISS_KEY, '1'); } catch (e) { /* nothing to remember it with */ }
+    try { storage.set(DISMISS_KEY, '1'); } catch (e) { /* nothing to remember it with */ }
     el.remove(); st.remove();
   });
 
@@ -101,7 +102,7 @@ export function showLostTermDialog(found) {
     if (!data) { btn.disabled = false; btn.textContent = 'Put my term back'; return; }
     try {
       await backup.restoreMedia();   // the PDFs, slides and songs too
-      localStorage.setItem('mrd-classroom-os-v1', JSON.stringify(data));
+      storage.set('mrd-classroom-os-v1', JSON.stringify(data));
       location.reload();
     } catch (e) {
       btn.disabled = false;

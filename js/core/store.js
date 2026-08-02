@@ -2,6 +2,7 @@
 // All point changes flow through addPoints() so every change is a logged transaction.
 import { CONFIG } from '../config.js';
 import { ymd, todayStr } from './util.js';
+import { storage } from './storage.js';
 
 // Every shipped points value in this file is written as `base × SCALE`, so a
 // rebalance is one line in js/config.js instead of forty here — and so a new
@@ -1077,7 +1078,7 @@ const listeners = new Set();
 
 function load() {
   try {
-    const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+    const raw = storage.get(CONFIG.STORAGE_KEY);
     if (raw) {
       const def = defaultState();
       const saved = JSON.parse(raw);
@@ -1330,11 +1331,11 @@ function load() {
 // teacher — in words that say what to do, not what went wrong.
 function quarantineCorruptSave() {
   try {
-    const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+    const raw = storage.get(CONFIG.STORAGE_KEY);
     if (!raw) return;                       // nothing to lose; a genuinely fresh start
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const key = `${CONFIG.STORAGE_KEY}-corrupt-${stamp}`;
-    localStorage.setItem(key, raw);
+    storage.set(key, raw);
     console.warn(`store: damaged save set aside as ${key} (${raw.length} bytes)`);
     if (typeof document !== 'undefined') {
       // The banner has to survive module load order, so it waits for a body.
@@ -1449,7 +1450,7 @@ function persist() {
     // toSaved(), not `state`: shipped content stays in this file and only the
     // teacher's overrides are written — see "shipped content vs teacher
     // overrides" above.
-    localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(toSaved(state)));
+    storage.set(CONFIG.STORAGE_KEY, JSON.stringify(toSaved(state)));
     persistFailed = false;
   } catch (e) {
     console.warn('store: persist failed', e);
