@@ -197,7 +197,9 @@ export function warmMap3d(cameras = []) {
     customElements.whenDefined('gmp-map-3d').then(() => {
       if (settled || document.querySelector('.potw-overlay')) { clearTimeout(bail); return cleanup(); }
       const el = document.createElement('gmp-map-3d');
-      el.setAttribute('mode', 'hybrid');
+      // Must match createMap3d in modules/potw.js — warming a different mode
+      // would cache the wrong tiles and leave the real voyage cold.
+      el.setAttribute('mode', 'satellite');
       el.setAttribute('range', '3000');
       el.setAttribute('tilt', '45');
       el.setAttribute('default-ui-hidden', '');

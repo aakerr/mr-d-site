@@ -722,7 +722,15 @@ function advanceToReveal() {
 function createMap3d() {
   buildMapBackdrop();   // art goes down FIRST, so the map element covers it, not the reverse
   mapEl = document.createElement('gmp-map-3d');
-  mapEl.setAttribute('mode', 'hybrid');
+  // SATELLITE, not hybrid, and it buys two things at once. Hybrid's labels are
+  // hundreds of tiny extra requests — measured cold at Giza: 526 requests and
+  // ~7.1s to settle, against 357 and ~4s for satellite, on identical imagery
+  // bytes. Latency is exactly what school wifi is worst at. And the labels are
+  // no loss here: alongside "Great Pyramid of Giza" they place KFC, Carrefour,
+  // Cairo Mall and a rooftop bar on top of a 4,500-year-old necropolis. The
+  // atmosphere glow stays on — it is what makes the start of the flight look
+  // like space, and it is worth its ~1.5s.
+  mapEl.setAttribute('mode', 'satellite');
   mapEl.setAttribute('center', '40.8653,-81.8604,500'); // Smithville, OH
   mapEl.setAttribute('range', '3000');
   mapEl.setAttribute('tilt', '45');
