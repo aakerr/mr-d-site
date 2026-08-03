@@ -1283,13 +1283,17 @@ const TOPICS = [
       </ol>
       <p>The week counter restarts and the dashboard follows. Points are <b>not</b> zeroed — term totals still count everything in the log.</p>
       <h4>A new school year, starting from zero</h4>
+      <p>There is one button for this, and it keeps everything you built. <b>🗝️ Admin → 🛡️ Data &amp; Safety → 🎓 Start a New School Year</b>.</p>
       <ol class="help-steps">
-        <li>Copy the latest dated snapshot — out of your backup folder, or out of Downloads — and keep it somewhere off this computer too (a Drive folder, a memory stick, or emailed to yourself). That is your archive of last year.</li>
-        <li><b>🗝️ Admin → 🛡️ Data &amp; Safety → Danger Zone</b>, type <b>RESET</b>.</li>
-        <li>Set the new term dates. Reconnect your backup folder if you use one; the daily backup file needs nothing done to it.</li>
-        <li>Re-upload the presentations you still want.</li>
+        <li>Name the year that is ending — it defaults to something like <i>2025-2026 School Year</i>.</li>
+        <li>Set the date the new term starts, and how many weeks it runs.</li>
+        <li>Decide whether to <b>bring your schedule forward</b>. Left ticked, every planned lesson, test and event moves to the matching week of the new year — whole weeks at a time, so a Monday lesson stays on a Monday and you can run the same plan again.</li>
+        <li>Tick the box to confirm, then <b>Archive &amp; start the new year</b>. A tick-list tells you where the archive went and what was cleared.</li>
       </ol>
-      <p class="help-warn">The reset takes the shop catalogue, quest edits, planner and destinations with it. If you spent time on those, keep the snapshot file — it holds all of them.</p>
+      <p><b>Archived first, always.</b> Nothing is cleared until last year is safely saved. With a backup folder connected it becomes a permanent, dated folder inside <code>Archives</code>, with your uploaded files alongside it; without one it saves to Downloads as a single named file (which cannot carry uploaded files — connect a folder if you want those kept).</p>
+      <p><b>Kept:</b> your houses, the Magic Shop, the quest catalogue, Trivia questions, Places of the Week and their presentations, your lesson plans, and every setting.<br>
+      <b>Cleared:</b> all house points, the transaction history, bought items, freezes and shrouds, Battle Day damage, quests in progress and completed, who answered which Trivia question, and paid Place-of-the-Week bounties.</p>
+      <p class="help-warn">The <b>Danger Zone</b> reset below it is a different thing entirely — it wipes what you built as well as the scores, back to a factory app. For a new class, use 🎓 Start a New School Year instead.</p>
     `,
   },
 

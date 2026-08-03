@@ -627,6 +627,39 @@ teacher-supplied key overrides the bundled default. POTW module creates its
 own `<gmp-map-3d mode="hybrid">` inside its overlay (after awaiting
 `customElements.whenDefined('gmp-map-3d')`) and destroys it on unmount.
 
+## Desktop build (`desktop/`, Electron) — the classroom copy
+Same web app, no fork and no build step: `desktop/main.js` serves the repo
+root over a **loopback HTTP server on a random free port** and loads it in a
+BrowserWindow. `desktop/preload.js` exposes a narrow `window.classos` bridge
+(contextIsolation stays on) and `js/core/storage.js` picks it up, so the term
+lands in a visible `ClassOS Data/classroom-data.json` (atomic write, debounced,
+corrupt file quarantined) instead of localStorage.
+
+Four constraints, each of which cost real debugging time:
+
+- **It must be served over `http://localhost`, not `file://` or a custom
+  scheme.** ES modules do not load over `file://`. A custom `classos://` scheme
+  fixed that but Google Maps rejected it — `RefererNotAllowedMapError`, because
+  Maps validates the page's real origin against the key's referrer list. No
+  header rewrite helps: Maps reads `window.location`, not the HTTP `Referer`
+  (proven, twice). The key's list therefore includes `http://localhost:*`,
+  which is why any random port works and nothing on the teacher's PC can
+  collide with a fixed one.
+- **`gmp-map-3d` only boots when it intersects the viewport.** Parked
+  off-screen it made 3 network requests in 12s; on-screen behind opaque UI,
+  164. `display:none` is the same trap. The boot warm-up in `core/preload.js`
+  (`warmMap3d`) therefore sits at `z-index:-1` **on** screen.
+- **Closing the window quits the app on every OS**, macOS included. A
+  windowless renderer keeps playing the dashboard's ambient loop with nothing
+  to close it from. macOS also uses **simple** fullscreen — native fullscreen
+  moves the window to its own Space, where a stray click makes the app appear
+  to vanish. The header's ⛶ button drives the real window over the bridge,
+  because the web Fullscreen API cannot touch OS-window state.
+- **`package.json` `build.files` is an allow-list.** Anything omitted 404s in
+  the packaged app while working perfectly in dev — `css/theme.css` went
+  missing this way and the first-run wizard rendered as unstyled text at the
+  bottom of the page. Add new top-level asset directories there.
+
 ## Google Slides embed (Place of the Week presentation)
 `potw.js` can present a Google Slides deck via a published-embed iframe
 instead of a PDF. Google publishes no `postMessage` API for its player, so

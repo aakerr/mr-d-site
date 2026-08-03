@@ -63,6 +63,7 @@ const HELP_TOPICS = {
   shop: 'shop-effects',
   potw: 'potw-schedule',
   backups: 'data-backup',
+  newyear: 'data-newterm',
   lock: 'admin-lock',
   sfx: 'admin-sfx',
   battle: 'battle-hp',
@@ -4065,6 +4066,7 @@ function renderNewYearCard() {
   return `
     <div class="admin-card">
       <div class="admin-card-title">🎓 Start a New School Year</div>
+      <div class="admin-help-row">${helpLink(HELP_TOPICS.newyear, 'What is kept, what is cleared, and where the archive goes')}</div>
       <div class="admin-mini">When a year ends and a new class arrives, this is the one button to press. It <b>archives the finishing year</b> as a permanent, labelled copy — every point, record and uploaded file — and then <b>clears the scoreboard</b> so the new class starts at zero.</div>
       <div class="admin-mini"><b>Everything you built stays.</b> Your houses, the Magic Shop, quests, Trivia questions, Places of the Week and your lesson plans all carry over — you can even bring your whole schedule forward, shifted to the new year's dates. Only the class's own activity — points, purchases, and who did what — is cleared, and the archive keeps a full copy of that too.</div>
       <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="newyear-open">🎓 Start a new school year…</button>

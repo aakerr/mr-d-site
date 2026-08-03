@@ -51,7 +51,29 @@ things, done by hand if you'd rather (or need to redo one later):
 
 ## Quick Start
 
-### Run Locally
+### The desktop app (what Mr. D actually uses)
+
+The classroom copy is a **double-clickable app** — no terminal, no server to
+start. It is the same app in this repo, wrapped in Electron: the window is
+named ClassOS, carries its own icon, and opens fullscreen on the board.
+
+```bash
+npm install          # once
+npm start            # run from source (development)
+npm run dist         # build the app  → dist/ (dist:win on Windows)
+```
+
+The build lands in `dist/` — `ClassOS.app` on macOS, `ClassOS Setup <ver>.exe`
+on Windows (build each on its own OS). Two things behave differently from the
+browser version, both deliberate:
+
+- **Data lives in a visible folder**, `ClassOS Data/classroom-data.json`, next
+  to the app (or in Documents if the app sits somewhere unwritable). Not in a
+  browser profile, so "clear browsing data" can never touch a term of points.
+- **Closing the window quits the app** on every OS, so nothing keeps running
+  (and playing music) with no window to close it from.
+
+### Run in a browser
 
 ```bash
 cd /path/to/mr-d-site
@@ -306,6 +328,16 @@ and what keeps it SAFE:
   (points, quests, Magic Shop purchases, dice rolls, a full events calendar)
   so a brand-new install has something to look at — replaces whatever's on
   screen, exactly like restoring a backup, and can be undone the same way
+- **🎓 Start a New School Year**: the June rollover, and the *only* one to use
+  for a new class. Archives the finishing year first — a permanent dated folder
+  under `Archives/` in the backup folder (uploaded files included), or a named
+  file in Downloads if no folder is connected — then clears **only what a class
+  produced**: points, the transaction log, bought items, freezes/shrouds,
+  Battle Day damage, quests active and completed, Trivia answer records, paid
+  POTW bounties. Everything the teacher *built* carries over (houses, shop,
+  quest catalogue, Trivia questions, destinations, lesson plans, all settings),
+  and the dated schedule can travel forward by whole weeks so the same plan can
+  be re-run on the right weekdays. Ends on a tick-list confirming what happened
 - **🔒 Teacher PIN**: off by default — see **Teacher PIN (Lock)** under Core Features
 - **Danger Zone**: Hard reset the app
   - Type `RESET` to confirm
