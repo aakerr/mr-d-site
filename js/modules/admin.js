@@ -4164,33 +4164,78 @@ async function runNewYear(btn) {
   termWeeks = Math.min(52, Math.round(termWeeks));
   const shiftSchedule = !!(el('admin-ny-shift') && el('admin-ny-shift').checked);
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Archiving…'; }
+  // Lock the modal down and SAY what's happening — the folder write plus a
+  // term's worth of media can take a beat, and a button that just goes quiet
+  // reads as "nothing happened". Cancel is disabled so the run can't be half-
+  // interrupted between the archive and the clear.
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Archiving this year…'; }
+  const cancel = el('admin-modal-root').querySelector('[data-action="modal-close"]');
+  if (cancel) cancel.disabled = true;
 
   // 1) ARCHIVE FIRST — nothing is cleared until the year is safely captured.
   let res = null;
   try { res = await backup.archiveYear(label); } catch (e) { res = { ok: false, reason: 'error' }; }
-  if (!res || !res.ok || res.where !== 'folder') {
+  const toFolder = !!(res && res.ok && res.where === 'folder');
+  if (!toFolder) {
     // No folder, or it failed: a labelled download is the belt that always works.
-    try { downloadLabeledBackup(label); } catch (e) { /* download blocked — the reset below still archives nothing extra */ }
+    try { downloadLabeledBackup(label); } catch (e) { /* download blocked — reported below */ }
   }
 
   // 2) THE RESET — clear the class's activity, keep the teacher's setup.
   const { shiftDays } = store.startNewYear({ termStart, termWeeks, shiftSchedule });
   syncTermMarkers(termStart, termWeeks);   // move the auto term markers to the new dates
 
-  closeModal();
+  // Rebuild the tab BEHIND the modal so the scoreboard already reads zero when
+  // the teacher closes the confirmation. renderBody only touches #admin-body,
+  // never #admin-modal-root, so the result panel below survives it.
   activeTab = 'data';
   dangerOpen = false;
   cal.year = parseYMD(termStart).getFullYear();
   cal.month = parseYMD(termStart).getMonth();
   renderBody({ force: true });
 
+  // 3) TELL HIM IT'S DONE — a checklist he has to dismiss, not a toast he might
+  // miss. This is the "indicator that it finished" the silent version lacked.
+  showNewYearResult({ label, toFolder, res, termStart, shiftDays, shiftSchedule });
+}
+
+// The confirmation panel shown once the rollover completes, swapped into the
+// same modal. Green ticks for what happened, in the order it happened.
+function showNewYearResult({ label, toFolder, res, termStart, shiftDays, shiftSchedule }) {
+  const m = el('admin-modal-root');
+  if (!m) return;
+  const media = (res && res.media) || {};
+  const archiveWhere = toFolder
+    ? `Saved to your backup folder — <code>${esc(res.path || 'Archives')}</code>`
+      + (media.skipped
+        ? ` <span class="admin-faint">(records only — uploaded files were left out by your backup setting)</span>`
+        : media.files
+          ? ` <span class="admin-faint">with ${media.files} uploaded file${media.files === 1 ? '' : 's'}</span>`
+          : '')
+    : `Saved to this computer's <b>Downloads</b> folder <span class="admin-faint">(a single file can't carry uploaded lesson files — connect a backup folder to archive those too)</span>`;
   const weeks = Math.round((shiftDays || 0) / 7);
-  const shiftMsg = shiftSchedule && weeks ? ` Your schedule moved forward ${weeks} week${weeks === 1 ? '' : 's'}.` : '';
-  const archiveMsg = res && res.ok && res.where === 'folder'
-    ? `“${label}” archived to your backup folder.`
-    : `“${label}” archived to Downloads.`;
-  toast(`New school year started. ${archiveMsg}${shiftMsg}`);
+  const scheduleLine = shiftSchedule && weeks
+    ? `Your schedule moved forward ${weeks} week${weeks === 1 ? '' : 's'}, weekdays kept`
+    : `Your lesson plans and schedule were kept in place`;
+  const startNice = parseYMD(termStart).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  m.innerHTML = `
+    <div class="admin-modal-bg" data-action="modal-close"></div>
+    <div class="admin-modal admin-modal-lg">
+      <div class="admin-modal-head">
+        <div class="admin-modal-title">✅ New school year started</div>
+        <button class="admin-btn admin-btn-icon" data-action="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="admin-modal-body">
+        <ul class="admin-ny-done">
+          <li><span class="admin-ny-tick">✓</span><span><b>“${esc(label)}” archived.</b><br>${archiveWhere}</span></li>
+          <li><span class="admin-ny-tick">✓</span><span><b>Scoreboard cleared.</b><br>All points, purchases and records reset to zero. Everything you built was kept.</span></li>
+          <li><span class="admin-ny-tick">✓</span><span><b>New term set.</b><br>Starts ${esc(startNice)}. ${esc(scheduleLine)}.</span></li>
+        </ul>
+      </div>
+      <div class="admin-modal-foot">
+        <button class="admin-btn admin-btn-lg admin-btn-primary" data-action="modal-close">Done</button>
+      </div>
+    </div>`;
 }
 
 // A full-state export named for the archive rather than the day, used when no
@@ -7222,6 +7267,12 @@ function injectStyles() {
   .admin-check.admin-ny-ack,.admin-modal .admin-check:has(#admin-ny-shift){display:flex;align-items:flex-start;
     width:100%;line-height:1.4;}
   .admin-check.admin-ny-ack input,.admin-modal .admin-check:has(#admin-ny-shift) input{margin-top:1px;flex:0 0 auto;}
+  .admin-ny-done{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px;}
+  .admin-ny-done li{display:flex;gap:12px;align-items:flex-start;font-size:.9rem;line-height:1.5;color:var(--color-text-soft);}
+  .admin-ny-done b{color:var(--color-text);}
+  .admin-ny-done code{background:var(--color-card2);padding:1px 6px;border-radius:.35rem;font-size:.85em;}
+  .admin-ny-tick{flex:0 0 auto;width:24px;height:24px;border-radius:50%;background:rgba(52,211,153,.15);
+    color:#34d399;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
   .admin-rows-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;}
   .admin-srows,.admin-qrows{display:flex;flex-direction:column;gap:8px;}
   .admin-srow{display:grid;grid-template-columns:64px 1fr 1.6fr 44px;gap:6px;align-items:center;}
@@ -7419,7 +7470,7 @@ function injectStyles() {
   .admin-cd-bye{text-align:center;padding:2.5rem 1rem;}
   .admin-cd-bye-title{font-family:'Cinzel',Georgia,serif;font-weight:800;font-size:1.8rem;color:#fbbf24;}
   .admin-cd-bye-note{margin-top:.6rem;color:var(--color-text-soft,#9ca3af);}
-  .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  .admin-backup-row{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0;}
   .admin-auto-head{font-weight:700;font-size:.9rem;color:var(--color-text);margin:4px 0 8px;}
   .admin-hr{border:none;border-top:1px solid var(--color-line);margin:18px 0;}
   .admin-auto-note{padding:12px 14px;border-radius:.7rem;font-size:.85rem;line-height:1.5;}
