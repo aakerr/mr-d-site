@@ -624,7 +624,7 @@ module's own colour win over the house colour. Out of the box that means:
 Loaded in `main.js` (not `index.html`): `libraries=maps3d&v=beta`, key resolved
 as `store.getSettings().mapsApiKeyOverride || CONFIG.MAPS_API_KEY` so a
 teacher-supplied key overrides the bundled default. POTW module creates its
-own `<gmp-map-3d mode="satellite">` inside its overlay (after awaiting
+own `<gmp-map-3d mode="hybrid">` inside its overlay (after awaiting
 `customElements.whenDefined('gmp-map-3d')`) and destroys it on unmount.
 
 **Cost, measured — the three things that actually matter.** All figures cold
@@ -639,10 +639,17 @@ made every configuration look identical and produced a wrong answer once).
 | satellite + `atmosphere-disabled` | 284 | 3.11 MB | ~2.0 s |
 
 - **Labels are the load cost, not imagery.** Bytes barely move between modes —
-  the satellite tiles are identical. What disappears is hundreds of tiny label,
+  the satellite tiles are identical. The difference is hundreds of tiny label,
   road and POI requests, and *request count* is what a school connection
-  handles worst. Hence satellite. The atmosphere glow is deliberately kept: it
-  is what makes the high-altitude start of the flyover read as space.
+  handles worst. **`hybrid` is nonetheless the shipped choice**, on the owner's
+  call: an unlabelled 3D map of the ancient world is an anonymous lump of
+  terrain, and the place names are the lesson. Maps exposes no way to keep the
+  geographic labels and suppress the commercial ones — it is all-or-nothing, so
+  "Great Pyramid of Giza" arrives with KFC and Carrefour beside it. Some text
+  beats no text in front of a class. `satellite` remains a one-word fallback
+  (here and in `core/preload.js`, which must match) if a school connection ever
+  makes the ~3s difference intolerable. The atmosphere glow is deliberately
+  kept: it is what makes the high-altitude start of the flyover read as space.
 - **A moving camera never stops paying.** `flyCameraAround` streams and renders
   continuously: ~110 requests every 15 s, indefinitely. A still camera costs
   exactly **zero**. The orbit therefore runs `ORBIT_REPEATS` (2) revolutions
@@ -689,6 +696,20 @@ Four constraints, each of which cost real debugging time:
   the packaged app while working perfectly in dev — `css/theme.css` went
   missing this way and the first-run wizard rendered as unstyled text at the
   bottom of the page. Add new top-level asset directories there.
+
+**The Windows installer is deliberately `oneClick: true`.** The teacher it
+ships to is not a technical user and is a thousand miles from any help, so the
+install has to be a double-click and nothing else. The assisted wizard it
+replaced asked three questions, and the first one was the dangerous one: a
+*"Anyone who uses this computer (all users)"* radio that triggers a UAC
+administrator prompt he cannot answer on a school-managed machine. The second
+offered a **Browse…** button and an `AppData\Local\Programs` path that invites
+a wrong answer to a question he should never be asked. One-click removes all
+three, shows a single progress window, and launches the app when it finishes.
+`perMachine` stays **false** for the same reason — a per-user install needs no
+administrator rights at all. `allowToChangeInstallationDirectory` cannot be set
+alongside `oneClick` and was removed with it. `createDesktopShortcut: true` is
+what puts the crested **ClassOS** icon on the desktop; nobody places it by hand.
 
 ## Google Slides embed (Place of the Week presentation)
 `potw.js` can present a Google Slides deck via a published-embed iframe
