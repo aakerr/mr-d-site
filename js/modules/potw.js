@@ -55,6 +55,14 @@ const timers = new Set();     // all pending setTimeout ids, cleared on teardown
 // ---- tunable timing (one-line tweaks for the teacher) ------------------------
 const FLY_TO_MS = 27000;      // camera fly-to duration (~27s — gentle on a big smartboard)
 const ORBIT_MS = 240000;      // ms per slow-orbit revolution once landed
+// How many revolutions before the camera comes to REST. This used to be 10 —
+// forty minutes of continuous camera motion, which is forty minutes of
+// continuous tile streaming and GPU work, and it spun up the fan on a machine
+// whose fan never runs. Measured: an orbiting map makes ~110 tile requests
+// every 20s and never stops; the moment the camera is still, that drops to
+// ZERO. Two revolutions is eight minutes of gentle drift — longer than the
+// arrival moment needs — and then the destination simply sits there, free.
+const ORBIT_REPEATS = 2;
 const LAND_SETTLE_MS = 300;   // pause after landing before lesson card + orbit start
 // Flyover background music: starts on the "🚀 Fly to…" tap, fades out over this
 // long the moment the presentation (or, with no deck, the lesson card) appears.
@@ -741,6 +749,25 @@ function createMap3d() {
     : Promise.resolve(false);
 }
 
+// ---- the slow orbit, and knowing when to stop it -----------------------------
+// A moving camera streams tiles and renders without pause; a still one costs
+// nothing at all (measured: ~110 requests per 20s orbiting, 0 when at rest).
+// So the orbit is treated as a limited flourish, not a permanent state, and it
+// is stopped outright whenever something opaque is covering the map — a
+// presentation fills the screen, and orbiting behind it burns the GPU to
+// animate a picture nobody can see.
+function startOrbit() {
+  if (!mapEl || typeof mapEl.flyCameraAround !== 'function') return;
+  try {
+    mapEl.flyCameraAround({ camera: destCamera(), durationMillis: ORBIT_MS, repeatCount: ORBIT_REPEATS });
+  } catch (e) { console.warn('potw: flyCameraAround failed', e); }
+}
+
+function stopOrbit() {
+  if (!mapEl || typeof mapEl.stopCameraAnimation !== 'function') return;
+  try { mapEl.stopCameraAnimation(); } catch (e) { /* already stopped or gone */ }
+}
+
 // ---- the stage is never a black hole -----------------------------------------
 // <gmp-map-3d> is TRANSPARENT until its renderer paints, so a stage with no
 // tiles showed the overlay's own #000 — a black screen with invisible controls,
@@ -944,11 +971,7 @@ function gotoFlight() {
     // After landing: start the slow orbit, then either auto-launch the
     // presentation (if this destination has one) or slide the lesson card up.
     later(() => {
-      if (flying && typeof mapEl.flyCameraAround === 'function') {
-        try {
-          mapEl.flyCameraAround({ camera: destCamera(), durationMillis: ORBIT_MS, repeatCount: 10 });
-        } catch (e) { console.warn('potw: flyCameraAround failed', e); }
-      }
+      if (flying) startOrbit();
       if (previewMode) return;   // TEST FLIGHT ends here: fly + orbit only
       // The lesson card is no longer the gatekeeper: a deck opens on arrival.
       resolveDeck().then((deck) => {
@@ -1385,7 +1408,9 @@ async function openPresentation(deck) {
   // a deck, and a stray chime over the teacher's first sentence just reads as
   // a glitch. The visual transition is the cue.)
 
-  // Hide the lesson card while presenting (ambient orbit keeps running).
+  // Hide the lesson card while presenting, and STOP the orbit: the deck covers
+  // the map completely, so every frame it renders is work nobody can see.
+  stopOrbit();
   const lesson = overlayEl.querySelector('.potw-lesson');
   if (lesson) lesson.classList.remove('show');
 
@@ -1900,6 +1925,7 @@ function closePresentation() {
   destroyPresentation();
   stopFlyoverMusic();      // already faded in the normal flow; belt and braces
   if (!overlayEl) return;
+  startOrbit();            // the map is the view again — give it its drift back
   const btn = overlayEl.querySelector('.potw-lesson-btn');
   if (btn) btn.style.display = 'block';
   pokeChrome();            // bring the header back with the deck gone
