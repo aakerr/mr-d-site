@@ -624,8 +624,38 @@ module's own colour win over the house colour. Out of the box that means:
 Loaded in `main.js` (not `index.html`): `libraries=maps3d&v=beta`, key resolved
 as `store.getSettings().mapsApiKeyOverride || CONFIG.MAPS_API_KEY` so a
 teacher-supplied key overrides the bundled default. POTW module creates its
-own `<gmp-map-3d mode="hybrid">` inside its overlay (after awaiting
+own `<gmp-map-3d mode="satellite">` inside its overlay (after awaiting
 `customElements.whenDefined('gmp-map-3d')`) and destroys it on unmount.
+
+**Cost, measured — the three things that actually matter.** All figures cold
+at Giza in the packaged app, with `performance.setResourceTimingBufferSize()`
+raised first (Chrome's default caps resource timings at 250 entries, which
+made every configuration look identical and produced a wrong answer once).
+
+| | requests | bytes | settles |
+|---|---|---|---|
+| `mode="hybrid"` | 526 | 3.19 MB | ~7.1 s |
+| `mode="satellite"` | 357 | 3.11 MB | ~4.0 s |
+| satellite + `atmosphere-disabled` | 284 | 3.11 MB | ~2.0 s |
+
+- **Labels are the load cost, not imagery.** Bytes barely move between modes —
+  the satellite tiles are identical. What disappears is hundreds of tiny label,
+  road and POI requests, and *request count* is what a school connection
+  handles worst. Hence satellite. The atmosphere glow is deliberately kept: it
+  is what makes the high-altitude start of the flyover read as space.
+- **A moving camera never stops paying.** `flyCameraAround` streams and renders
+  continuously: ~110 requests every 15 s, indefinitely. A still camera costs
+  exactly **zero**. The orbit therefore runs `ORBIT_REPEATS` (2) revolutions
+  and comes to rest, and is stopped outright while a presentation covers the
+  map. `repeatCount: 10` used to mean forty minutes of this and spun up the fan
+  on a machine whose fan never runs.
+- **There is no quality or resolution knob.** `renderingMode` is internal, and
+  the public surface is only `mode` (HYBRID/SATELLITE/ROADMAP),
+  `atmosphereDisabled`, `defaultUIDisabled`/`defaultUIHidden`. Detail follows
+  camera altitude, so `range` is the only lever — and it reframes the shot.
+
+`core/preload.js` `warmMap3d()` warms the engine at boot and **must keep the
+same `mode`** as `createMap3d`, or it caches tiles the voyage will not use.
 
 ## Desktop build (`desktop/`, Electron) — the classroom copy
 Same web app, no fork and no build step: `desktop/main.js` serves the repo

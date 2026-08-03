@@ -297,7 +297,7 @@ const TOPICS = [
       <ol class="help-steps">
         <li><b>Launch screen</b> — a spinning globe and a launch button.</li>
         <li><b>Intro</b> — the intro video plays full screen. If it cannot load, a bundled song plays instead and the voyage carries on.</li>
-        <li><b>Flight</b> — Google Maps 3D flies to the coordinates and then orbits the place slowly. You can pan, rotate and zoom by hand.</li>
+        <li><b>Flight</b> — Google Maps 3D flies to the coordinates, then drifts slowly around the place for a few minutes and settles. You can pan, rotate and zoom by hand at any time; if it has come to rest, moving it yourself still works exactly the same.</li>
         <li><b>The lesson card</b> — quick facts, primary sources and the quiz, in tabs over the map.</li>
         <li><b>Your presentation</b> — if you attached a PDF, it opens full screen automatically.</li>
       </ol>
@@ -1447,14 +1447,17 @@ const TOPICS = [
       </ol>
       <p>The 3D map is the one part of the app that genuinely needs internet. If the school network blocks Google Maps, Place of the Week shows a simple globe instead and the rest of the voyage — the intro, the facts, the sources, the quiz and your presentation — still runs.</p>
       <p>If the map worked yesterday and not today on a good connection, the shared Maps key may have hit its daily limit. <a href="#" data-help-go="maps-key">Using your own key →</a></p>
+      <h4>It loads, but slowly</h4>
+      <p>The 3D imagery streams from Google as it flies, so the first trip to a new place is always the slowest — that part is the school's connection, not the app.</p>
+      <p><b>The trick that works: fly it once at your desk in the morning.</b> The app keeps what it downloads, so when the class runs the same voyage later it comes back mostly from this computer instead of over the network. The app also quietly warms the map up in the background shortly after you open it, so the first flight of the day is faster than it would otherwise be.</p>
     `,
   },
   {
     id: 'fix-video', cat: 'fix', title: 'The intro video will not play',
     keywords: 'video not playing youtube blocked black screen intro fails no video',
     body: `
-      <p>Intro videos come from YouTube, so they need internet and they need YouTube not to be blocked on the school network.</p>
-      <p><b>The app already handles this for you.</b> If the video does not load, a bundled song plays instead and the voyage carries straight on to the map. You do not need to do anything mid-lesson.</p>
+      <p>The intro films ship <b>inside the app</b>, so they play with no internet at all and cannot be blocked by the school network. The only time a video needs the internet is if you pasted your own <b>YouTube</b> link for a destination instead of using one of the bundled films.</p>
+      <p><b>The app already handles a failure for you.</b> If a video does not load, a bundled song plays instead and the voyage carries straight on to the map. You do not need to do anything mid-lesson.</p>
       <p>If you would rather not depend on it at all, run a <a href="#" data-help-go="potw-testflight">Test flight</a> before class.</p>
     `,
   },

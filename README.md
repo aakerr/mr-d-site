@@ -207,7 +207,8 @@ six effect kinds (each has a live plain-English preview as you edit):
   running the full cinematic in front of the class
 - **Video Playback**: 
   - The intro video plays (a bundled local file by default, or a pasted YouTube link if you chose one for this destination)
-  - After the intro, the map flies to the destination and orbits slowly
+  - After the intro, the map flies to the destination and drifts slowly around
+    it for about eight minutes, then settles and holds still
   - The reveal card pops with quick facts + primary sources
   - The presentation (PDF or Slides) launches full-screen after landing
 
@@ -428,7 +429,13 @@ A cinematic, multi-stage geography voyage.
 
 **Stage 3: Google Maps 3D Explorer**
 - Camera fly-to the destination (~27 seconds of smooth flight)
-- Once landed, camera orbits slowly around the location
+- Once landed, the camera drifts slowly around the location for two
+  revolutions (~8 minutes) and then comes to rest. This is deliberate: a moving
+  camera streams and re-renders 3D tiles without pause, while a still one costs
+  nothing at all, so the map stops working as soon as the arrival moment is
+  over. It also stops entirely while a presentation is covering it
+- Satellite imagery, without the road/label/POI layer — it loads roughly twice
+  as fast, and it keeps modern shopfronts and hospitals off ancient sites
 - Pan, rotate, zoom with touch/mouse (full 3D interaction)
 
 **Stage 4: Tabbed Lesson Overlay** (over the map)
