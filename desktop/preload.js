@@ -38,5 +38,15 @@ contextBridge.exposeInMainWorld('classos', {
   // the folder from Admin. Wired in a later step; harmless if unused.
   dataDir() { try { return ipcRenderer.sendSync('kv:dir'); } catch (e) { return ''; } },
   revealDataDir() { ipcRenderer.send('kv:reveal'); },
+  // The header's ⛶ button. The web fullscreen API can't touch OS-window
+  // fullscreen, so in the desktop build the button drives the REAL window
+  // through main (see "fullscreen, done so the teacher can always get back
+  // out" in desktop/main.js). onChange keeps the glyph honest when fullscreen
+  // is toggled some other way (the menu accelerator, macOS's green button).
+  fullscreen: {
+    get() { try { return !!ipcRenderer.sendSync('fs:get'); } catch (e) { return false; } },
+    toggle() { ipcRenderer.send('fs:toggle'); },
+    onChange(cb) { ipcRenderer.on('fs:state', (_e, flag) => { try { cb(!!flag); } catch (err) {} }); },
+  },
   isDesktop: true,
 });

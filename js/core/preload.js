@@ -163,3 +163,58 @@ export async function ensureAssetsWarm() {
   el.classList.add('done');
   setTimeout(() => { el.remove(); st.remove(); }, 700);
 }
+
+// ---- the 3D globe warm-up ---------------------------------------------------
+// Everything above pulls FILES into the cache; the Place-of-the-Week globe has
+// costs no file fetch can pay: the Maps 3D engine compiles its wasm, builds
+// its GPU pipelines, and streams the first photorealistic tiles — all live,
+// which used to happen mid-class on the first "Fly to" tap and read as lag.
+// The tiles can never ship with the app (Google streams them, licensed), but
+// the START of every flight is known, and this week's DESTINATION is in the
+// store. So: a tiny map quietly visits both ends of the flight during boot
+// idle time, then vanishes. Engine warm, both tile pyramids cached, the real
+// voyage opens on a running engine. Best-effort by design: no Maps, no
+// network, or a voyage already open all end it silently.
+//
+// PLACEMENT IS LOAD-BEARING. The element must intersect the viewport or the
+// engine never initialises — parked at left:-10000px it made 3 network
+// requests in 12 seconds; at the viewport's bottom-left corner it made 164
+// (measured in the packaged app). display:none is the same trap. So it sits
+// ON-SCREEN at z-index:-1 — behind the app's opaque screens, invisible in a
+// screenshot, but fully real to the renderer.
+export function warmMap3d(cameras = []) {
+  try {
+    if (!('customElements' in window) || !cameras.length) return;
+    if (document.querySelector('.potw-overlay')) return;   // a real voyage owns the map
+    if (document.getElementById('mrd-map-warm')) return;   // already warming
+    let settled = false;
+    const holder = document.createElement('div');
+    holder.id = 'mrd-map-warm';
+    holder.setAttribute('aria-hidden', 'true');
+    holder.style.cssText = 'position:fixed;left:0;bottom:0;width:256px;height:256px;overflow:hidden;pointer-events:none;z-index:-1;';
+    const cleanup = () => { settled = true; try { holder.remove(); } catch (e) { /* already gone */ } };
+    const bail = setTimeout(cleanup, 60000);   // absolute ceiling, whatever happens
+    customElements.whenDefined('gmp-map-3d').then(() => {
+      if (settled || document.querySelector('.potw-overlay')) { clearTimeout(bail); return cleanup(); }
+      const el = document.createElement('gmp-map-3d');
+      el.setAttribute('mode', 'hybrid');
+      el.setAttribute('range', '3000');
+      el.setAttribute('tilt', '45');
+      el.setAttribute('default-ui-hidden', '');
+      const place = (c) => el.setAttribute('center', `${c.lat},${c.lng},${c.altitude || 300}`);
+      place(cameras[0]);
+      holder.appendChild(el);
+      document.body.appendChild(holder);
+      let i = 1;
+      const step = setInterval(() => {
+        // A voyage starting mid-warm takes priority instantly — two live maps
+        // would fight for the GPU in front of the class.
+        if (settled || document.querySelector('.potw-overlay') || i >= cameras.length) {
+          clearInterval(step); clearTimeout(bail); return cleanup();
+        }
+        place(cameras[i]);
+        i += 1;
+      }, 9000);
+    }).catch(() => { clearTimeout(bail); cleanup(); });
+  } catch (e) { /* warming is best-effort, never fatal */ }
+}

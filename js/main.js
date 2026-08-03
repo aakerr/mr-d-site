@@ -6,7 +6,7 @@ import { audio } from './core/audio.js';
 import { initShell } from './core/shell.js';
 import './core/backup.js'; // self-initializing auto-backup (File System Access)
 import { initAmbient } from './core/ambient.js';
-import { ensureAssetsWarm } from './core/preload.js';
+import { ensureAssetsWarm, warmMap3d } from './core/preload.js';
 import { checkForLostTerm } from './core/rescue.js';
 import { initAutoPublish } from './core/publish.js';
 
@@ -115,4 +115,21 @@ function preloadAudio(queue) {
 // twice in parallel), then sweeps as the safety net for later visits, where
 // the gate skips and this quietly re-warms anything the cache evicted.
 const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
-idle(() => firstLoadGate.then(() => preloadArt([...ART_PRELOAD])));
+idle(() => firstLoadGate.then(() => {
+  preloadArt([...ART_PRELOAD]);
+  // A while after the files, warm the 3D globe itself: the flight's fixed
+  // starting runway plus this week's destination, so the first "Fly to" tap
+  // opens on a compiled engine with both tile pyramids already cached (see
+  // warmMap3d in core/preload.js). The delay keeps it clear of the art/audio
+  // sweep; the camera values mirror createMap3d in modules/potw.js.
+  setTimeout(() => {
+    try {
+      const potw = store.getState().potw;
+      const dest = (potw.profiles[potw.active] || {}).camera;
+      warmMap3d([
+        { lat: 40.8653, lng: -81.8604, altitude: 500 },   // Smithville, OH — every flight's runway
+        ...(dest && dest.center ? [dest.center] : []),
+      ]);
+    } catch (e) { /* warming is best-effort */ }
+  }, 12000);
+}));

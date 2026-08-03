@@ -69,11 +69,18 @@ function ensureShellStyle() {
 // the mute button) can anchor off the exact same value.
 const PILL_WIDTH_EXPR = 'min(30.6rem,44vw)';
 
+// The desktop app's bridge to the REAL window's fullscreen state. The web
+// fullscreen API below can't see or change OS-window fullscreen, which is the
+// mode the desktop build uses — the ⛶ button silently did nothing there and
+// the teacher was stuck. When the bridge exists, it is the whole truth.
+const fsBridge = (typeof window !== 'undefined' && window.classos && window.classos.fullscreen) || null;
+
 // True when anything is filling the screen. Also covers the installed-app case:
 // a window opened from the manifest has no tab strip or address bar to hide, so
 // the button reads as "already filling the board" and offers nothing to undo.
 function isFullscreen() {
   try {
+    if (fsBridge) return fsBridge.get();
     if (document.fullscreenElement) return true;
     return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
   } catch (e) { return false; }
@@ -510,7 +517,7 @@ export function initShell(ctx) {
            (browsers refuse it otherwise), which is exactly why it is a button
            and not something the app does at startup. Sits on the far side of
            the sound button, mirroring the ± trigger's offset. -->
-      <button type="button" data-fullscreen-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="left:calc(50% + ${pillWidthExpr}/2 + 12px + 104px)" title="${isFullscreen() ? 'Leave fullscreen (or press Escape)' : 'Fill the whole board — hides the browser bars'}" aria-label="${isFullscreen() ? 'Leave fullscreen' : 'Go fullscreen'}" aria-pressed="${isFullscreen()}">
+      <button type="button" data-fullscreen-btn class="sound-trigger-btn absolute top-1/2 -translate-y-1/2 shrink-0 flex items-center justify-center rounded-full" style="left:calc(50% + ${pillWidthExpr}/2 + 12px + 104px)" title="${isFullscreen() ? (fsBridge ? 'Leave fullscreen' : 'Leave fullscreen (or press Escape)') : (fsBridge ? 'Fill the whole board' : 'Fill the whole board — hides the browser bars')}" aria-label="${isFullscreen() ? 'Leave fullscreen' : 'Go fullscreen'}" aria-pressed="${isFullscreen()}">
         <span class="sound-trigger-dot leading-none">${isFullscreen() ? '🗗' : '⛶'}</span>
       </button>
 
@@ -543,9 +550,11 @@ export function initShell(ctx) {
       // why this lives on a tap rather than at startup. Failures are silent on
       // purpose — a school machine may block it by policy, and an error dialog
       // mid-lesson helps nobody. The bar redraws from the fullscreenchange
-      // listener, so the glyph flips itself either way.
+      // listener, so the glyph flips itself either way. In the desktop app the
+      // bridge toggles the real window instead — the web API can't reach it.
       try {
-        if (isFullscreen()) document.exitFullscreen?.();
+        if (fsBridge) fsBridge.toggle();
+        else if (isFullscreen()) document.exitFullscreen?.();
         else document.documentElement.requestFullscreen?.().catch(() => {});
       } catch (err) { console.warn('shell: fullscreen toggle failed', err); }
       return;
@@ -993,8 +1002,11 @@ export function initShell(ctx) {
 
   // Fullscreen can be entered or left without touching our button — F11, or
   // Escape, which is how most people get out. Redraw so the glyph never claims
-  // the opposite of what the screen is actually doing.
+  // the opposite of what the screen is actually doing. The desktop app's
+  // window has its own ways too (the menu accelerator, macOS's green button),
+  // reported through the bridge.
   try { document.addEventListener('fullscreenchange', rerenderAll); } catch (e) { /* non-fatal */ }
+  try { if (fsBridge) fsBridge.onChange(rerenderAll); } catch (e) { /* non-fatal */ }
 
   // ---------------- initial paint ----------------
   // Safety net: the app always boots on 'dashboard' (main.js calls

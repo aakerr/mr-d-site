@@ -19,7 +19,7 @@
 // The renderer is the app EXACTLY as it runs in a browser — no fork, no build
 // step, no changed screens. Only the storage seam swaps its backend, because
 // window.classos.kv is now present.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -30,6 +30,19 @@ let kv = null;
 let dataDir = '';
 let appOrigin = '';   // http://localhost:<port>, set once the server is listening
 let server = null;    // the local file server, closed on quit
+
+// The name the OS shows everywhere the app appears — macOS menu bar, the app
+// switcher, notifications, the Windows taskbar tooltip. Without this a dev run
+// (electron .) reads "Electron"; the packaged build already carries productName,
+// but setting it here means both look right. Must be set before app is ready.
+app.setName('ClassOS');
+
+// A generous disk cache, set before the app is ready or it is ignored. The
+// POTW globe streams Google's 3D tiles, and they honour HTTP caching — with a
+// 1 GB cache a flight flown once (a morning rehearsal at the desk, last week's
+// class) replays mostly from disk instead of school wifi. The browser default
+// is far smaller and evicts tiles almost immediately.
+app.commandLine.appendSwitch('disk-cache-size', String(1024 * 1024 * 1024));
 
 // ---- where the data lives (VISIBLE, on the owner's call) --------------------
 // A folder called "ClassOS Data" sitting next to the app, so the teacher can
@@ -119,22 +132,75 @@ function startLocalServer() {
   });
 }
 
+// ---- fullscreen, done so the teacher can always get back out ----------------
+// macOS native fullscreen moves the window to its own Space with hidden
+// controls — click the wrong thing and the app seems to vanish (it happened).
+// SIMPLE fullscreen (pre-Lion style) fills the screen in place: instant, same
+// Space, and toggling out just restores the normal window. Windows/Linux use
+// ordinary fullscreen, which behaves sanely there. The header's ⛶ button in
+// the app can't reach OS-window state through the web fullscreen API, so main
+// owns these two helpers and the page drives them over IPC (see preload.js).
+function getFullscreen(win) {
+  return process.platform === 'darwin' ? win.isSimpleFullScreen() : win.isFullScreen();
+}
+function setFullscreen(win, flag) {
+  if (process.platform === 'darwin') win.setSimpleFullScreen(flag);
+  else win.setFullScreen(flag);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1600,
+    fullscreen: process.platform !== 'darwin',  // fill the board on launch (macOS goes simple-fullscreen below)
+    width: 1600,                      // the size it falls back to when fullscreen is left
     height: 1000,
     backgroundColor: '#0b0f19',
     show: false,                      // reveal only once painted, no white flash
     autoHideMenuBar: true,            // no File/Edit menu clutter
+    title: 'ClassOS',
+    // Taskbar/window icon for a dev run on Windows; the packaged build embeds
+    // its own icon, and macOS ignores this in favour of the bundle/dock icon.
+    icon: process.platform === 'win32' ? path.join(APP_ROOT, 'ClassOS.ico') : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,         // security default — the page can't reach Node
       nodeIntegration: false,
     },
   });
-  win.once('ready-to-show', () => win.show());
+  // The page sets its own <title> for the browser build; here the window and
+  // taskbar should keep reading the app's name, so refuse the page's override.
+  win.on('page-title-updated', (e) => e.preventDefault());
+  win.once('ready-to-show', () => {
+    if (process.platform === 'darwin') win.setSimpleFullScreen(true);
+    win.show();
+  });
+  // Keep the header glyph honest if fullscreen changes behind the page's back
+  // (F11, the menu accelerator, or macOS's own green button).
+  const pushState = () => {
+    try { win.webContents.send('fs:state', getFullscreen(win)); } catch (e) { /* window closing */ }
+  };
+  win.on('enter-full-screen', pushState);
+  win.on('leave-full-screen', pushState);
   win.loadURL(`${appOrigin}/index.html`);
   return win;
+}
+
+// The default Electron menu's "Toggle Full Screen" drives NATIVE fullscreen,
+// which would fight the simple-fullscreen mode above and strand the window in
+// a state the header button can't undo. Replace it with our own toggle, and
+// keep the Edit roles — without them Cmd+C/Cmd+V die in Admin's text fields.
+function installMenu() {
+  if (process.platform !== 'darwin') { Menu.setApplicationMenu(null); return; }
+  const toggleItem = {
+    label: 'Toggle Full Screen',
+    accelerator: 'Ctrl+Command+F',
+    click: (_item, win) => { if (win) setFullscreen(win, !getFullscreen(win)); },
+  };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: 'ClassOS', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] },
+    { role: 'editMenu' },
+    { label: 'View', submenu: [toggleItem] },
+    { role: 'windowMenu' },
+  ]));
 }
 
 // One running copy only. Without this a second launch (a teacher double-clicking
@@ -154,6 +220,13 @@ if (!gotLock) {
     kv = createKvStore(dataDir);
     await startLocalServer();
 
+    // In a dev run the macOS dock shows Electron's default icon; point it at
+    // ClassOS's own so testing looks right. The packaged .app already carries
+    // this in its bundle. Harmless if the image can't be loaded.
+    if (process.platform === 'darwin' && app.dock) {
+      try { app.dock.setIcon(path.join(APP_ROOT, 'ClassOS.app/Contents/Resources/ClassOS.icns')); } catch (e) {}
+    }
+
     // ---- the key/value bridge (see desktop/preload.js) ----
     ipcMain.on('kv:all', (e) => { e.returnValue = kv.all(); });
     ipcMain.on('kv:set', (e, key, val) => kv.set(key, val));
@@ -161,6 +234,19 @@ if (!gotLock) {
     ipcMain.on('kv:dir', (e) => { e.returnValue = dataDir; });
     ipcMain.on('kv:reveal', () => { shell.openPath(dataDir); });
 
+    // ---- the fullscreen bridge (the header's ⛶ button drives this) ----
+    ipcMain.on('fs:get', (e) => {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      e.returnValue = win ? getFullscreen(win) : false;
+    });
+    ipcMain.on('fs:toggle', (e) => {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      if (!win) return;
+      setFullscreen(win, !getFullscreen(win));
+      e.sender.send('fs:state', getFullscreen(win));
+    });
+
+    installMenu();
     createWindow();
 
     app.on('activate', () => {

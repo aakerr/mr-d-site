@@ -21,13 +21,17 @@
     "files": [
       "desktop/**/*",
       "index.html",
+      "manifest.json",
       "js/**/*",
+      "css/**/*",
       "vendor/**/*",
       "images/**/*",
       "music/**/*",
+      "potw-songs/**/*",
       "sfx/**/*",
       "videos/**/*",
       "standings.html",
+      "ClassOS.ico",
       "!**/*.psd",
       "!ClassOS Data*/**"
     ],
@@ -45,7 +49,8 @@
     "mac": {
       "target": "dmg",
       "icon": "ClassOS.app/Contents/Resources/ClassOS.icns",
-      "category": "public.app-category.education"
+      "category": "public.app-category.education",
+      "identity": null
     }
   }
 }
