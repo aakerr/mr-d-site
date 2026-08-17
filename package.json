@@ -1,7 +1,7 @@
 {
   "name": "classos",
   "productName": "ClassOS",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Mr. D's Classroom OS — desktop build",
   "private": true,
   "main": "desktop/main.js",

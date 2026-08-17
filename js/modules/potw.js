@@ -362,8 +362,16 @@ async function openOverlay() {
   }
   host.appendChild(overlayEl);
 
-  // --- create the 3D map now so it can load during the ~37s intro -----------
-  createMap3d();
+  // The 3D map is deliberately NOT built here. It used to be, so it could load
+  // during the ~37s intro -- but constructing a WebGL globe and streaming
+  // hundreds of tiles while a 10 Mbps video decodes is two heavy jobs at once.
+  // On a laptop driving a classroom board over HDMI the video stuttered from
+  // the first second and never recovered (reported from the classroom). The
+  // overlay is rebuilt per voyage, so that cost was paid on EVERY launch, not
+  // just the first -- which is why it never "warmed up". It now starts in
+  // advanceToReveal: the intro plays alone, and the map loads under the reveal
+  // card while the teacher reads the facts out. That is a real pause, and the
+  // teacher paces it.
 
   // --- wire controls --------------------------------------------------------
   overlayEl.querySelector('.potw-skip').addEventListener('click', advanceToReveal);
@@ -709,6 +717,11 @@ function advanceToReveal() {
   // Stop any YouTube player immediately (a hidden iframe keeps playing audio).
   destroyYtIntro();
 
+  // Only now, with the video stopped and nothing else competing for the GPU,
+  // build the map. It loads behind the reveal card and is ready by the time
+  // the teacher taps Fly.
+  createMap3d();
+
   const intro = overlayEl.querySelector('.potw-intro-layer');
   intro.style.transition = `opacity ${INTRO_FADE_MS}ms ease`;
   intro.style.opacity = '0';
@@ -953,6 +966,10 @@ function stopFlyoverMusic() {
 
 function gotoFlight() {
   if (!overlayEl) return;
+  // Normally advanceToReveal built the map already. Any path that reaches the
+  // flight without it (a skip that raced the reveal) builds it now rather than
+  // dereferencing a null readiness promise.
+  if (!mapReadyPromise) createMap3d();
   startFlyoverMusic();   // music rides the whole flight, from this tap
   const reveal = overlayEl.querySelector('.potw-reveal');
   if (reveal) {                       // absent in preview mode

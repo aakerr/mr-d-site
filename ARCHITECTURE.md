@@ -656,6 +656,16 @@ made every configuration look identical and produced a wrong answer once).
   and comes to rest, and is stopped outright while a presentation covers the
   map. `repeatCount: 10` used to mean forty minutes of this and spun up the fan
   on a machine whose fan never runs.
+- **Never build the map while the intro video is playing.** It was created at
+  overlay-open for ~37s of free load time behind the intro. That is two heavy
+  jobs at once -- a WebGL globe plus hundreds of tile requests, against a
+  10 Mbps H.264 decode -- and on a teacher's laptop driving a classroom board
+  over HDMI the video stuttered from the first second and never recovered. The
+  overlay is torn down and rebuilt per voyage (`closeOverlay` nulls `mapEl`),
+  so the cost landed on *every* launch, not just the first; it never "warmed
+  up". `createMap3d()` now runs in `advanceToReveal()`, so the map loads under
+  the reveal card during a pause the teacher controls. `gotoFlight` builds it
+  defensively if some path ever reaches the flight without it.
 - **There is no quality or resolution knob.** `renderingMode` is internal, and
   the public surface is only `mode` (HYBRID/SATELLITE/ROADMAP),
   `atmosphereDisabled`, `defaultUIDisabled`/`defaultUIHidden`. Detail follows
