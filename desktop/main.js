@@ -44,19 +44,25 @@ app.setName('ClassOS');
 // is far smaller and evicts tiles almost immediately.
 app.commandLine.appendSwitch('disk-cache-size', String(1024 * 1024 * 1024));
 
-// ---- where the data lives (VISIBLE, on the owner's call) --------------------
-// A folder called "ClassOS Data" sitting next to the app, so the teacher can
-// see it, copy it, and drop it into OneDrive by hand. Next to the app only
-// works if that spot is writable — a Program Files install is not — so it
-// falls back to Documents\ClassOS Data, which always is and is where a teacher
-// looks anyway. In development (run from source) it lives beside the project.
+// ---- where the data lives (VISIBLE, and OUTSIDE the install folder) --------
+// Documents\ClassOS Data. It used to sit next to the app, which was a
+// data-losing bug: the NSIS uninstaller deletes the install directory, and
+// EVERY update runs the uninstaller first. Proven on Windows — a marker file
+// written into the folder was gone after re-running the installer, directory
+// and all. A teacher who had entered a term of points would have lost the year
+// on the first update.
+//
+// Next-to-the-app also failed its own purpose. The per-user install lands in
+// %LOCALAPPDATA%\Programs\ClassOS, so "next to the app" meant a path no
+// teacher will ever browse to. Documents is where they actually look, it is
+// always writable, the installer never touches it, and on a school account it
+// is usually OneDrive-synced — which is the offsite backup this folder was
+// always meant to make easy.
+//
+// In development (run from source) it still lives beside the project.
 function chooseDataDir() {
   const candidates = [];
-  if (app.isPackaged) {
-    candidates.push(path.join(path.dirname(app.getPath('exe')), 'ClassOS Data'));
-  } else {
-    candidates.push(path.join(__dirname, '..', 'ClassOS Data (dev)'));
-  }
+  if (!app.isPackaged) candidates.push(path.join(__dirname, '..', 'ClassOS Data (dev)'));
   candidates.push(path.join(app.getPath('documents'), 'ClassOS Data'));
   for (const dir of candidates) {
     try {

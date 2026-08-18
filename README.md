@@ -67,9 +67,10 @@ The build lands in `dist/` — `ClassOS.app` on macOS, `ClassOS Setup <ver>.exe`
 on Windows (build each on its own OS). Two things behave differently from the
 browser version, both deliberate:
 
-- **Data lives in a visible folder**, `ClassOS Data/classroom-data.json`, next
-  to the app (or in Documents if the app sits somewhere unwritable). Not in a
-  browser profile, so "clear browsing data" can never touch a term of points.
+- **Data lives in a visible folder**, `Documents/ClassOS Data/classroom-data.json`.
+  Not in a browser profile, so "clear browsing data" can never touch a term of
+  points — and deliberately NOT inside the install folder, because the Windows
+  uninstaller deletes that, and every update runs the uninstaller first.
 - **Closing the window quits the app** on every OS, so nothing keeps running
   (and playing music) with no window to close it from.
 

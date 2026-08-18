@@ -679,8 +679,9 @@ Same web app, no fork and no build step: `desktop/main.js` serves the repo
 root over a **loopback HTTP server on a random free port** and loads it in a
 BrowserWindow. `desktop/preload.js` exposes a narrow `window.classos` bridge
 (contextIsolation stays on) and `js/core/storage.js` picks it up, so the term
-lands in a visible `ClassOS Data/classroom-data.json` (atomic write, debounced,
-corrupt file quarantined) instead of localStorage.
+lands in a visible `Documents/ClassOS Data/classroom-data.json` (atomic write,
+debounced, corrupt file quarantined) instead of localStorage. **It must never
+live inside the install directory** — see the update-survival trap below.
 
 Four constraints, each of which cost real debugging time:
 
@@ -702,6 +703,16 @@ Four constraints, each of which cost real debugging time:
   moves the window to its own Space, where a stray click makes the app appear
   to vanish. The header's ⛶ button drives the real window over the bridge,
   because the web Fullscreen API cannot touch OS-window state.
+- **The data folder must live outside the install directory.** It used to be
+  written next to the app. The NSIS uninstaller deletes the install directory,
+  and every update runs the uninstaller before laying down the new build — so
+  each update silently destroyed the teacher's year. Proven on Windows: a
+  marker file written into `ClassOS Data` was gone, folder and all, after
+  re-running the installer. It is now `Documents\ClassOS Data`, which the
+  installer never touches, which a teacher can actually find (the per-user
+  install hides the app under `%LOCALAPPDATA%\Programs`), and which is usually
+  OneDrive-synced on a school account. No migration code exists or can exist:
+  the uninstaller removes the old copy before the new app ever runs.
 - **`package.json` `build.files` is an allow-list.** Anything omitted 404s in
   the packaged app while working perfectly in dev — `css/theme.css` went
   missing this way and the first-run wizard rendered as unstyled text at the
